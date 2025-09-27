@@ -16,6 +16,7 @@ import {
 
 import { GradientBackground } from "../components/GradientBackground";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { useAuth } from "../context/AuthContext";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, typography } from "../theme";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -32,6 +33,8 @@ export const AuthOptionsScreen = ({ navigation }: Props) => {
   const pulseAnim = useState(new Animated.Value(1))[0];
   const shimmerAnim = useState(new Animated.Value(0))[0];
   const insets = useSafeAreaInsets();
+
+  const { googleSignIn, user, loading } = useAuth();
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -93,19 +96,26 @@ export const AuthOptionsScreen = ({ navigation }: Props) => {
     ).start();
   }, [shimmerAnim]);
 
-  const handleGoogleSignIn = () => {
-    // Placeholder: Navigate to onboarding
-    navigation.navigate("Onboarding");
+  const handleGoogleSignIn = async () => {
+    try {
+      await googleSignIn();
+      navigation.navigate({ name: "Onboarding", params: { mode: "signin" } });
+    } catch (err) {
+      Alert.alert(
+        "Sign in failed",
+        err instanceof Error ? err.message : "Please try again."
+      );
+    }
   };
 
   const handleAppleSignIn = () => {
     // Placeholder: Navigate to onboarding
-    navigation.navigate("Onboarding");
+    navigation.navigate({ name: "Onboarding", params: {} });
   };
 
   const handleEmailSignIn = () => {
     // Navigate to onboarding
-    navigation.navigate("Onboarding");
+    navigation.navigate({ name: "Onboarding", params: {} });
   };
 
   return (

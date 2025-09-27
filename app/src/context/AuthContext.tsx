@@ -10,7 +10,7 @@ import {
   updateProfile,
 } from "../lib/firebaseAuth";
 import type { User, UserCredential } from "../lib/firebaseAuth";
-import { AuthSessionResult } from "expo-auth-session";
+import { AuthSessionResult, makeRedirectUri } from "expo-auth-session";
 import * as Google from "expo-auth-session/providers/google";
 import React, {
   PropsWithChildren,
@@ -108,7 +108,10 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   );
 
   const [request, , promptAsync] = supportsGoogleSignIn
-    ? Google.useAuthRequest({ ...googleConfig })
+    ? Google.useAuthRequest({
+        ...googleConfig,
+        redirectUri: "https://auth.expo.io/@franciscogfsm/secretbuddy",
+      })
     : [
         null,
         null,

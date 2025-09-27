@@ -1,6 +1,6 @@
 export type RootStackParamList = {
   AuthOptions: undefined;
-  Onboarding: undefined;
+  Onboarding: { mode?: "signup" | "signin" };
   MainTabs: undefined;
   Reveal: undefined;
 };

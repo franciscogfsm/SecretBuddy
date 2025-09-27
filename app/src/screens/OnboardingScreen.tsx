@@ -49,7 +49,7 @@ const signupSteps = [
   },
 ] as const;
 
-export const OnboardingScreen = ({ navigation }: Props) => {
+export const OnboardingScreen = ({ navigation, route }: Props) => {
   const { profile, setProfile } = useAppState();
   const {
     user,
@@ -107,15 +107,10 @@ export const OnboardingScreen = ({ navigation }: Props) => {
   }, [signupStage, isSignup]);
 
   useEffect(() => {
-    if (authMode === "signup") {
-      setSignupStage(0);
-      setSignupCredentials(null);
-      setAcceptedTerms(false);
-    } else {
-      setSignupStage(0);
-      setAcceptedTerms(true);
+    if (route.params?.mode) {
+      setAuthMode(route.params.mode);
     }
-  }, [authMode]);
+  }, [route.params?.mode]);
 
   useEffect(() => {
     if (!user || authMode !== "signin") {
