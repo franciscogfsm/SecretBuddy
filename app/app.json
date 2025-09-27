@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "SecretBuddy",
+    "slug": "secretbuddy",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "secretbuddy",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#12002f"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.secretbuddy.app",
+      "usesAppleSignIn": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "SecretBuddy needs camera access to record 10-second ambiance clips.",
+        "NSMicrophoneUsageDescription": "SecretBuddy needs microphone access to capture audio with your video clips."
+      }
+    },
+    "android": {
+      "package": "com.secretbuddy.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#12002f"
+      },
+      "permissions": []
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-notifications",
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
+    ]
+  }
+}
