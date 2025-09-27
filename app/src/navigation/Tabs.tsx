@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { StyleSheet, View } from "react-native";
+import { useEffect, useMemo, useRef } from "react";
+import { Animated, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { MainTabParamList } from "./types";
@@ -8,11 +9,58 @@ import { HomeScreen } from "../screens/HomeScreen";
 import { MatchesScreen } from "../screens/MatchesScreen";
 import { PointsScreen } from "../screens/PointsScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
-import { colors } from "../theme";
+import { colors, gradients } from "../theme";
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 type IconName = keyof typeof Ionicons.glyphMap;
+
+const AnimatedIconWrapper = ({
+  focused,
+  children,
+}: {
+  focused: boolean;
+  children: React.ReactNode;
+}) => {
+  const scale = useRef(new Animated.Value(focused ? 1.1 : 1)).current;
+  const backgroundOpacity = useRef(new Animated.Value(focused ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(scale, {
+      toValue: focused ? 1.1 : 1,
+      damping: 15,
+      stiffness: 150,
+      useNativeDriver: true,
+    }).start();
+
+    Animated.timing(backgroundOpacity, {
+      toValue: focused ? 1 : 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [focused, scale, backgroundOpacity]);
+
+  const animatedStyle = useMemo(
+    () => ({
+      transform: [{ scale }],
+    }),
+    [scale]
+  );
+
+  const backgroundStyle = useMemo(
+    () => ({
+      opacity: backgroundOpacity,
+    }),
+    [backgroundOpacity]
+  );
+
+  return (
+    <Animated.View style={[styles.iconWrapper, animatedStyle]}>
+      <Animated.View style={[styles.iconBackground, backgroundStyle]} />
+      {children}
+    </Animated.View>
+  );
+};
 
 export const HomeTabs = () => {
   const insets = useSafeAreaInsets();
@@ -45,18 +93,16 @@ export const HomeTabs = () => {
           })() as IconName;
 
           return (
-            <View
-              style={[styles.iconWrapper, focused && styles.iconWrapperActive]}
-            >
+            <AnimatedIconWrapper focused={focused}>
               <Ionicons
                 name={iconName}
-                size={24}
-                color={focused ? colors.background : colors.textSecondary}
+                size={focused ? 26 : 24}
+                color={focused ? colors.accentPurple : colors.textSecondary}
               />
-            </View>
+            </AnimatedIconWrapper>
           );
         },
-        tabBarActiveTintColor: colors.background,
+        tabBarActiveTintColor: colors.accentPurple,
         tabBarInactiveTintColor: colors.textSecondary,
       })}
     >
@@ -75,7 +121,7 @@ const styles = StyleSheet.create({
     right: 24,
     borderRadius: 36,
     borderTopWidth: 0,
-    backgroundColor: "rgba(22, 16, 46, 0.92)",
+    backgroundColor: "rgba(22, 16, 46, 0.95)",
     height: 74,
     paddingHorizontal: 24,
     paddingTop: 10,
@@ -85,6 +131,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 20,
     elevation: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   tabItem: {
     marginVertical: 4,
@@ -95,9 +143,20 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "transparent",
+    position: "relative",
+  },
+  iconBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 24,
+    backgroundColor: "rgba(246, 236, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   iconWrapperActive: {
-    backgroundColor: "rgba(246, 236, 255, 0.16)",
+    // Kept for compatibility but not used with new animation
   },
 });

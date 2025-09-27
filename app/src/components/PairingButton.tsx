@@ -1,17 +1,12 @@
 import {
-  ActivityIndicator,
+  Animated,
+  Easing,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-  Easing,
-} from "react-native-reanimated";
+import { useEffect, useRef } from "react";
 
 import { colors, typography } from "../theme";
 
@@ -26,22 +21,41 @@ export const PairingButton = ({
   isSearching = false,
   disabled = false,
 }: PairingButtonProps) => {
-  const rotation = useSharedValue(0);
+  const rotation = useRef(new Animated.Value(0)).current;
 
-  // Start rotation animation when searching
-  if (isSearching) {
-    rotation.value = withRepeat(
-      withTiming(360, { duration: 2000, easing: Easing.linear }),
-      -1,
-      false
-    );
-  } else {
-    rotation.value = 0;
-  }
+  useEffect(() => {
+    if (isSearching) {
+      const animation = Animated.loop(
+        Animated.timing(rotation, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      );
+      animation.start();
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
+      return () => {
+        animation.stop();
+        rotation.setValue(0);
+      };
+    }
+
+    rotation.stopAnimation(() => {
+      rotation.setValue(0);
+    });
+  }, [isSearching, rotation]);
+
+  const animatedStyle = {
+    transform: [
+      {
+        rotate: rotation.interpolate({
+          inputRange: [0, 1],
+          outputRange: ["0deg", "360deg"],
+        }),
+      },
+    ],
+  };
 
   return (
     <Pressable

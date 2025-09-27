@@ -6,4 +6,6 @@ export type {
   MysteryBuddy,
   MatchState,
   Profile,
+  PairingData,
+  PairingPhase,
 } from "./AppStateContext";

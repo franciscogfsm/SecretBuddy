@@ -28,6 +28,23 @@ export type MysteryBuddy = {
 
 export type Mode = "friends" | "country" | "global";
 
+export type PairingPhase =
+  | "not-paired"
+  | "searching"
+  | "paired-waiting"
+  | "submission-open"
+  | "submitted"
+  | "matched"
+  | "reveal-ready";
+
+export type PairingData = {
+  phase: PairingPhase;
+  submissionWindowStart: string;
+  submissionWindowEnd: string;
+  revealWindowStart: string;
+  revealWindowEnd: string;
+};
+
 export type Profile = {
   name: string;
   age: number;
@@ -39,9 +56,11 @@ type AppState = {
   profile: Profile | null;
   prompt: Prompt | null;
   buddy: MysteryBuddy | null;
+  pairing: PairingData;
   setProfile: (profile: Profile | null) => void;
   setPrompt: (prompt: Prompt | null) => void;
   setBuddy: (buddy: MysteryBuddy | null) => void;
+  setPairing: (pairing: PairingData) => void;
   hydrated: boolean;
 };
 
@@ -62,12 +81,23 @@ const defaultBuddy: MysteryBuddy = {
   revealAt: new Date(Date.now() + 1000 * 60 * 60 * 8).toISOString(),
 };
 
+const defaultPairing: PairingData = {
+  phase: "paired-waiting",
+  submissionWindowStart: new Date(
+    Date.now() + 1000 * 60 * 60 * 2
+  ).toISOString(),
+  submissionWindowEnd: new Date(Date.now() + 1000 * 60 * 60 * 4).toISOString(),
+  revealWindowStart: new Date(Date.now() + 1000 * 60 * 60 * 9).toISOString(),
+  revealWindowEnd: new Date(Date.now() + 1000 * 60 * 60 * 10).toISOString(),
+};
+
 const AppStateContext = createContext<AppState | undefined>(undefined);
 
 export const AppStateProvider = ({ children }: PropsWithChildren) => {
   const [profile, setProfileState] = useState<Profile | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(defaultPrompt);
   const [buddy, setBuddy] = useState<MysteryBuddy | null>(defaultBuddy);
+  const [pairing, setPairing] = useState<PairingData>(defaultPairing);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -127,12 +157,14 @@ export const AppStateProvider = ({ children }: PropsWithChildren) => {
       profile,
       prompt,
       buddy,
+      pairing,
       setProfile,
       setPrompt,
       setBuddy,
+      setPairing,
       hydrated,
     }),
-    [profile, prompt, buddy, setProfile, hydrated]
+    [profile, prompt, buddy, pairing, setProfile, hydrated]
   );
 
   return (
