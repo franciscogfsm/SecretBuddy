@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     gap: 20,
     paddingHorizontal: 24,
-    paddingTop: 48,
+    paddingTop: 80,
     paddingBottom: 24,
   },
   hero: {
