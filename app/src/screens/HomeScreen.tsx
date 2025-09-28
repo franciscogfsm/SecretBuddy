@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 
+import { CountryDropdown } from "../components/CountryDropdown";
 import { GradientBackground } from "../components/GradientBackground";
 import { MysteryCard } from "../components/MysteryCard";
 import { PrimaryButton } from "../components/PrimaryButton";
@@ -24,7 +25,7 @@ type PairingStatus =
   | "revealing";
 
 export const HomeScreen = () => {
-  const { prompt, buddy, profile } = useAppState();
+  const { prompt, buddy, profile, setProfile } = useAppState();
   const [pairingStatus, setPairingStatus] = useState<PairingStatus>("waiting");
   const [timeUntilWindow, setTimeUntilWindow] = useState<string>("");
   const [pulseAnim] = useState(new Animated.Value(1));
@@ -157,6 +158,30 @@ export const HomeScreen = () => {
     }
   };
 
+  const handleModeSelect = (mode: string) => {
+    if (profile) {
+      setProfile({ ...profile, mode: mode as any });
+    }
+  };
+
+  const getModeOptions = () => [
+    {
+      label: "Friends",
+      value: "friends",
+      description: "Connect with your friends only",
+    },
+    {
+      label: "Country",
+      value: "country",
+      description: "Pair with someone from your selected country",
+    },
+    {
+      label: "World",
+      value: "world",
+      description: "Connect with anyone worldwide",
+    },
+  ];
+
   const getButtonText = () => {
     switch (pairingStatus) {
       case "waiting":
@@ -227,6 +252,57 @@ export const HomeScreen = () => {
         {pairingStatus === "paired" && prompt && buddy && (
           <MysteryCard prompt={prompt} buddy={buddy} />
         )}
+
+        {/* Game Mode Selection */}
+        <View style={styles.modeCard}>
+          <Text style={styles.modeTitle}>Game Mode</Text>
+          <Text style={styles.modeSubtitle}>
+            Choose how you want to connect with others
+          </Text>
+          <View style={styles.modeOptions}>
+            {getModeOptions().map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.modeOption,
+                  profile?.mode === option.value && styles.modeOptionSelected,
+                ]}
+                onPress={() => handleModeSelect(option.value)}
+              >
+                <Text
+                  style={[
+                    styles.modeOptionLabel,
+                    profile?.mode === option.value &&
+                      styles.modeOptionLabelSelected,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+                <Text
+                  style={[
+                    styles.modeOptionDesc,
+                    profile?.mode === option.value &&
+                      styles.modeOptionDescSelected,
+                  ]}
+                >
+                  {option.description}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {profile?.mode === "country" && (
+            <CountryDropdown
+              label="Select Country"
+              value={profile?.country || ""}
+              onSelect={(country) => {
+                if (profile) {
+                  setProfile({ ...profile, country });
+                }
+              }}
+              placeholder="Choose your pairing country"
+            />
+          )}
+        </View>
 
         {/* Stats */}
         <View style={styles.metaSection}>
@@ -373,5 +449,34 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.accentPurple,
     marginTop: 8,
+  },
+  modeOptions: {
+    gap: 12,
+  },
+  modeOption: {
+    borderRadius: 16,
+    padding: 16,
+    backgroundColor: "rgba(11, 5, 32, 0.5)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  modeOptionSelected: {
+    backgroundColor: "rgba(156, 107, 255, 0.15)",
+    borderColor: colors.accentPurple,
+  },
+  modeOptionLabel: {
+    ...typography.subtitle,
+    color: colors.textSecondary,
+  },
+  modeOptionLabelSelected: {
+    color: colors.accentPurple,
+  },
+  modeOptionDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  modeOptionDescSelected: {
+    color: colors.textPrimary,
   },
 });

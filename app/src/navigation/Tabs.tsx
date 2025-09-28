@@ -3,9 +3,12 @@ import {
   BottomTabBarProps,
   createBottomTabNavigator,
 } from "@react-navigation/bottom-tabs";
-import { Animated, Pressable, StyleSheet, View } from "react-native";
+import { useIsFocused } from "@react-navigation/native";
+import { Animated, Easing, Pressable, StyleSheet, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PanGestureHandler, State } from "react-native-gesture-handler";
 
 import { MainTabParamList } from "./types";
 import { HomeScreen } from "../screens/HomeScreen";
@@ -15,6 +18,120 @@ import { ProfileScreen } from "../screens/ProfileScreen";
 import { colors } from "../theme";
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
+
+// Swipe-enabled wrapper for tab screens
+const SwipeableTabScreen = ({
+  children,
+  navigation,
+  currentIndex,
+  totalTabs,
+}: {
+  children: React.ReactNode;
+  navigation: any;
+  currentIndex: number;
+  totalTabs: number;
+}) => {
+  const isFocused = useIsFocused();
+  const focusProgress = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
+  const hasAnimatedIn = useRef(false);
+
+  useEffect(() => {
+    if (isFocused) {
+      if (!hasAnimatedIn.current) {
+        focusProgress.setValue(0);
+        hasAnimatedIn.current = true;
+      }
+      Animated.parallel([
+        Animated.spring(focusProgress, {
+          toValue: 1,
+          friction: 12,
+          tension: 120,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.timing(focusProgress, {
+        toValue: 0,
+        duration: 200,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [focusProgress, isFocused]);
+
+  const animatedStyle = useMemo(
+    () => ({
+      backgroundColor: colors.background,
+      opacity: focusProgress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0.6, 1],
+      }),
+      transform: [
+        {
+          scale: focusProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.96, 1],
+          }),
+        },
+      ],
+    }),
+    [focusProgress]
+  );
+
+  const onGestureEvent = useCallback((event: any) => {
+    // Handle swipe gestures here if needed for additional logic
+  }, []);
+
+  const onHandlerStateChange = useCallback(
+    (event: any) => {
+      if (event.nativeEvent.state === State.END) {
+        const { translationX, velocityX, translationY } = event.nativeEvent;
+
+        // Only trigger navigation for clear horizontal swipes
+        // Must be more horizontal than vertical movement
+        const isHorizontalSwipe =
+          Math.abs(translationX) > Math.abs(translationY) * 2;
+        const minSwipeDistance = 80; // Increased threshold
+        const minSwipeVelocity = 600; // Increased velocity threshold
+
+        if (
+          isHorizontalSwipe &&
+          Math.abs(translationX) > minSwipeDistance &&
+          Math.abs(velocityX) > minSwipeVelocity
+        ) {
+          if (translationX > 0 && currentIndex > 0) {
+            // Swipe right - go to previous tab
+            const prevTab = ["Home", "Matches", "Points", "Profile"][
+              currentIndex - 1
+            ];
+            navigation.navigate(prevTab);
+          } else if (translationX < 0 && currentIndex < totalTabs - 1) {
+            // Swipe left - go to next tab
+            const nextTab = ["Home", "Matches", "Points", "Profile"][
+              currentIndex + 1
+            ];
+            navigation.navigate(nextTab);
+          }
+        }
+      }
+    },
+    [navigation, currentIndex, totalTabs]
+  );
+
+  return (
+    <PanGestureHandler
+      onGestureEvent={onGestureEvent}
+      onHandlerStateChange={onHandlerStateChange}
+      // Only capture horizontal gestures, let vertical scroll through
+      activeOffsetX={[-20, 20]}
+      failOffsetY={[-10, 10]}
+    >
+      <Animated.View style={[styles.sceneContainer, animatedStyle]}>
+        {children}
+      </Animated.View>
+    </PanGestureHandler>
+  );
+};
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -89,38 +206,46 @@ const AnimatedTabBar = ({
     return indicatorPosition.interpolate({
       inputRange: routeIndices,
       outputRange: routeIndices.map(
-        (index) => 16 + index * tabWidth + tabWidth / 2 - 20 // Account for padding and center indicator
+        (index) => 16 + index * tabWidth + tabWidth / 2 - 15 // Adjusted for smaller indicator width
       ),
     });
   }, [indicatorPosition, routeIndices, tabWidth]);
 
   return (
-    <View
-      style={[styles.tabBar, { bottom: bottomOffset }]}
-      onLayout={(event) => setContainerWidth(event.nativeEvent.layout.width)}
-    >
-      {translateX !== null && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.floatingIndicator,
-            {
-              transform: [{ translateX }, { scaleX: indicatorScale }],
-            },
-          ]}
+    <View style={[styles.tabBarRoot, { paddingBottom: 15 }]}>
+      <View
+        style={styles.tabBar}
+        onLayout={(event) => setContainerWidth(event.nativeEvent.layout.width)}
+      >
+        <LinearGradient
+          colors={["rgba(40, 20, 75, 1)", "rgba(55, 25, 90, 1)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={[StyleSheet.absoluteFillObject, { borderRadius: 32 }]}
         />
-      )}
+        {translateX !== null && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.floatingIndicator,
+              {
+                transform: [{ translateX }, { scaleX: indicatorScale }],
+              },
+            ]}
+          />
+        )}
 
-      {state.routes.map((route, index) => (
-        <AnimatedTabBarItem
-          key={route.key}
-          route={route}
-          navigation={navigation}
-          descriptors={descriptors}
-          isFocused={state.index === index}
-          tabWidth={tabWidth}
-        />
-      ))}
+        {state.routes.map((route, index) => (
+          <AnimatedTabBarItem
+            key={route.key}
+            route={route}
+            navigation={navigation}
+            descriptors={descriptors}
+            isFocused={state.index === index}
+            tabWidth={tabWidth}
+          />
+        ))}
+      </View>
     </View>
   );
 };
@@ -265,7 +390,7 @@ const AnimatedTabBarItem = ({
 
 export const HomeTabs = () => {
   const insets = useSafeAreaInsets();
-  const bottomOffset = insets.bottom + 12;
+  const bottomOffset = 0;
 
   return (
     <Tab.Navigator
@@ -278,43 +403,101 @@ export const HomeTabs = () => {
         <AnimatedTabBar {...props} bottomOffset={bottomOffset} />
       )}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Matches" component={MatchesScreen} />
-      <Tab.Screen name="Points" component={PointsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Home">
+        {(props) => (
+          <SwipeableTabScreen
+            navigation={props.navigation}
+            currentIndex={0}
+            totalTabs={4}
+          >
+            <HomeScreen />
+          </SwipeableTabScreen>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="Matches">
+        {(props) => (
+          <SwipeableTabScreen
+            navigation={props.navigation}
+            currentIndex={1}
+            totalTabs={4}
+          >
+            <MatchesScreen />
+          </SwipeableTabScreen>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="Points">
+        {(props) => (
+          <SwipeableTabScreen
+            navigation={props.navigation}
+            currentIndex={2}
+            totalTabs={4}
+          >
+            <PointsScreen />
+          </SwipeableTabScreen>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="Profile">
+        {(props) => (
+          <SwipeableTabScreen
+            navigation={props.navigation}
+            currentIndex={3}
+            totalTabs={4}
+          >
+            <ProfileScreen />
+          </SwipeableTabScreen>
+        )}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 };
 
 const styles = StyleSheet.create({
+  tabBarRoot: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 20,
+    alignItems: "center",
+  },
+  tabBackdrop: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: "100%",
+  },
+  sceneContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    overflow: "hidden",
+  },
   tabBar: {
     flexDirection: "row",
     alignItems: "center",
-    position: "absolute",
-    left: 20,
-    right: 20,
+    width: "100%",
     borderRadius: 32,
     borderTopWidth: 0,
-    backgroundColor: "rgba(11, 5, 32, 0.85)",
+    backgroundColor: "transparent",
     height: 72,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    shadowColor: colors.accentPurple,
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 8,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 12,
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 10,
     borderWidth: 1,
-    borderColor: "rgba(156, 107, 255, 0.15)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
   floatingIndicator: {
     position: "absolute",
     bottom: 8,
     height: 3,
-    width: 40,
+    width: 30,
     borderRadius: 2,
     backgroundColor: colors.accentPurple,
     shadowColor: colors.accentPurple,

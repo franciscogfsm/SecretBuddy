@@ -38,7 +38,9 @@ export const RootNavigator = () => {
       initialRouteName={initialRoute}
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: "transparent" },
+        contentStyle: { backgroundColor: colors.background },
+        gestureEnabled: true,
+        fullScreenGestureEnabled: true,
       }}
     >
       {!profile && (
@@ -54,9 +56,18 @@ export const RootNavigator = () => {
         options={{
           presentation: "transparentModal",
           animation: "fade",
+          contentStyle: { backgroundColor: "transparent" },
         }}
       />
-      <Stack.Screen name="Chat" component={ChatScreen} />
+      <Stack.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={{
+          animation: "slide_from_right",
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
+        }}
+      />
     </Stack.Navigator>
   );
 };
