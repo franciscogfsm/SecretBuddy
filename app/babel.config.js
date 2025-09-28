@@ -7,6 +7,8 @@ module.exports = function (api) {
     ],
     plugins: [
       "@babel/plugin-proposal-nullish-coalescing-operator",
+      "@babel/plugin-proposal-optional-chaining",
+      "@babel/plugin-transform-optional-chaining",
       "@babel/plugin-transform-template-literals",
       "react-native-reanimated/plugin", // must stay last
     ],
