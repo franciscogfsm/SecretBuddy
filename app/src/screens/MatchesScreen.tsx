@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import {
+  Animated,
+  Easing,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -72,15 +74,23 @@ export const MatchesScreen = () => {
   const tabBarHeight = useBottomTabBarHeight();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
-  // Track keyboard visibility to adjust spacing dynamically
+  // Track keyboard visibility and height to adjust spacing dynamically
   useEffect(() => {
     const showSub = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      () => setKeyboardVisible(true)
+      () => {
+        setKeyboardVisible(true);
+        // Auto-scroll to show latest message when keyboard opens
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
     );
     const hideSub = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => setKeyboardVisible(false)
+      () => {
+        setKeyboardVisible(false);
+      }
     );
     return () => {
       showSub.remove();
@@ -88,19 +98,63 @@ export const MatchesScreen = () => {
     };
   }, []);
 
-  const chatOffsets = useMemo(() => {
-    const tabBarVisibleHeight = Math.max(tabBarHeight - insets.bottom, 0);
-    // When keyboard is open, remove extra clearance so input sits closer to the keyboard
-    const chatInputClearance = keyboardVisible
-      ? -100
-      : tabBarVisibleHeight + 40;
-    const listBottomPadding = chatInputClearance + 120;
+  const tabBarVisibleHeight = useMemo(
+    () => Math.max(tabBarHeight - insets.bottom, 0),
+    [tabBarHeight, insets.bottom]
+  );
 
-    return {
-      chatInputClearance,
-      listBottomPadding,
-    };
-  }, [insets.bottom, tabBarHeight, keyboardVisible]);
+  const closedMarginBottom = useMemo(
+    () => -(tabBarVisibleHeight - 130),
+    [tabBarVisibleHeight]
+  );
+  const openMarginBottom = 8;
+
+  const closedPaddingBottom = useMemo(
+    () => Math.max(insets.bottom, 8),
+    [insets.bottom]
+  );
+  const openPaddingBottom = 8;
+
+  const listBottomPadding = useMemo(
+    () => (keyboardVisible ? 180 : tabBarVisibleHeight + 100),
+    [keyboardVisible, tabBarVisibleHeight]
+  );
+
+  const chatInputMarginAnim = useRef(
+    new Animated.Value(keyboardVisible ? openMarginBottom : closedMarginBottom)
+  ).current;
+  const chatInputPaddingAnim = useRef(
+    new Animated.Value(
+      keyboardVisible ? openPaddingBottom : closedPaddingBottom
+    )
+  ).current;
+
+  useEffect(() => {
+    const toMargin = keyboardVisible ? openMarginBottom : closedMarginBottom;
+    const toPadding = keyboardVisible ? openPaddingBottom : closedPaddingBottom;
+
+    Animated.timing(chatInputMarginAnim, {
+      toValue: toMargin,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+
+    Animated.timing(chatInputPaddingAnim, {
+      toValue: toPadding,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [
+    keyboardVisible,
+    openMarginBottom,
+    closedMarginBottom,
+    openPaddingBottom,
+    closedPaddingBottom,
+    chatInputMarginAnim,
+    chatInputPaddingAnim,
+  ]);
 
   useEffect(() => {
     if (!isEphemeralMode) {
@@ -197,11 +251,8 @@ export const MatchesScreen = () => {
       <GradientBackground gradient="midnight" noPadding>
         <KeyboardAvoidingView
           style={styles.container}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          // Avoid double-padding when the keyboard is visible on iOS by dropping the offset
-          keyboardVerticalOffset={
-            Platform.OS === "ios" ? (keyboardVisible ? 0 : tabBarHeight) : 0
-          }
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
         >
           <View
             style={[
@@ -257,24 +308,32 @@ export const MatchesScreen = () => {
           )}
 
           <View style={styles.chatArea}>
-            <FlatList<MessageType>
-              ref={flatListRef}
-              data={messages}
-              keyExtractor={(item) => item.id}
-              renderItem={renderMessage}
-              contentContainerStyle={[
-                styles.messagesContainer,
-                { paddingBottom: chatOffsets.listBottomPadding },
+            <View style={styles.messagesWrapper}>
+              <FlatList<MessageType>
+                ref={flatListRef}
+                data={messages}
+                keyExtractor={(item) => item.id}
+                renderItem={renderMessage}
+                contentContainerStyle={[
+                  styles.messagesContainer,
+                  { paddingBottom: listBottomPadding },
+                ]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                ListFooterComponent={<View style={{ height: 12 }} />}
+              />
+            </View>
+            <Animated.View
+              style={[
+                styles.chatInputContainer,
+                {
+                  marginBottom: chatInputMarginAnim,
+                  paddingBottom: chatInputPaddingAnim,
+                },
               ]}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              ListFooterComponent={<View style={{ height: 12 }} />}
-            />
-            <ChatInput
-              onSendMessage={handleSendMessage}
-              bottomInset={Math.max(insets.bottom - 6, 0)}
-              style={{ marginBottom: chatOffsets.chatInputClearance }}
-            />
+            >
+              <ChatInput onSendMessage={handleSendMessage} bottomInset={0} />
+            </Animated.View>
           </View>
         </KeyboardAvoidingView>
       </GradientBackground>
@@ -364,11 +423,18 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 4,
   },
+  messagesWrapper: {
+    flex: 1,
+  },
   messagesContainer: {
     paddingHorizontal: 24,
     paddingTop: 20,
     paddingBottom: 120,
     gap: 6,
+  },
+  chatInputContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
   ephemeralIndicator: {
     marginRight: 20,
