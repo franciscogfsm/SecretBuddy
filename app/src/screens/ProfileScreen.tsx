@@ -4,6 +4,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { TopHeader } from "../components/TopHeader";
 import { useAuth } from "../context/AuthContext";
 import { useAppState } from "../store/AppStateContext";
 import { colors, typography } from "../theme";
@@ -101,7 +102,9 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     gap: 20,
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingTop: 48,
+    paddingBottom: 24,
   },
   hero: {
     borderRadius: 24,

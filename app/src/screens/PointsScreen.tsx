@@ -2,6 +2,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { GradientBackground } from "../components/GradientBackground";
+import { TopHeader } from "../components/TopHeader";
 import { colors, gradients, typography } from "../theme";
 
 const leaderboards = {
@@ -130,7 +131,7 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingTop: 80,
     paddingBottom: 160,
     gap: 24,
   },

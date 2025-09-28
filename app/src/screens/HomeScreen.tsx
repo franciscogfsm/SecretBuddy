@@ -8,13 +8,17 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { CountryDropdown } from "../components/CountryDropdown";
 import { GradientBackground } from "../components/GradientBackground";
 import { MysteryCard } from "../components/MysteryCard";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { TopHeader } from "../components/TopHeader";
 import { useAppState } from "../store/AppStateContext";
 import { colors, typography } from "../theme";
+import type { RootStackParamList } from "../navigation/types";
 
 type PairingStatus =
   | "waiting"
@@ -26,6 +30,8 @@ type PairingStatus =
 
 export const HomeScreen = () => {
   const { prompt, buddy, profile, setProfile } = useAppState();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [pairingStatus, setPairingStatus] = useState<PairingStatus>("waiting");
   const [timeUntilWindow, setTimeUntilWindow] = useState<string>("");
   const [pulseAnim] = useState(new Animated.Value(1));
@@ -302,6 +308,14 @@ export const HomeScreen = () => {
               placeholder="Choose your pairing country"
             />
           )}
+          {profile?.mode === "friends" && (
+            <TouchableOpacity
+              style={styles.manageFriendsButton}
+              onPress={() => navigation.navigate("Friends")}
+            >
+              <Text style={styles.manageFriendsText}>Manage Friends</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Stats */}
@@ -341,7 +355,7 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 32,
+    paddingTop: 80,
     paddingBottom: 140,
     gap: 28,
   },
@@ -478,5 +492,17 @@ const styles = StyleSheet.create({
   },
   modeOptionDescSelected: {
     color: colors.textPrimary,
+  },
+  manageFriendsButton: {
+    borderRadius: 16,
+    backgroundColor: "rgba(156, 107, 255, 0.15)",
+    borderWidth: 1,
+    borderColor: colors.accentPurple,
+    padding: 16,
+    alignItems: "center",
+  },
+  manageFriendsText: {
+    ...typography.subtitle,
+    color: colors.accentPurple,
   },
 });

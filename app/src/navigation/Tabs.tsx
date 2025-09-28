@@ -15,6 +15,8 @@ import { HomeScreen } from "../screens/HomeScreen";
 import { MatchesScreen } from "../screens/MatchesScreen";
 import { PointsScreen } from "../screens/PointsScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
+import { FriendsScreen } from "../screens/FriendsScreen";
+import { TopHeader } from "../components/TopHeader";
 import { colors } from "../theme";
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -101,13 +103,13 @@ const SwipeableTabScreen = ({
         ) {
           if (translationX > 0 && currentIndex > 0) {
             // Swipe right - go to previous tab
-            const prevTab = ["Home", "Matches", "Points", "Profile"][
+            const prevTab = ["Home", "Friends", "Matches", "Points", "Profile"][
               currentIndex - 1
             ];
             navigation.navigate(prevTab);
           } else if (translationX < 0 && currentIndex < totalTabs - 1) {
             // Swipe left - go to next tab
-            const nextTab = ["Home", "Matches", "Points", "Profile"][
+            const nextTab = ["Home", "Friends", "Matches", "Points", "Profile"][
               currentIndex + 1
             ];
             navigation.navigate(nextTab);
@@ -142,6 +144,8 @@ const getTabIconName = (
   switch (routeName) {
     case "Home":
       return focused ? "flame" : "flame-outline";
+    case "Friends":
+      return focused ? "people" : "people-outline";
     case "Matches":
       return focused ? "chatbubbles" : "chatbubbles-outline";
     case "Points":
@@ -393,61 +397,75 @@ export const HomeTabs = () => {
   const bottomOffset = 0;
 
   return (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarShowLabel: false,
-        tabBarHideOnKeyboard: true,
-      }}
-      tabBar={(props) => (
-        <AnimatedTabBar {...props} bottomOffset={bottomOffset} />
-      )}
-    >
-      <Tab.Screen name="Home">
-        {(props) => (
-          <SwipeableTabScreen
-            navigation={props.navigation}
-            currentIndex={0}
-            totalTabs={4}
-          >
-            <HomeScreen />
-          </SwipeableTabScreen>
+    <View style={{ flex: 1 }}>
+      <TopHeader />
+      <Tab.Navigator
+        screenOptions={{
+          headerShown: false,
+          tabBarShowLabel: false,
+          tabBarHideOnKeyboard: true,
+        }}
+        tabBar={(props) => (
+          <AnimatedTabBar {...props} bottomOffset={bottomOffset} />
         )}
-      </Tab.Screen>
-      <Tab.Screen name="Matches">
-        {(props) => (
-          <SwipeableTabScreen
-            navigation={props.navigation}
-            currentIndex={1}
-            totalTabs={4}
-          >
-            <MatchesScreen />
-          </SwipeableTabScreen>
-        )}
-      </Tab.Screen>
-      <Tab.Screen name="Points">
-        {(props) => (
-          <SwipeableTabScreen
-            navigation={props.navigation}
-            currentIndex={2}
-            totalTabs={4}
-          >
-            <PointsScreen />
-          </SwipeableTabScreen>
-        )}
-      </Tab.Screen>
-      <Tab.Screen name="Profile">
-        {(props) => (
-          <SwipeableTabScreen
-            navigation={props.navigation}
-            currentIndex={3}
-            totalTabs={4}
-          >
-            <ProfileScreen />
-          </SwipeableTabScreen>
-        )}
-      </Tab.Screen>
-    </Tab.Navigator>
+      >
+        <Tab.Screen name="Home">
+          {(props) => (
+            <SwipeableTabScreen
+              navigation={props.navigation}
+              currentIndex={0}
+              totalTabs={5}
+            >
+              <HomeScreen />
+            </SwipeableTabScreen>
+          )}
+        </Tab.Screen>
+        <Tab.Screen name="Friends">
+          {(props) => (
+            <SwipeableTabScreen
+              navigation={props.navigation}
+              currentIndex={1}
+              totalTabs={5}
+            >
+              <FriendsScreen />
+            </SwipeableTabScreen>
+          )}
+        </Tab.Screen>
+        <Tab.Screen name="Matches">
+          {(props) => (
+            <SwipeableTabScreen
+              navigation={props.navigation}
+              currentIndex={2}
+              totalTabs={5}
+            >
+              <MatchesScreen />
+            </SwipeableTabScreen>
+          )}
+        </Tab.Screen>
+        <Tab.Screen name="Points">
+          {(props) => (
+            <SwipeableTabScreen
+              navigation={props.navigation}
+              currentIndex={3}
+              totalTabs={5}
+            >
+              <PointsScreen />
+            </SwipeableTabScreen>
+          )}
+        </Tab.Screen>
+        <Tab.Screen name="Profile">
+          {(props) => (
+            <SwipeableTabScreen
+              navigation={props.navigation}
+              currentIndex={4}
+              totalTabs={5}
+            >
+              <ProfileScreen />
+            </SwipeableTabScreen>
+          )}
+        </Tab.Screen>
+      </Tab.Navigator>
+    </View>
   );
 };
 

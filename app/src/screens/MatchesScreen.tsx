@@ -3,6 +3,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useNavigation } from "@react-navigation/native";
 import { GradientBackground } from "../components/GradientBackground";
+import { TopHeader } from "../components/TopHeader";
 import { colors, typography } from "../theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -161,6 +162,7 @@ export const MatchesScreen = () => {
   return (
     <View style={styles.fullScreenContainer}>
       <GradientBackground gradient="midnight">
+        <TopHeader />
         <View
           style={[
             styles.container,

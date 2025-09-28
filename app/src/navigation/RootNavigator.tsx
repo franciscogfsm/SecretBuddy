@@ -7,6 +7,7 @@ import { RevealScreen } from "../screens/RevealScreen";
 import { OnboardingScreen } from "../screens/OnboardingScreen";
 import { AuthOptionsScreen } from "../screens/AuthOptionsScreen";
 import { ChatScreen } from "../screens/ChatScreen";
+import { FriendsScreen } from "../screens/FriendsScreen";
 import { useAppState } from "../store/AppStateContext";
 import { colors } from "../theme";
 
@@ -62,6 +63,15 @@ export const RootNavigator = () => {
       <Stack.Screen
         name="Chat"
         component={ChatScreen}
+        options={{
+          animation: "slide_from_right",
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
+        }}
+      />
+      <Stack.Screen
+        name="Friends"
+        component={FriendsScreen}
         options={{
           animation: "slide_from_right",
           gestureEnabled: true,
