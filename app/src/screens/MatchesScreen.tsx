@@ -1,341 +1,187 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import {
-  Animated,
-  Easing,
-  FlatList,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { useState, useEffect, useRef } from "react";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { ChatInput } from "../components/ChatInput";
-import { ChatMessage, MessageType } from "../components/ChatMessage";
+import { useNavigation } from "@react-navigation/native";
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, typography } from "../theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const TIMED_CHAT_DURATION_MS = 2 * 60 * 1000; // 2 minutes
+type ChatItem = {
+  id: string;
+  name: string;
+  lastMessage: string;
+  timestamp: Date;
+  expired: boolean;
+  avatarInitial: string;
+};
 
-const historyMessagesSeed: MessageType[] = [
+const dummyChats: ChatItem[] = [
   {
-    id: "m-1",
-    text: "Hey! I loved your response to today's prompt 😊",
-    timestamp: new Date(Date.now() - 1000 * 60 * 30),
-    isFromUser: false,
-    status: "read",
-  },
-  {
-    id: "m-2",
-    text: "Thanks! That sunset video was amazing 🌅",
-    timestamp: new Date(Date.now() - 1000 * 60 * 25),
-    isFromUser: true,
-    status: "read",
-  },
-  {
-    id: "m-3",
-    text: "Haha, it was such a beautiful evening! Where did you capture that?",
-    timestamp: new Date(Date.now() - 1000 * 60 * 20),
-    isFromUser: false,
-    status: "read",
-  },
-  {
-    id: "m-4",
-    text: "From my balcony! The view is incredible at that time",
-    timestamp: new Date(Date.now() - 1000 * 60 * 15),
-    isFromUser: true,
-    status: "read",
-  },
-  {
-    id: "m-5",
-    text: "Sounds perfect! We should plan a sunset walk sometime ✨",
+    id: "1",
+    name: "Neon Fox",
+    lastMessage: "Sounds perfect! We should plan a sunset walk sometime ✨",
     timestamp: new Date(Date.now() - 1000 * 60 * 10),
-    isFromUser: false,
-    status: "delivered",
+    expired: false,
+    avatarInitial: "N",
+  },
+  {
+    id: "2",
+    name: "Blue Whale",
+    lastMessage: "That sounds like a great idea! �",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
+    expired: true,
+    avatarInitial: "B",
+  },
+  {
+    id: "3",
+    name: "Green Gecko",
+    lastMessage: "Haha, it was such a beautiful evening!",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24),
+    expired: true,
+    avatarInitial: "G",
+  },
+  {
+    id: "4",
+    name: "Red Panda",
+    lastMessage: "Thanks! That sunset video was amazing 🌅",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
+    expired: true,
+    avatarInitial: "R",
+  },
+  {
+    id: "5",
+    name: "Yellow Yak",
+    lastMessage: "Hey! I loved your response to today's prompt 😊",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3),
+    expired: true,
+    avatarInitial: "Y",
+  },
+  {
+    id: "6",
+    name: "Purple Parrot",
+    lastMessage: "From my balcony! The view is incredible at that time",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 4),
+    expired: true,
+    avatarInitial: "P",
+  },
+  {
+    id: "7",
+    name: "Orange Owl",
+    lastMessage:
+      "Haha, it was such a beautiful evening! Where did you capture that?",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5),
+    expired: true,
+    avatarInitial: "O",
+  },
+  {
+    id: "8",
+    name: "Pink Flamingo",
+    lastMessage: "Thanks! That sunset video was amazing 🌅",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 6),
+    expired: true,
+    avatarInitial: "F",
+  },
+  {
+    id: "9",
+    name: "Silver Swan",
+    lastMessage: "Sounds perfect! We should plan a sunset walk sometime ✨",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7),
+    expired: true,
+    avatarInitial: "S",
+  },
+  {
+    id: "10",
+    name: "Gold Goose",
+    lastMessage: "That sounds like a great idea! 🌟",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 8),
+    expired: true,
+    avatarInitial: "G",
   },
 ];
 
-const timedChatSeed: MessageType[] = historyMessagesSeed.slice(0, 3);
-
 export const MatchesScreen = () => {
-  const [messages, setMessages] = useState<MessageType[]>(timedChatSeed);
-  const historyMessagesRef = useRef<MessageType[]>(historyMessagesSeed);
-  const [isEphemeralMode, setIsEphemeralMode] = useState(true);
-  const [remainingMs, setRemainingMs] = useState<number>(
-    TIMED_CHAT_DURATION_MS
-  );
-  const [hasExpired, setHasExpired] = useState(false);
-  const flatListRef = useRef<FlatList<MessageType>>(null);
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = useBottomTabBarHeight();
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [chats, setChats] = useState<ChatItem[]>(dummyChats);
 
-  // Track keyboard visibility and height to adjust spacing dynamically
-  useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      () => {
-        setKeyboardVisible(true);
-        // Auto-scroll to show latest message when keyboard opens
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
-      }
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => {
-        setKeyboardVisible(false);
-      }
-    );
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
+  // Filter out the last 7 expired chats
+  const visibleChats = chats
+    .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+    .filter((chat, index) => !(chat.expired && index < 7));
 
-  const tabBarVisibleHeight = useMemo(
-    () => Math.max(tabBarHeight - insets.bottom, 0),
-    [tabBarHeight, insets.bottom]
-  );
-
-  const closedMarginBottom = useMemo(
-    () => -(tabBarVisibleHeight - 130),
-    [tabBarVisibleHeight]
-  );
-  const openMarginBottom = 8;
-
-  const closedPaddingBottom = useMemo(
-    () => Math.max(insets.bottom, 8),
-    [insets.bottom]
-  );
-  const openPaddingBottom = 8;
-
-  const listBottomPadding = useMemo(
-    () => (keyboardVisible ? 180 : tabBarVisibleHeight + 100),
-    [keyboardVisible, tabBarVisibleHeight]
-  );
-
-  const chatInputMarginAnim = useRef(
-    new Animated.Value(keyboardVisible ? openMarginBottom : closedMarginBottom)
-  ).current;
-  const chatInputPaddingAnim = useRef(
-    new Animated.Value(
-      keyboardVisible ? openPaddingBottom : closedPaddingBottom
-    )
-  ).current;
-
-  useEffect(() => {
-    const toMargin = keyboardVisible ? openMarginBottom : closedMarginBottom;
-    const toPadding = keyboardVisible ? openPaddingBottom : closedPaddingBottom;
-
-    Animated.timing(chatInputMarginAnim, {
-      toValue: toMargin,
-      duration: 260,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-
-    Animated.timing(chatInputPaddingAnim, {
-      toValue: toPadding,
-      duration: 260,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [
-    keyboardVisible,
-    openMarginBottom,
-    closedMarginBottom,
-    openPaddingBottom,
-    closedPaddingBottom,
-    chatInputMarginAnim,
-    chatInputPaddingAnim,
-  ]);
-
-  useEffect(() => {
-    if (!isEphemeralMode) {
-      return;
-    }
-
-    setRemainingMs(TIMED_CHAT_DURATION_MS);
-
-    const interval = setInterval(() => {
-      setRemainingMs((prev) => Math.max(prev - 1000, 0));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [isEphemeralMode]);
-
-  useEffect(() => {
-    if (!isEphemeralMode && hasExpired) {
-      return;
-    }
-
-    if (isEphemeralMode && remainingMs === 0) {
-      setIsEphemeralMode(false);
-      setHasExpired(true);
-      setMessages(historyMessagesRef.current);
-    }
-  }, [isEphemeralMode, remainingMs, hasExpired]);
-
-  useEffect(() => {
-    const animation = setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    return () => clearTimeout(animation);
-  }, [messages]);
-
-  const formatCountdown = (ms: number) => {
-    const totalSeconds = Math.ceil(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  const handleChatPress = (chat: ChatItem) => {
+    // Only the first non-expired chat is timed
+    const isTimed =
+      !chat.expired && visibleChats.findIndex((c) => c.id === chat.id) === 0;
+    (navigation as any).navigate("Chat", { isTimed });
   };
 
-  const statusLabel = isEphemeralMode
-    ? `Timed chat • ${formatCountdown(remainingMs)}`
-    : "Active • 7 day streak";
+  const renderChatItem = ({ item }: { item: ChatItem }) => {
+    const isRevealed =
+      !item.expired && visibleChats.findIndex((c) => c.id === item.id) === 0;
 
-  const handleSendMessage = (text: string) => {
-    const newMessage: MessageType = {
-      id: Date.now().toString(),
-      text,
-      timestamp: new Date(),
-      isFromUser: true,
-      status: "sending",
-    };
-
-    setMessages((prev) => [...prev, newMessage]);
-    historyMessagesRef.current = [...historyMessagesRef.current, newMessage];
-
-    // Simulate message being sent
-    setTimeout(() => {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === newMessage.id ? { ...msg, status: "sent" as const } : msg
-        )
-      );
-      historyMessagesRef.current = historyMessagesRef.current.map((msg) =>
-        msg.id === newMessage.id ? { ...msg, status: "sent" as const } : msg
-      );
-
-      // Simulate reply after a delay
-      setTimeout(() => {
-        const replyMessage: MessageType = {
-          id: (Date.now() + 1).toString(),
-          text: "That sounds like a great idea! 🌟",
-          timestamp: new Date(),
-          isFromUser: false,
-          status: "delivered",
-        };
-        setMessages((prev) => [...prev, replyMessage]);
-        historyMessagesRef.current = [
-          ...historyMessagesRef.current,
-          replyMessage,
-        ];
-      }, 2000);
-    }, 1000);
-  };
-
-  const renderMessage = ({ item }: { item: MessageType }) => (
-    <ChatMessage message={item} />
-  );
-
-  return (
-    <View style={styles.fullScreenContainer}>
-      <GradientBackground gradient="midnight" noPadding>
-        <KeyboardAvoidingView
-          style={styles.container}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-        >
-          <View
-            style={[
-              styles.header,
-              {
-                paddingTop: insets.top + 16,
-              },
-            ]}
-          >
-            <Pressable style={styles.backButton} hitSlop={12}>
-              <Text style={styles.backText}>‹ Matches</Text>
-            </Pressable>
-            <View style={styles.buddyInfo}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>N</Text>
-              </View>
-              <View>
-                <Text style={styles.buddyName}>Neon Fox</Text>
-                <View
-                  style={[
-                    styles.statusPill,
-                    isEphemeralMode
-                      ? styles.statusPillEphemeral
-                      : styles.statusPillActive,
-                  ]}
-                >
-                  <Text style={styles.buddyStatus}>{statusLabel}</Text>
-                </View>
-              </View>
-            </View>
-
-            {isEphemeralMode && (
-              <View style={styles.ephemeralIndicator}>
-                <Text style={styles.ephemeralText}>⚡</Text>
+    return (
+      <Pressable
+        style={[styles.chatItem, isRevealed && styles.chatItemRevealed]}
+        onPress={() => handleChatPress(item)}
+      >
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{item.avatarInitial}</Text>
+          {isRevealed && <View style={styles.onlineIndicator} />}
+        </View>
+        <View style={styles.chatInfo}>
+          <View style={styles.nameRow}>
+            <Text
+              style={[styles.chatName, isRevealed && styles.chatNameRevealed]}
+            >
+              {item.name}
+            </Text>
+            {isRevealed && (
+              <View style={styles.urgentBadge}>
+                <Text style={styles.urgentText}>NEW</Text>
               </View>
             )}
           </View>
+          <Text style={styles.lastMessage} numberOfLines={1}>
+            {isRevealed
+              ? "Identity revealed! Tap to chat ✨"
+              : item.lastMessage}
+          </Text>
+        </View>
+        <View style={styles.rightSection}>
+          <Text style={styles.timestamp}>
+            {item.timestamp.toLocaleDateString()}
+          </Text>
+          {isRevealed && <View style={styles.notificationDot} />}
+        </View>
+      </Pressable>
+    );
+  };
 
-          {isEphemeralMode && (
-            <View style={styles.ephemeralWarning}>
-              <Text style={styles.ephemeralWarningText}>
-                💫 Messages disappear after reveal window ends
-              </Text>
-            </View>
-          )}
-
-          {!isEphemeralMode && hasExpired && (
-            <View style={styles.persistedNotice}>
-              <Text style={styles.persistedNoticeText}>
-                🔒 Timed chat ended • Conversation saved to Matches
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.chatArea}>
-            <View style={styles.messagesWrapper}>
-              <FlatList<MessageType>
-                ref={flatListRef}
-                data={messages}
-                keyExtractor={(item) => item.id}
-                renderItem={renderMessage}
-                contentContainerStyle={[
-                  styles.messagesContainer,
-                  { paddingBottom: listBottomPadding },
-                ]}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                ListFooterComponent={<View style={{ height: 12 }} />}
-              />
-            </View>
-            <Animated.View
-              style={[
-                styles.chatInputContainer,
-                {
-                  marginBottom: chatInputMarginAnim,
-                  paddingBottom: chatInputPaddingAnim,
-                },
-              ]}
-            >
-              <ChatInput onSendMessage={handleSendMessage} bottomInset={0} />
-            </Animated.View>
+  return (
+    <View style={styles.fullScreenContainer}>
+      <GradientBackground gradient="midnight">
+        <View
+          style={[
+            styles.container,
+            {
+              paddingTop: insets.top + 20,
+              paddingHorizontal: Math.max(16, insets.left + 4),
+            },
+          ]}
+        >
+          <View style={styles.header}>
+            <Text style={styles.title}>Matches</Text>
+            <Text style={styles.subtitle}>Your secret connections</Text>
           </View>
-        </KeyboardAvoidingView>
+          <FlatList
+            data={visibleChats}
+            keyExtractor={(item) => item.id}
+            renderItem={renderChatItem}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
       </GradientBackground>
     </View>
   );
@@ -345,140 +191,144 @@ const styles = StyleSheet.create({
   fullScreenContainer: {
     flex: 1,
   },
-  background: {
-    flex: 1,
-  },
   container: {
     flex: 1,
   },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    backgroundColor: colors.overlay,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    marginBottom: 32,
   },
-  backButton: {
-    marginRight: 16,
+  title: {
+    ...typography.display,
+    color: colors.textPrimary,
+    marginBottom: 8,
   },
-  backText: {
+  subtitle: {
     ...typography.body,
-    color: colors.accentPurple,
+    color: colors.textSecondary,
     fontSize: 16,
   },
-  buddyInfo: {
+  listContainer: {
+    paddingBottom: 100,
+  },
+  chatItem: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accentPurple,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    backgroundColor: "rgba(6, 0, 18, 0.72)",
+    borderRadius: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
     shadowColor: colors.accentPurple,
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
+  },
+  chatItemRevealed: {
+    borderColor: colors.accentPurple,
+    borderWidth: 2,
+    backgroundColor: "rgba(156, 107, 255, 0.08)",
+    shadowColor: colors.accentPurple,
+    shadowOpacity: 0.2,
+  },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.accentPurple,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 20,
+    shadowColor: colors.accentPurple,
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
   },
   avatarText: {
     ...typography.subtitle,
     color: colors.textPrimary,
-    fontSize: 18,
-  },
-  buddyName: {
-    ...typography.title,
-    color: colors.textPrimary,
     fontSize: 20,
   },
-  buddyStatus: {
-    ...typography.caption,
+  onlineIndicator: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.accentTeal,
+    borderWidth: 2,
+    borderColor: "rgba(6, 0, 18, 0.9)",
+  },
+  chatInfo: {
+    flex: 1,
+  },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  chatName: {
+    ...typography.title,
     color: colors.textPrimary,
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 18,
   },
-  statusPill: {
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    marginTop: 6,
+  chatNameRevealed: {
+    color: colors.accentPurple,
+    fontWeight: "700",
   },
-  statusPillEphemeral: {
-    backgroundColor: "rgba(255, 111, 138, 0.2)",
-  },
-  statusPillActive: {
-    backgroundColor: "rgba(46, 230, 169, 0.18)",
-  },
-  chatArea: {
-    flex: 1,
-    paddingHorizontal: 4,
-  },
-  messagesWrapper: {
-    flex: 1,
-  },
-  messagesContainer: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 120,
-    gap: 6,
-  },
-  chatInputContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  ephemeralIndicator: {
-    marginRight: 20,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "rgba(46, 230, 169, 0.24)",
+  urgentBadge: {
+    marginLeft: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: colors.danger,
     alignItems: "center",
     justifyContent: "center",
   },
-  ephemeralText: {
-    fontSize: 12,
+  urgentText: {
+    fontSize: 10,
     color: colors.textPrimary,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
-  ephemeralWarning: {
-    backgroundColor: "rgba(6, 0, 18, 0.78)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 111, 138, 0.38)",
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    marginHorizontal: 24,
-    marginBottom: 16,
-  },
-  ephemeralWarningText: {
-    ...typography.caption,
-    color: colors.danger,
-    textAlign: "center",
+  lastMessage: {
+    ...typography.body,
+    color: colors.textSecondary,
     fontSize: 14,
   },
-  persistedNotice: {
-    backgroundColor: "rgba(6, 0, 18, 0.78)",
-    borderWidth: 1,
-    borderColor: "rgba(46, 230, 169, 0.38)",
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    marginHorizontal: 24,
-    marginBottom: 16,
+  rightSection: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    minWidth: 60,
   },
-  persistedNoticeText: {
+  timestamp: {
     ...typography.caption,
-    color: colors.accentTeal,
-    textAlign: "center",
-    fontSize: 14,
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  notificationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.danger,
+    shadowColor: colors.danger,
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });

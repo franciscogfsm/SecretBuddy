@@ -17,6 +17,7 @@ type ChatInputProps = {
   placeholder?: string;
   bottomInset?: number;
   style?: StyleProp<ViewStyle>;
+  disabled?: boolean;
 };
 
 export const ChatInput = ({
@@ -24,11 +25,12 @@ export const ChatInput = ({
   placeholder = "Type a message...",
   bottomInset = 0,
   style,
+  disabled = false,
 }: ChatInputProps) => {
   const [message, setMessage] = useState("");
 
   const handleSend = () => {
-    if (message.trim()) {
+    if (message.trim() && !disabled) {
       onSendMessage(message.trim());
       setMessage("");
       Keyboard.dismiss();
@@ -55,6 +57,7 @@ export const ChatInput = ({
           style={styles.emojiButton}
           onPress={handleEmojiPress}
           hitSlop={8}
+          disabled={disabled}
         >
           <Ionicons
             name="happy-outline"
@@ -74,17 +77,18 @@ export const ChatInput = ({
           returnKeyType="send"
           onSubmitEditing={handleSend}
           blurOnSubmit={false}
+          editable={!disabled}
         />
 
         <Pressable
           style={[
             styles.sendButton,
-            message.trim()
+            message.trim() && !disabled
               ? styles.sendButtonActive
               : styles.sendButtonDisabled,
           ]}
           onPress={handleSend}
-          disabled={!message.trim()}
+          disabled={!message.trim() || disabled}
           hitSlop={8}
         >
           <Ionicons

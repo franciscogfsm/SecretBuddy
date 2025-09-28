@@ -6,6 +6,7 @@ import { RootStackParamList } from "./types";
 import { RevealScreen } from "../screens/RevealScreen";
 import { OnboardingScreen } from "../screens/OnboardingScreen";
 import { AuthOptionsScreen } from "../screens/AuthOptionsScreen";
+import { ChatScreen } from "../screens/ChatScreen";
 import { useAppState } from "../store/AppStateContext";
 import { colors } from "../theme";
 
@@ -55,6 +56,7 @@ export const RootNavigator = () => {
           animation: "fade",
         }}
       />
+      <Stack.Screen name="Chat" component={ChatScreen} />
     </Stack.Navigator>
   );
 };

@@ -3,6 +3,7 @@ export type RootStackParamList = {
   Onboarding: { mode?: "signup" | "signin" };
   MainTabs: undefined;
   Reveal: undefined;
+  Chat: { isTimed: boolean };
 };
 
 export type MainTabParamList = {
