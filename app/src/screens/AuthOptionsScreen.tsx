@@ -1,8 +1,12 @@
-import { FontAwesome } from "@expo/vector-icons";
+import { FontAwesome, MaterialIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import { useEffect, useState } from "react";
 import {
   Alert,
   Animated,
+  Dimensions,
+  Image,
   Platform,
   StyleSheet,
   Text,
@@ -21,80 +25,37 @@ import type { RootStackParamList } from "../navigation/types";
 import { colors, typography } from "../theme";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 
+const { width, height } = Dimensions.get("window");
+
 type Props = NativeStackScreenProps<RootStackParamList, "AuthOptions">;
 
 export const AuthOptionsScreen = ({ navigation }: Props) => {
   const fadeAnim = useState(new Animated.Value(0))[0];
-  const bubbleAnim1 = useState(new Animated.Value(0))[0];
-  const bubbleAnim2 = useState(new Animated.Value(0))[0];
-  const bubbleAnim3 = useState(new Animated.Value(0))[0];
-  const bubbleAnim4 = useState(new Animated.Value(0))[0];
-  const bubbleAnim5 = useState(new Animated.Value(0))[0];
-  const pulseAnim = useState(new Animated.Value(1))[0];
-  const shimmerAnim = useState(new Animated.Value(0))[0];
+  const slideAnim = useState(new Animated.Value(50))[0];
+  const scaleAnim = useState(new Animated.Value(0.95))[0];
   const insets = useSafeAreaInsets();
 
-  const { googleSignIn, user, loading } = useAuth();
+  const { googleSignIn } = useAuth();
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 1000,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
-
-  useEffect(() => {
-    const animateBubble = (anim: Animated.Value, delay: number) => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 3000 + delay,
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim, {
-            toValue: 0,
-            duration: 3000 + delay,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    };
-
-    animateBubble(bubbleAnim1, 0);
-    animateBubble(bubbleAnim2, 1000);
-    animateBubble(bubbleAnim3, 2000);
-    animateBubble(bubbleAnim4, 1500);
-    animateBubble(bubbleAnim5, 2500);
-  }, [bubbleAnim1, bubbleAnim2, bubbleAnim3, bubbleAnim4, bubbleAnim5]);
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, [pulseAnim]);
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.timing(shimmerAnim, {
+    Animated.stagger(150, [
+      Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 4000,
+        duration: 800,
         useNativeDriver: true,
-      })
-    ).start();
-  }, [shimmerAnim]);
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 700,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   const handleGoogleSignIn = async () => {
     try {
@@ -108,579 +69,385 @@ export const AuthOptionsScreen = ({ navigation }: Props) => {
     }
   };
 
-  const handleAppleSignIn = () => {
-    // Placeholder: Navigate to onboarding
-    navigation.navigate({ name: "Onboarding", params: {} });
-  };
-
-  const handleEmailSignIn = () => {
-    // Navigate to onboarding
-    navigation.navigate({ name: "Onboarding", params: {} });
-  };
-
   return (
-    <GradientBackground gradient="midnight">
+    <View style={styles.container}>
+      {/* Background with geometric elements */}
+      <LinearGradient
+        colors={["#070319", "#1C0E3C", "#2A1458"]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      {/* Geometric accent elements */}
+      <View style={styles.geometricContainer}>
+        <LinearGradient
+          colors={["#6C3BFF", "#FF4FB7"]}
+          style={[styles.geometricShape, styles.shape1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+        <LinearGradient
+          colors={["#1FC7B4", "#2360FF"]}
+          style={[styles.geometricShape, styles.shape2]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      </View>
+
       <SafeAreaView style={styles.safeArea}>
-        {/* Floating Bubbles */}
         <Animated.View
           style={[
-            styles.floatingBubble,
-            styles.bubble1,
+            styles.content,
             {
-              transform: [
-                {
-                  translateY: bubbleAnim1.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -50],
-                  }),
-                },
-                {
-                  translateX: bubbleAnim1.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 30],
-                  }),
-                },
-                {
-                  rotate: bubbleAnim1.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "180deg"],
-                  }),
-                },
-              ],
-              opacity: bubbleAnim1.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.3, 0.6, 0.3],
-              }),
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.floatingBubble,
-            styles.bubble2,
-            {
-              transform: [
-                {
-                  translateY: bubbleAnim2.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -40],
-                  }),
-                },
-                {
-                  translateX: bubbleAnim2.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -25],
-                  }),
-                },
-                {
-                  rotate: bubbleAnim2.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "-180deg"],
-                  }),
-                },
-              ],
-              opacity: bubbleAnim2.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.2, 0.5, 0.2],
-              }),
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.floatingBubble,
-            styles.bubble3,
-            {
-              transform: [
-                {
-                  translateY: bubbleAnim3.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -60],
-                  }),
-                },
-                {
-                  translateX: bubbleAnim3.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 20],
-                  }),
-                },
-                {
-                  rotate: bubbleAnim3.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "360deg"],
-                  }),
-                },
-              ],
-              opacity: bubbleAnim3.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.4, 0.7, 0.4],
-              }),
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.floatingBubble,
-            styles.bubble4,
-            {
-              transform: [
-                {
-                  translateY: bubbleAnim4.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -45],
-                  }),
-                },
-                {
-                  translateX: bubbleAnim4.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -35],
-                  }),
-                },
-                {
-                  rotate: bubbleAnim4.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "-90deg"],
-                  }),
-                },
-              ],
-              opacity: bubbleAnim4.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.25, 0.55, 0.25],
-              }),
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.floatingBubble,
-            styles.bubble5,
-            {
-              transform: [
-                {
-                  translateY: bubbleAnim5.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -70],
-                  }),
-                },
-                {
-                  translateX: bubbleAnim5.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 40],
-                  }),
-                },
-                {
-                  rotate: bubbleAnim5.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "270deg"],
-                  }),
-                },
-              ],
-              opacity: bubbleAnim5.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.35, 0.65, 0.35],
-              }),
-            },
-          ]}
-        />
-
-        {/* Starfield effect */}
-        {[...Array(8)].map((_, i) => (
-          <Animated.View
-            key={i}
-            style={[
-              styles.star,
-              {
-                top: `${10 + i * 10}%`,
-                left: `${20 + (i % 3) * 25}%`,
-                opacity: shimmerAnim.interpolate({
-                  inputRange: [0, 0.5, 1],
-                  outputRange: [0.3 + i * 0.1, 0.8 + i * 0.05, 0.3 + i * 0.1],
-                }),
-                transform: [
-                  {
-                    scale: shimmerAnim.interpolate({
-                      inputRange: [0, 0.5, 1],
-                      outputRange: [0.5, 1.2, 0.5],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          />
-        ))}
-
-        {/* Floating Mystery Icons */}
-        <Animated.View
-          style={[
-            styles.mysteryIcon,
-            styles.icon1,
-            {
-              transform: [
-                {
-                  translateY: bubbleAnim1.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -30],
-                  }),
-                },
-                {
-                  rotate: bubbleAnim1.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "360deg"],
-                  }),
-                },
-              ],
-              opacity: bubbleAnim1.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.4, 0.8, 0.4],
-              }),
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }, { scale: scaleAnim }],
             },
           ]}
         >
-          <FontAwesome
-            name="question"
-            size={24}
-            color="rgba(138, 70, 255, 0.6)"
-          />
-        </Animated.View>
-        <Animated.View
-          style={[
-            styles.mysteryIcon,
-            styles.icon2,
-            {
-              transform: [
-                {
-                  translateY: bubbleAnim2.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -40],
-                  }),
-                },
-                {
-                  rotate: bubbleAnim2.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "-180deg"],
-                  }),
-                },
-              ],
-              opacity: bubbleAnim2.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.3, 0.7, 0.3],
-              }),
-            },
-          ]}
-        >
-          <FontAwesome
-            name="eye-slash"
-            size={20}
-            color="rgba(255, 93, 162, 0.5)"
-          />
-        </Animated.View>
-        <Animated.View
-          style={[
-            styles.mysteryIcon,
-            styles.icon3,
-            {
-              transform: [
-                {
-                  translateY: bubbleAnim3.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -50],
-                  }),
-                },
-                {
-                  rotate: bubbleAnim3.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "270deg"],
-                  }),
-                },
-              ],
-              opacity: bubbleAnim3.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.5, 0.9, 0.5],
-              }),
-            },
-          ]}
-        >
-          <FontAwesome
-            name="user-secret"
-            size={22}
-            color="rgba(46, 238, 169, 0.4)"
-          />
-        </Animated.View>
-
-        <Animated.View style={[{ opacity: fadeAnim, flex: 1 }]}>
-          <View style={[styles.container, { paddingTop: insets.top + 40 }]}>
-            <View style={styles.hero}>
-              <Animated.Text
-                style={[
-                  styles.heroTitle,
-                  { transform: [{ scale: pulseAnim }] },
-                ]}
-              >
-                Welcome to Secret Buddy
-              </Animated.Text>
-              <Animated.Text
-                style={[
-                  styles.heroSubtitle,
-                  {
-                    opacity: shimmerAnim.interpolate({
-                      inputRange: [0, 0.5, 1],
-                      outputRange: [0.7, 1, 0.7],
-                    }),
-                  },
-                ]}
-              >
-                Connect anonymously and share daily moods with friends.
-              </Animated.Text>
-              <Animated.Text
-                style={[
-                  styles.mysteryTagline,
-                  {
-                    opacity: shimmerAnim.interpolate({
-                      inputRange: [0, 0.5, 1],
-                      outputRange: [0.5, 0.8, 0.5],
-                    }),
-                  },
-                ]}
-              >
-                What secret connection will you uncover today?
-              </Animated.Text>
-              <Animated.View
-                style={[
-                  styles.heroGlow,
-                  {
-                    opacity: shimmerAnim.interpolate({
-                      inputRange: [0, 0.3, 0.7, 1],
-                      outputRange: [0.3, 0.6, 0.6, 0.3],
-                    }),
-                  },
-                ]}
-              />
+          <View style={styles.mainContent}>
+            {/* Hero Section */}
+            <View style={styles.heroSection}>
+              <Text style={styles.heroTitle}>Continue to get started</Text>
+              <Text style={styles.heroSubtitle}>
+                Choose your preferred sign-in method{"\n"}to join the community
+              </Text>
             </View>
 
-            <View style={styles.options}>
-              <Animated.View
-                style={{
-                  shadowColor: colors.accentPurple,
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: shimmerAnim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [0.3, 0.6, 0.3],
-                  }),
-                  shadowRadius: 10,
-                  borderRadius: 12,
-                }}
-              >
-                <PrimaryButton
-                  label="Continue with Google"
-                  onPress={handleGoogleSignIn}
-                  leadingIcon={
-                    <FontAwesome
-                      name="google"
-                      size={18}
-                      color={colors.textSecondary}
-                    />
-                  }
-                />
-              </Animated.View>
-              {Platform.OS === "ios" && (
-                <Animated.View
-                  style={{
-                    shadowColor: colors.accentPurple,
-                    shadowOffset: { width: 0, height: 0 },
-                    shadowOpacity: shimmerAnim.interpolate({
-                      inputRange: [0, 0.5, 1],
-                      outputRange: [0.3, 0.6, 0.3],
-                    }),
-                    shadowRadius: 10,
-                    borderRadius: 12,
-                  }}
+            {/* Auth Options Card */}
+            <View style={styles.authCard}>
+              <BlurView intensity={70} tint="dark" style={styles.blurView}>
+                <LinearGradient
+                  colors={["rgba(255,255,255,0.10)", "rgba(255,255,255,0.03)"]}
+                  style={styles.cardGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                 >
-                  <PrimaryButton
-                    label="Continue with Apple"
-                    onPress={handleAppleSignIn}
-                    leadingIcon={
-                      <FontAwesome
-                        name="apple"
-                        size={18}
-                        color={colors.textPrimary}
-                      />
-                    }
-                  />
-                </Animated.View>
-              )}
+                  <View style={styles.cardContent}>
+                    {/* Social Login Buttons */}
+                    <TouchableOpacity
+                      style={[styles.socialButton, styles.googleButton]}
+                      onPress={handleGoogleSignIn}
+                      activeOpacity={0.92}
+                    >
+                      {Platform.OS === "web" ? (
+                        <View style={styles.googleIconContainer}>
+                          <Image
+                            source={{
+                              uri: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMjIuNTYgMTIuMjVDMjIuNTYgMTEuNDcgMjIuNDkgMTAuNzIgMjIuMzYgMTBIMTZWMTAuNzJIMTYuMDNWMTRIMjAuMzJDMjAuMSAxNS4zMSAxOS40NCAxNi4wOCAxOC40NiAxNi41OFYxOS4zNEgyMC42N0MyMS45NyAxOC4xNiAyMi41NiAxNS40MyAyMi41NiAxMi4yNVoiIGZpbGw9IiM0Mjg1RjQiLz48cGF0aCBkPSJNMTYgMjJDMTguNDMgMjIgMjAuNDcgMjEuMTkgMjEuOTYgMTkuNThMMTkuNzUgMTYuODFDMTkuMDkgMTcuMyAxOC4xMiAxNy42MiAxNiAxNy42MkMxMy42NSAxNy42MiAxMS42NyAxNS45MiAxMC45NiAxNC43SDYuMDlWMTcuNjJDNy41NyAxOS41OSAxMC41NCAyMiAxMyAyMkgxNloiIGZpbGw9IiMzNEE4NTMiLz48cGF0aCBkPSJNMTAuOTYgMTQuN0MxMC42NiAxNCA4IDEzLjUgOCAxMi41UzEwIDExIDEwLjk2IDEwLjNWNz4iIGZpbGw9IiNGQkJDMDQiLz48cGF0aCBkPSJNMTYgNy4zOEMxOC4yNyA3LjM4IDIwLjM1IDguMjQgMjEuOTYgOS44MUwyNC40NyA3LjMxQzIxLjk2IDUuMDIgMTguNDMgNCAxNiA0QzEzLjg4IDQgOCA2LjQxIDYuMDkgNy4zOEwxMC45NiAxMC4zQzExLjY3IDkuMDkgMTMuNjUgNy4zOCAxNiA3LjM4WiIgZmlsbD0iI0VBNDMzNSIvPjwvc3ZnPg==",
+                            }}
+                            style={styles.googleIcon}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      ) : (
+                        <View style={styles.googleIconContainerNative}>
+                          <FontAwesome
+                            name="google"
+                            size={20}
+                            color="#4285F4"
+                          />
+                        </View>
+                      )}
+                      <Text style={styles.googleButtonText}>
+                        Continue with Google
+                      </Text>
+                    </TouchableOpacity>
 
-              <View style={styles.divider}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerLabel}>or</Text>
-                <View style={styles.dividerLine} />
-              </View>
+                    {Platform.OS === "ios" && (
+                      <TouchableOpacity
+                        style={[styles.socialButton, styles.appleButton]}
+                        onPress={() =>
+                          navigation.navigate({
+                            name: "Onboarding",
+                            params: {},
+                          })
+                        }
+                        activeOpacity={0.85}
+                      >
+                        <View style={styles.iconContainer}>
+                          <FontAwesome name="apple" size={24} color="white" />
+                        </View>
+                        <Text style={styles.appleButtonText}>
+                          Continue with Apple
+                        </Text>
+                      </TouchableOpacity>
+                    )}
 
-              <Animated.View
-                style={{
-                  shadowColor: colors.accentTeal,
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: shimmerAnim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [0.2, 0.5, 0.2],
-                  }),
-                  shadowRadius: 8,
-                  borderRadius: 12,
-                }}
-              >
-                <PrimaryButton
-                  label="Continue with Email"
-                  variant="ghost"
-                  onPress={handleEmailSignIn}
-                />
-              </Animated.View>
+                    {/* Divider */}
+                    <View style={styles.dividerContainer}>
+                      <View style={styles.dividerLine} />
+                      <Text style={styles.dividerText}>or</Text>
+                      <View style={styles.dividerLine} />
+                    </View>
+
+                    {/* Email Button */}
+                    <TouchableOpacity
+                      style={styles.emailButton}
+                      onPress={() =>
+                        navigation.navigate({ name: "Onboarding", params: {} })
+                      }
+                      activeOpacity={0.85}
+                    >
+                      <LinearGradient
+                        colors={[
+                          "rgba(156, 107, 255, 0.1)",
+                          "rgba(46, 230, 169, 0.1)",
+                        ]}
+                        style={styles.emailButtonGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                      >
+                        <View style={styles.iconContainer}>
+                          <MaterialIcons
+                            name="email"
+                            size={22}
+                            color={colors.accentPurple}
+                          />
+                        </View>
+                        <Text style={styles.emailButtonText}>
+                          Continue with Email
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                </LinearGradient>
+              </BlurView>
             </View>
 
-            <Text style={styles.footer}>
-              By continuing, you agree to our Terms of Service and Privacy
-              Policy.
-            </Text>
+            {/* Footer */}
+            <View style={styles.footerContainer}>
+              <Text style={styles.footer}>
+                By continuing, you agree to our{" "}
+                <Text style={styles.footerLink}>Terms of Service</Text> and{" "}
+                <Text style={styles.footerLink}>Privacy Policy</Text>
+              </Text>
+            </View>
           </View>
         </Animated.View>
       </SafeAreaView>
-    </GradientBackground>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  geometricContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: "hidden",
+  },
+  geometricShape: {
+    position: "absolute",
+    borderRadius: 100,
+    opacity: 0.15,
+  },
+  shape1: {
+    width: width * 0.8,
+    height: width * 0.8,
+    top: -width * 0.4,
+    right: -width * 0.3,
+  },
+  shape2: {
+    width: width * 0.6,
+    height: width * 0.6,
+    bottom: -width * 0.2,
+    left: -width * 0.2,
+  },
   safeArea: {
     flex: 1,
   },
-  floatingBubble: {
-    position: "absolute",
-    borderRadius: 50,
-    backgroundColor: "rgba(138, 70, 255, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(138, 70, 255, 0.2)",
+  content: {
+    flex: 1,
   },
-  bubble1: {
-    width: 80,
-    height: 80,
-    top: "20%",
-    left: "10%",
-  },
-  bubble2: {
-    width: 60,
-    height: 60,
-    top: "60%",
-    right: "15%",
-  },
-  bubble3: {
-    width: 100,
-    height: 100,
-    top: "40%",
-    left: "70%",
-  },
-  bubble4: {
-    width: 50,
-    height: 50,
-    top: "70%",
-    left: "20%",
-  },
-  bubble5: {
-    width: 70,
-    height: 70,
-    top: "10%",
-    right: "10%",
-  },
-  star: {
-    position: "absolute",
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(138, 70, 255, 0.8)",
-    shadowColor: "rgba(138, 70, 255, 0.5)",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 3,
-  },
-  mysteryIcon: {
-    position: "absolute",
-    alignItems: "center",
+  mainContent: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingVertical: 30,
     justifyContent: "center",
   },
-  icon1: {
-    top: "30%",
-    right: "20%",
-  },
-  icon2: {
-    top: "50%",
-    left: "5%",
-  },
-  icon3: {
-    top: "80%",
-    right: "5%",
-  },
-  container: {
-    flex: 1,
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingTop: 100,
-    paddingBottom: 40,
-  },
-  hero: {
+  heroSection: {
     alignItems: "center",
-    gap: 16,
-    position: "relative",
+    marginBottom: 48,
+    paddingTop: 20,
   },
-  heroGlow: {
-    position: "absolute",
-    top: -20,
-    left: -20,
-    right: -20,
-    bottom: -20,
-    borderRadius: 50,
-    backgroundColor: "rgba(138, 70, 255, 0.1)",
-    borderWidth: 2,
-    borderColor: "rgba(138, 70, 255, 0.2)",
-  },
+
   heroTitle: {
     ...typography.display,
-    color: colors.accentPurple,
+    color: colors.textPrimary,
     textAlign: "center",
     fontSize: 28,
-    lineHeight: 34,
+    fontWeight: "600",
+    letterSpacing: -0.5,
+    marginBottom: 12,
   },
   heroSubtitle: {
     ...typography.body,
     color: colors.textSecondary,
     textAlign: "center",
     fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "400",
   },
-  mysteryTagline: {
-    ...typography.caption,
-    color: "rgba(201, 192, 255, 0.7)",
-    textAlign: "center",
-    fontSize: 14,
-    fontStyle: "italic",
-    marginTop: 8,
+  authCard: {
+    marginHorizontal: 0,
+    borderRadius: 28,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.7,
+    shadowRadius: 32,
+    elevation: 15,
+    backgroundColor: "rgba(5, 3, 18, 0.25)",
   },
-  options: {
+  cardGradient: {
+    borderWidth: 1.2,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 28,
+    padding: 1,
+  },
+  cardContent: {
+    padding: 36,
     gap: 16,
   },
-  divider: {
+  socialButton: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    borderRadius: 16,
     gap: 12,
+    borderWidth: 1.5,
+    minHeight: 56,
+  },
+  googleButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.98)",
+    borderColor: "rgba(0, 0, 0, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  appleButton: {
+    backgroundColor: "rgba(0, 0, 0, 0.92)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  googleButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1f1f1f",
+  },
+  appleButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "white",
+  },
+  socialButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.background,
+  },
+  dividerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    marginVertical: 8,
   },
   dividerLine: {
     flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(255,255,255,0.12)",
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
-  dividerLabel: {
+  dividerText: {
     ...typography.caption,
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
+    color: "rgba(255, 255, 255, 0.4)",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  emailButton: {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "rgba(156, 107, 255, 0.35)",
+    overflow: "hidden",
+    shadowColor: "#9C6BFF",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 4,
+    minHeight: 56,
+  },
+  emailButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  emailButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textPrimary,
+  },
+  footerContainer: {
+    marginTop: "auto",
+    paddingTop: 40,
   },
   footer: {
     ...typography.caption,
-    color: colors.textSecondary,
+    color: "rgba(255, 255, 255, 0.4)",
     textAlign: "center",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  footerLink: {
+    color: colors.accentPurple,
+    textDecorationLine: "underline",
+  },
+  // Blur and icon styles
+  blurView: {
+    borderRadius: 28,
+    overflow: "hidden",
+    backgroundColor: "rgba(10, 8, 28, 0.35)",
+  },
+  iconContainer: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+  },
+  googleIconContainer: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+    backgroundColor: "white",
+    padding: 2,
+  },
+  googleIconContainerNative: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+    backgroundColor: "white",
+  },
+  googleIcon: {
+    width: 20,
+    height: 20,
   },
 });

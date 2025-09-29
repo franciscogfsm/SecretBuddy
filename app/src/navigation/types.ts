@@ -1,4 +1,5 @@
 export type RootStackParamList = {
+  Splash: undefined;
   AuthOptions: undefined;
   Onboarding: { mode?: "signup" | "signin" };
   MainTabs: undefined;

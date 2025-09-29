@@ -3,6 +3,7 @@ import { ActivityIndicator, View } from "react-native";
 
 import { HomeTabs } from "./Tabs";
 import { RootStackParamList } from "./types";
+import { SplashScreen } from "../screens/SplashScreen";
 import { RevealScreen } from "../screens/RevealScreen";
 import { OnboardingScreen } from "../screens/OnboardingScreen";
 import { AuthOptionsScreen } from "../screens/AuthOptionsScreen";
@@ -29,7 +30,7 @@ export const RootNavigator = () => {
   } else if (hasFirebaseAuth) {
     initialRoute = "Onboarding";
   } else {
-    initialRoute = "AuthOptions";
+    initialRoute = "Splash";
   }
 
   // Show loading while either system is initializing
@@ -60,6 +61,7 @@ export const RootNavigator = () => {
     >
       {!isFullyAuthenticated && (
         <>
+          <Stack.Screen name="Splash" component={SplashScreen} />
           <Stack.Screen name="AuthOptions" component={AuthOptionsScreen} />
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         </>
