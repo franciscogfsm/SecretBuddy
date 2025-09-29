@@ -9,17 +9,31 @@ import { AuthOptionsScreen } from "../screens/AuthOptionsScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { FriendsScreen } from "../screens/FriendsScreen";
 import { useAppState } from "../store/AppStateContext";
+import { useAuth } from "../context/AuthContext";
 import { colors } from "../theme";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator = () => {
   const { profile, hydrated } = useAppState();
-  const initialRoute: keyof RootStackParamList = profile
-    ? "MainTabs"
-    : "AuthOptions";
+  const { user, initializing } = useAuth();
 
-  if (!hydrated) {
+  // Determine initial route based on both Firebase auth and local profile
+  const isFullyAuthenticated = user && profile;
+  const hasFirebaseAuth = user && !profile;
+  const needsAuth = !user && !profile;
+
+  let initialRoute: keyof RootStackParamList;
+  if (isFullyAuthenticated) {
+    initialRoute = "MainTabs";
+  } else if (hasFirebaseAuth) {
+    initialRoute = "Onboarding";
+  } else {
+    initialRoute = "AuthOptions";
+  }
+
+  // Show loading while either system is initializing
+  if (!hydrated || initializing) {
     return (
       <View
         style={{
@@ -44,7 +58,7 @@ export const RootNavigator = () => {
         fullScreenGestureEnabled: true,
       }}
     >
-      {!profile && (
+      {!isFullyAuthenticated && (
         <>
           <Stack.Screen name="AuthOptions" component={AuthOptionsScreen} />
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />

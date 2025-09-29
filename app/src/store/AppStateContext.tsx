@@ -47,7 +47,9 @@ export type PairingData = {
 
 export type Profile = {
   name: string;
+  username: string;
   age: number;
+  ageVisible: boolean;
   country: string;
   mode: Mode;
 };

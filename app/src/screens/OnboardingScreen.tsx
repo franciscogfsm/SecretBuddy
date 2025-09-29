@@ -63,6 +63,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
 
   const [signupStage, setSignupStage] = useState<0 | 1>(0);
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [age, setAge] = useState("");
   const [country, setCountry] = useState("");
   const [email, setEmail] = useState("");
@@ -193,7 +194,9 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
 
     setProfile({
       name: derivedName,
+      username: username || `user${Date.now()}`,
       age: derivedAge,
+      ageVisible: true, // Default to visible, user can change in privacy settings
       country: derivedCountry,
       mode: profile?.mode ?? "global",
     });
@@ -428,6 +431,12 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                   value={name}
                   onChangeText={setName}
                   placeholder="John Doe"
+                />
+                <InputField
+                  label="Username"
+                  value={username}
+                  onChangeText={setUsername}
+                  placeholder="johndoe123"
                 />
                 <Text style={styles.ageWarning}>
                   You must be 18 or older to use SecretBuddy.

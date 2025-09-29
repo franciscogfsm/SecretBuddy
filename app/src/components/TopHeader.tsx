@@ -32,15 +32,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 }) => {
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets();
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const { profile, setProfile } = useAppState();
   const eyeScaleAnim = useRef(new Animated.Value(1)).current;
 
   const headerPaddingTop = Math.max(insets.top - 12, 12);
 
-  const greetingLine = profile?.name
-    ? `Hey, ${profile.name}`
-    : "Keep the mystery alive";
+  const userName = user?.displayName || profile?.name;
+  const greetingLine = userName ? `Hey, ${userName}` : "New Member";
 
   useEffect(() => {
     // Eye blink animation
@@ -53,7 +52,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         }),
         Animated.timing(eyeScaleAnim, {
           toValue: 1,
-          duration: 2000,
+          duration: 8000,
           useNativeDriver: true,
         }),
       ])
