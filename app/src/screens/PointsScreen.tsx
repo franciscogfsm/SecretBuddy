@@ -1,3 +1,5 @@
+import React, { useRef, useCallback } from "react";
+import { useIsFocused, useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
@@ -44,13 +46,30 @@ const badges = [
 
 const streakProgress = 0.72;
 
-export const PointsScreen = () => (
-  <GradientBackground gradient="midnight">
-    <ScrollView
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={false}
-      contentInsetAdjustmentBehavior="automatic"
-    >
+export const PointsScreen = () => {
+  const isFocused = useIsFocused();
+  const scrollRef = useRef<ScrollView>(null);
+  const wasFocusedRef = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (wasFocusedRef.current && isFocused) {
+        // User tapped the tab again, scroll to top
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      }
+      wasFocusedRef.current = isFocused;
+    }, [isFocused])
+  );
+
+  return (
+    <GradientBackground gradient="midnight">
+      <TopHeader />
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="automatic"
+      >
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Points &amp; Badges</Text>
@@ -125,7 +144,8 @@ export const PointsScreen = () => (
       </View>
     </ScrollView>
   </GradientBackground>
-);
+  );
+};
 
 const styles = StyleSheet.create({
   container: {

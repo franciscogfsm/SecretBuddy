@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Alert,
   Animated,
@@ -14,6 +14,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useIsFocused, useFocusEffect } from "@react-navigation/native";
 
 import { CountryDropdown } from "../components/CountryDropdown";
 import { GradientBackground } from "../components/GradientBackground";
@@ -37,6 +38,9 @@ export const HomeScreen = () => {
     useAppState();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const isFocused = useIsFocused();
+  const scrollRef = useRef<ScrollView>(null);
+  const wasFocusedRef = useRef(false);
 
   const getCurrentPhase = () => {
     const now = new Date();
@@ -370,6 +374,17 @@ export const HomeScreen = () => {
     }
   }, [isPromptTime, floatAnim, glowAnim]);
 
+  // Auto-scroll to top when tab is tapped again
+  useFocusEffect(
+    React.useCallback(() => {
+      if (wasFocusedRef.current && isFocused) {
+        // User tapped the same tab again, scroll to top
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      }
+      wasFocusedRef.current = isFocused;
+    }, [isFocused])
+  );
+
   const handleStartPairing = () => {
     if (!profile?.mode) {
       Alert.alert("Select Game Mode", "Please choose a game mode first!");
@@ -506,6 +521,7 @@ export const HomeScreen = () => {
   return (
     <GradientBackground gradient="midnight">
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   Alert,
   FlatList,
@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useIsFocused, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -53,6 +54,9 @@ type Friend = {
 export const FriendsScreen = () => {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const isFocused = useIsFocused();
+  const scrollRef = useRef<ScrollView>(null);
+  const wasFocusedRef = useRef(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAllFriends, setShowAllFriends] = useState(false);
   const [showAllRequests, setShowAllRequests] = useState(false);
@@ -196,6 +200,16 @@ export const FriendsScreen = () => {
       setSearchResults([]);
     }
   }, [searchQuery]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (wasFocusedRef.current && isFocused) {
+        // User tapped the tab again, scroll to top
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      }
+      wasFocusedRef.current = isFocused;
+    }, [isFocused])
+  );
 
   const handleImportContacts = () => {
     Alert.alert(
@@ -399,6 +413,7 @@ export const FriendsScreen = () => {
     <GradientBackground gradient="midnight">
       <TopHeader />
       <ScrollView
+        ref={scrollRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}

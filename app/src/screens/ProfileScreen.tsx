@@ -12,8 +12,9 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useIsFocused, useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { Ionicons } from "@expo/vector-icons";
 
 import { GradientBackground } from "../components/GradientBackground";
@@ -30,6 +31,9 @@ export const ProfileScreen = () => {
   const { user, signOut, loading: authLoading } = useAuth();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const isFocused = useIsFocused();
+  const scrollRef = useRef<ScrollView>(null);
+  const wasFocusedRef = useRef(false);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -99,6 +103,17 @@ export const ProfileScreen = () => {
     }, 800);
   }, []);
 
+  // Auto-scroll to top when tab is tapped again
+  useFocusEffect(
+    React.useCallback(() => {
+      if (wasFocusedRef.current && isFocused) {
+        // User tapped the same tab again, scroll to top
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      }
+      wasFocusedRef.current = isFocused;
+    }, [isFocused])
+  );
+
   const handleSignOut = async () => {
     Alert.alert("Log out", "Are you sure you want to leave SecretBuddy?", [
       { text: "Cancel", style: "cancel" },
@@ -135,6 +150,7 @@ export const ProfileScreen = () => {
   return (
     <GradientBackground gradient="midnight">
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >

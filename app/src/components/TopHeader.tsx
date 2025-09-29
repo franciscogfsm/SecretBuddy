@@ -66,27 +66,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       return;
     }
 
-    Alert.alert("Log out", "Are you sure you want to leave SecretBuddy?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await signOut();
-            setProfile(null);
-            requestAnimationFrame(() =>
-              navigation.reset({ index: 0, routes: [{ name: "Onboarding" }] })
-            );
-          } catch (error) {
-            Alert.alert(
-              "Couldn't log out",
-              error instanceof Error ? error.message : "Please try again."
-            );
-          }
-        },
-      },
-    ]);
+    // Navigate to Settings screen instead of showing logout dialog
+    navigation.navigate("Settings");
   };
 
   return (
