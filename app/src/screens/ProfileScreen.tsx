@@ -407,7 +407,10 @@ export const ProfileScreen = () => {
               ],
             }}
           >
-            <TouchableOpacity style={styles.settingsCard}>
+            <TouchableOpacity
+              style={styles.settingsCard}
+              onPress={() => navigation.navigate("Settings")}
+            >
               <View style={styles.settingsCardContent}>
                 <View style={styles.settingsIconContainer}>
                   <Ionicons
@@ -441,7 +444,10 @@ export const ProfileScreen = () => {
               ],
             }}
           >
-            <TouchableOpacity style={styles.settingsCard}>
+            <TouchableOpacity
+              style={styles.settingsCard}
+              onPress={() => navigation.navigate("Settings")}
+            >
               <View style={styles.settingsCardContent}>
                 <View style={styles.settingsIconContainer}>
                   <Ionicons
@@ -475,7 +481,10 @@ export const ProfileScreen = () => {
               ],
             }}
           >
-            <TouchableOpacity style={styles.settingsCard}>
+            <TouchableOpacity
+              style={styles.settingsCard}
+              onPress={() => navigation.navigate("Settings")}
+            >
               <View style={styles.settingsCardContent}>
                 <View style={styles.settingsIconContainer}>
                   <Ionicons

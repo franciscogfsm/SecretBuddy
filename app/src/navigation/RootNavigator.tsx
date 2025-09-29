@@ -9,6 +9,7 @@ import { OnboardingScreen } from "../screens/OnboardingScreen";
 import { AuthOptionsScreen } from "../screens/AuthOptionsScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { FriendsScreen } from "../screens/FriendsScreen";
+import { SettingsScreen } from "../screens/SettingsScreen";
 import { useAppState } from "../store/AppStateContext";
 import { useAuth } from "../context/AuthContext";
 import { colors } from "../theme";
@@ -67,6 +68,7 @@ export const RootNavigator = () => {
         </>
       )}
       <Stack.Screen name="MainTabs" component={HomeTabs} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen
         name="Reveal"
         component={RevealScreen}
