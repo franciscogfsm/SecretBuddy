@@ -33,6 +33,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Onboarding">;
 
 type PersonaDetails = {
   trimmedName: string;
+  trimmedUsername: string;
   trimmedCountry: string;
   numericAge: number;
 };
@@ -214,19 +215,27 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
   }, [route.params?.mode]);
 
   useEffect(() => {
-    if (!user || authMode !== "signin") {
+    if (!user) {
       return;
     }
-    if (user.displayName) {
+    if (user.displayName && !name) {
       setName(user.displayName);
     }
-    if (user.email) {
+    if (user.email && !email) {
       setEmail(user.email);
     }
-  }, [user, authMode]);
+  }, [user, name, email]);
+
+  // Ensure Google sign-in users in signup mode go to profile setup
+  useEffect(() => {
+    if (user && !profile && authMode === "signup" && signupStage === 0) {
+      setSignupStage(1);
+    }
+  }, [user, profile, authMode, signupStage]);
 
   const validatePersona = (): PersonaDetails | null => {
     const trimmedName = name.trim();
+    const trimmedUsername = username.trim().toLowerCase();
     const trimmedCountry = country.trim();
     const numericAge = Number(age);
 
@@ -234,6 +243,44 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       showCustomError(
         "Missing Details",
         "Your name and country help friends know it's really you.",
+        "warning"
+      );
+      return null;
+    }
+
+    // Username validation
+    if (!trimmedUsername) {
+      showCustomError(
+        "Username Required",
+        "Please choose a username to continue.",
+        "warning"
+      );
+      return null;
+    }
+
+    if (trimmedUsername.length < 3) {
+      showCustomError(
+        "Username Too Short",
+        "Username must be at least 3 characters long.",
+        "warning"
+      );
+      return null;
+    }
+
+    if (trimmedUsername.length > 20) {
+      showCustomError(
+        "Username Too Long",
+        "Username must be no more than 20 characters long.",
+        "warning"
+      );
+      return null;
+    }
+
+    const usernameRegex = /^[a-z0-9_]+$/;
+    if (!usernameRegex.test(trimmedUsername)) {
+      showCustomError(
+        "Invalid Username",
+        "Username can only contain lowercase letters, numbers, and underscores.",
         "warning"
       );
       return null;
@@ -248,7 +295,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       return null;
     }
 
-    return { trimmedName, trimmedCountry, numericAge };
+    return { trimmedName, trimmedCountry, numericAge, trimmedUsername };
   };
 
   const ensureCredentials = () => {
@@ -293,13 +340,15 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     const derivedName = details?.trimmedName?.length
       ? details.trimmedName
       : profile?.name ?? user?.displayName ?? "New member";
+    const derivedUsername =
+      details?.trimmedUsername ?? profile?.username ?? `user${Date.now()}`;
     const derivedAge = details?.numericAge ?? profile?.age ?? 18;
     const derivedCountry =
       details?.trimmedCountry ?? profile?.country ?? "Global";
 
     setProfile({
       name: derivedName,
-      username: username || `user${Date.now()}`,
+      username: derivedUsername,
       age: derivedAge,
       ageVisible: true, // Default to visible, user can change in privacy settings
       country: derivedCountry,
@@ -533,12 +582,16 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                   label="Username"
                   value={username}
                   onChangeText={setUsername}
-                  placeholder="johndoe123"
+                  placeholder="@johndoe123"
                   autoComplete="username"
                   textContentType="username"
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
+                <Text style={styles.usernameHint}>
+                  Your unique @username (3-20 characters, lowercase letters,
+                  numbers, and underscores only).
+                </Text>
                 <Text style={styles.ageWarning}>
                   You must be 18 or older to use SecretBuddy.
                 </Text>
@@ -983,10 +1036,13 @@ const styles = StyleSheet.create({
   halfInput: {
     flex: 1,
   },
-  supportText: {
+  usernameHint: {
     ...typography.caption,
-    color: "rgba(201, 192, 255, 0.7)",
-    lineHeight: 18,
+    color: "rgba(201,192,255,0.7)",
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: -8,
+    marginBottom: 8,
   },
   ageWarning: {
     ...typography.caption,
