@@ -73,6 +73,7 @@ export const HomeScreen = () => {
   const [scaleAnim] = useState(new Animated.Value(1));
   const [floatAnim] = useState(new Animated.Value(0));
   const [glowAnim] = useState(new Animated.Value(0.7));
+  const [receivedPhotoAnim] = useState(new Animated.Value(1)); // Animation for received photo card
   const [isGameModeSelected, setIsGameModeSelected] = useState(false);
   const [showPairingSuccess, setShowPairingSuccess] = useState(false);
   const [isPromptTime, setIsPromptTime] = useState(false);
@@ -81,6 +82,8 @@ export const HomeScreen = () => {
 
   // Demo control - toggle between received photo and photo challenge
   const [hasReceivedPhoto, setHasReceivedPhoto] = useState(true); // Change to false to show photo challenge instead
+  const [hasViewedPhoto, setHasViewedPhoto] = useState(false); // Track if user viewed the received photo
+  const [hasSentPhoto, setHasSentPhoto] = useState(false); // Track if user sent a photo
 
   // Random photo prompts that appear throughout the day
   const randomPrompts = [
@@ -195,6 +198,7 @@ export const HomeScreen = () => {
       }
 
       if (!result.canceled) {
+        setHasSentPhoto(true); // Mark photo as sent
         Alert.alert(
           "Photo Taken!",
           "Your photo has been sent to your mystery buddy!"
@@ -522,8 +526,13 @@ export const HomeScreen = () => {
             pairing.phase === "matched" || pairing.phase === "submission-open";
           // For demo: always show during valid time, even if not officially paired
           const isDemoTime = currentHour >= 2 && currentHour < 4;
-          // Only show photo challenge if no received photo (to avoid clutter)
-          return isValidTime && (isPaired || isDemoTime) && !hasReceivedPhoto;
+          // Only show photo challenge if no received photo (to avoid clutter) AND user hasn't sent photo yet
+          return (
+            isValidTime &&
+            (isPaired || isDemoTime) &&
+            !hasReceivedPhoto &&
+            !hasSentPhoto
+          );
         })() && (
           <Animated.View
             style={[
@@ -627,9 +636,30 @@ export const HomeScreen = () => {
           const isDemoTime =
             (currentHour >= 12 && currentHour < 21) ||
             (currentHour >= 2 && currentHour < 4);
-          return isDemoTime && hasReceivedPhoto;
+          return isDemoTime && hasReceivedPhoto && !hasViewedPhoto;
         })() && (
-          <View style={styles.receivedPhotoCard}>
+          <Animated.View
+            style={[
+              styles.receivedPhotoCard,
+              {
+                opacity: receivedPhotoAnim,
+                transform: [
+                  {
+                    scale: receivedPhotoAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.8, 1],
+                    }),
+                  },
+                  {
+                    translateY: receivedPhotoAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [20, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <View style={styles.receivedPhotoHeader}>
               <View style={styles.receivedPhotoIcon}>
                 <Ionicons name="images" size={24} color="#F97316" />
@@ -652,12 +682,28 @@ export const HomeScreen = () => {
 
               <TouchableOpacity
                 style={styles.viewPhotoButton}
-                onPress={() =>
+                onPress={() => {
                   Alert.alert(
                     "View Photo",
-                    "Here you would see the photo from your mystery buddy!"
-                  )
-                }
+                    "Here you would see the photo from your mystery buddy!",
+                    [
+                      {
+                        text: "OK",
+                        onPress: () => {
+                          // Start smooth fade out animation
+                          Animated.timing(receivedPhotoAnim, {
+                            toValue: 0,
+                            duration: 600,
+                            useNativeDriver: true,
+                          }).start(() => {
+                            // Mark as viewed after animation completes
+                            setHasViewedPhoto(true);
+                          });
+                        },
+                      },
+                    ]
+                  );
+                }}
               >
                 <Ionicons name="eye" size={20} color="#FFFFFF" />
                 <Text style={styles.viewPhotoButtonText}>View Photo</Text>
@@ -670,7 +716,7 @@ export const HomeScreen = () => {
                 </Text>
               </View>
             </View>
-          </View>
+          </Animated.View>
         )}
 
         {/* Game Mode Selection - Show first if not selected */}
