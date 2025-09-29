@@ -417,7 +417,7 @@ export const HomeScreen = () => {
         break;
       case "matched":
         Alert.alert(
-          "Check Your Prompts! �",
+          "Check Your Prompts!",
           "You're matched! Random prompts will appear throughout the day. Film your surroundings and send them to your mystery buddy!"
         );
         break;
@@ -1004,10 +1004,10 @@ const styles = StyleSheet.create({
     borderColor: "rgba(99, 102, 241, 0.5)",
     padding: 24,
     shadowColor: "#6366F1",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
-    elevation: 16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
   },
 
   promptHeader: {
