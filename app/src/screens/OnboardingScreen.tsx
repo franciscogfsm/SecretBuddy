@@ -78,6 +78,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     password: string;
   } | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [switchWidth, setSwitchWidth] = useState(0);
   const [errorModal, setErrorModal] = useState<{
     visible: boolean;
     title: string;
@@ -91,6 +92,9 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
   });
 
   const fadeAnim = useState(new Animated.Value(0))[0];
+  const switchAnim = useState(
+    new Animated.Value(authMode === "signup" ? 0 : 1)
+  )[0];
 
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
@@ -103,6 +107,14 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       useNativeDriver: true,
     }).start();
   }, [fadeAnim]);
+
+  useEffect(() => {
+    Animated.timing(switchAnim, {
+      toValue: authMode === "signup" ? 0 : 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [authMode, switchAnim]);
   const isSignup = authMode === "signup";
   const isBusy = authLoading && activeAction !== null;
   const isEmailLoading = authLoading && activeAction === "email";
@@ -438,7 +450,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
               accessibilityLabel="Go back to authentication options"
             >
               <FontAwesome
-                name="arrow-left"
+                name="chevron-left"
                 size={20}
                 color={colors.textSecondary}
               />
@@ -462,14 +474,6 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                 isCompactLayout && styles.heroCompact,
               ]}
             >
-              <Text
-                style={[
-                  styles.heroTitle,
-                  isCompactLayout && styles.heroTitleCompact,
-                ]}
-              >
-                SecretBuddy
-              </Text>
               <Text
                 style={[
                   styles.heroSubtitle,
@@ -580,7 +584,25 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                 ]}
               >
                 <View style={styles.cardHeader}>
-                  <View style={styles.modeSwitch}>
+                  <View
+                    style={styles.modeSwitch}
+                    onLayout={(e) => setSwitchWidth(e.nativeEvent.layout.width)}
+                  >
+                    <Animated.View
+                      style={[
+                        styles.activeIndicator,
+                        {
+                          transform: [
+                            {
+                              translateX: switchAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, switchWidth / 2],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    />
                     <TouchableOpacity
                       onPress={() => setAuthMode("signup")}
                       style={[
@@ -805,10 +827,6 @@ const styles = StyleSheet.create({
   backButton: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -990,6 +1008,15 @@ const styles = StyleSheet.create({
     padding: 4,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
+    position: "relative",
+  },
+  activeIndicator: {
+    position: "absolute",
+    top: 4,
+    width: "50%",
+    height: "100%",
+    borderRadius: 14,
+    backgroundColor: "rgba(138, 70, 255, 0.22)",
   },
   modeChip: {
     flex: 1,
@@ -999,7 +1026,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   modeChipActive: {
-    backgroundColor: "rgba(138, 70, 255, 0.22)",
+    // backgroundColor removed, handled by activeIndicator
   },
   modeChipLabel: {
     ...typography.caption,
