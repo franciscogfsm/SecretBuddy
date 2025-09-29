@@ -11,7 +11,9 @@ import {
 } from "../lib/firebaseAuth";
 import type { User, UserCredential } from "../lib/firebaseAuth";
 import { AuthSessionResult, makeRedirectUri } from "expo-auth-session";
+import Constants from "expo-constants";
 import * as Google from "expo-auth-session/providers/google";
+import { Platform } from "react-native";
 import React, {
   PropsWithChildren,
   createContext,
@@ -107,11 +109,29 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     [googleConfig]
   );
 
+  const shouldUseProxy = useMemo(() => {
+    if (Platform.OS === "web") {
+      return false;
+    }
+
+    return Constants.appOwnership === "expo";
+  }, []);
+
+  const redirectUri = useMemo(
+    () =>
+      makeRedirectUri({
+        scheme: shouldUseProxy ? undefined : "secretbuddy",
+        path: "oauth",
+      }),
+    [shouldUseProxy]
+  );
+
   const [request, , promptAsync] = supportsGoogleSignIn
     ? Google.useAuthRequest({
         ...googleConfig,
-        redirectUri: "https://auth.expo.io/@franciscogfsm/secretbuddy",
-      })
+        redirectUri,
+        ...(shouldUseProxy ? { useProxy: true } : {}),
+      } as Parameters<typeof Google.useAuthRequest>[0])
     : [
         null,
         null,
@@ -194,7 +214,21 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     setLoading(true);
 
     try {
-      const result = await promptAsync({ showInRecents: true });
+      const promptOptions: Parameters<typeof promptAsync>[0] extends infer T
+        ? T extends object
+          ? T & { useProxy?: boolean }
+          : Record<string, unknown>
+        : Record<string, unknown> = {
+        showInRecents: true,
+      } as any;
+
+      if (shouldUseProxy) {
+        (promptOptions as { useProxy?: boolean }).useProxy = true;
+      }
+
+      const result = await promptAsync(
+        promptOptions as Parameters<typeof promptAsync>[0]
+      );
 
       if (result?.type === "cancel" || result?.type === "dismiss") {
         throw new Error("Google sign-in was cancelled.");

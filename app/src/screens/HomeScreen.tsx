@@ -80,8 +80,8 @@ export const HomeScreen = () => {
   const [nextPromptTime, setNextPromptTime] = useState<Date | null>(null);
   const [showCameraModal, setShowCameraModal] = useState(false);
 
-  // Demo control - toggle between received photo and photo challenge
-  const [hasReceivedPhoto, setHasReceivedPhoto] = useState(true); // Change to false to show photo challenge instead
+  // Control photo state - will be connected to backend
+  const [hasReceivedPhoto, setHasReceivedPhoto] = useState(false); // Will be dynamically set based on backend data
   const [hasViewedPhoto, setHasViewedPhoto] = useState(false); // Track if user viewed the received photo
   const [hasSentPhoto, setHasSentPhoto] = useState(false); // Track if user sent a photo
 
@@ -99,8 +99,6 @@ export const HomeScreen = () => {
 
   // Camera function for back camera only (no selfies allowed)
   const takeBackPhoto = async () => {
-    console.log("takeBackPhoto called - showing reminder then opening camera");
-
     // Simple reminder alert that doesn't block camera
     Alert.alert(
       "Camera Guidelines",
@@ -120,17 +118,12 @@ export const HomeScreen = () => {
 
   const handleCameraConfirm = async () => {
     try {
-      console.log(
-        "handleCameraConfirm called - closing modal and opening camera"
-      );
       setShowCameraModal(false);
       // Small delay to ensure modal closes before opening camera
       setTimeout(async () => {
-        console.log("About to call openCamera");
         await openCamera();
       }, 200);
     } catch (error) {
-      console.error("Error in handleCameraConfirm:", error);
       Alert.alert("Error", "Failed to open camera. Please try again.");
     }
   };
@@ -154,29 +147,32 @@ export const HomeScreen = () => {
 
   const openCamera = async () => {
     try {
-      console.log("openCamera function called");
-
       // Check current camera permissions first
       let cameraPermission = await ImagePicker.getCameraPermissionsAsync();
-      console.log("Current camera permission status:", cameraPermission.status);
 
       // Only request if not already granted
       if (cameraPermission.status !== "granted") {
-        console.log("Requesting camera permission...");
         cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
-        console.log("New camera permission status:", cameraPermission.status);
       }
 
       if (cameraPermission.status !== "granted") {
         Alert.alert(
-          "Camera Permission",
-          "We need camera access to take photos for the game!"
+          "Camera Permission Required",
+          "SecretBuddy needs camera access to share photos with your mystery buddy. Your photos are encrypted and kept anonymous until reveal time.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Go to Settings",
+              onPress: () => {
+                // On iOS, this would open settings - implementation depends on platform
+              },
+            },
+          ]
         );
         return;
       }
 
       // Launch camera with back camera only (no selfie camera)
-      console.log("Launching camera...");
       let result;
       try {
         result = await ImagePicker.launchCameraAsync({
@@ -186,13 +182,10 @@ export const HomeScreen = () => {
           quality: 0.8,
           cameraType: ImagePicker.CameraType.back, // Force back camera
         });
-        console.log("Camera result:", result);
       } catch (cameraError: any) {
-        console.error("Camera launch error:", cameraError);
         Alert.alert(
           "Camera Error",
-          "Failed to launch camera: " +
-            (cameraError?.message || "Unknown error")
+          "Unable to access camera. Please check your permissions and try again."
         );
         return;
       }
@@ -200,14 +193,16 @@ export const HomeScreen = () => {
       if (!result.canceled) {
         setHasSentPhoto(true); // Mark photo as sent
         Alert.alert(
-          "Photo Taken!",
-          "Your photo has been sent to your mystery buddy!"
+          "Photo Sent!",
+          "Your photo has been shared with your mystery buddy. Photos are encrypted and automatically deleted after the reveal window."
         );
         // Here you would upload the photo and handle the submission
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to take photo. Please try again.");
-      console.error("Camera error:", error);
+      Alert.alert(
+        "Error",
+        "Unable to access camera. Please check your permissions and try again."
+      );
     }
   };
 
@@ -518,21 +513,12 @@ export const HomeScreen = () => {
         {(() => {
           const now = new Date();
           const currentHour = now.getHours();
-          // Demo mode: show between 2-4 AM for testing
-          const isValidTime =
-            (currentHour >= 12 && currentHour < 21) ||
-            (currentHour >= 2 && currentHour < 4);
+          // Show prompts during active hours (12 PM - 9 PM)
+          const isValidTime = currentHour >= 12 && currentHour < 21;
           const isPaired =
             pairing.phase === "matched" || pairing.phase === "submission-open";
-          // For demo: always show during valid time, even if not officially paired
-          const isDemoTime = currentHour >= 2 && currentHour < 4;
           // Only show photo challenge if no received photo (to avoid clutter) AND user hasn't sent photo yet
-          return (
-            isValidTime &&
-            (isPaired || isDemoTime) &&
-            !hasReceivedPhoto &&
-            !hasSentPhoto
-          );
+          return isValidTime && isPaired && !hasReceivedPhoto && !hasSentPhoto;
         })() && (
           <Animated.View
             style={[
@@ -632,11 +618,9 @@ export const HomeScreen = () => {
         {(() => {
           const now = new Date();
           const currentHour = now.getHours();
-          // Show received photo during the same demo time as prompt (2-4 AM)
-          const isDemoTime =
-            (currentHour >= 12 && currentHour < 21) ||
-            (currentHour >= 2 && currentHour < 4);
-          return isDemoTime && hasReceivedPhoto && !hasViewedPhoto;
+          // Show received photo during active hours when user has received one
+          const isActiveTime = currentHour >= 12 && currentHour < 21;
+          return isActiveTime && hasReceivedPhoto && !hasViewedPhoto;
         })() && (
           <Animated.View
             style={[

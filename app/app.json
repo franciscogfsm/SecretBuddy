@@ -18,17 +18,8 @@
       "bundleIdentifier": "com.secretbuddy.app",
       "usesAppleSignIn": false,
       "infoPlist": {
-        "NSCameraUsageDescription": "SecretBuddy needs camera access to record 10-second ambiance clips.",
-        "NSMicrophoneUsageDescription": "SecretBuddy needs microphone access to capture audio with your video clips."
+        "NSCameraUsageDescription": "SecretBuddy needs camera access to take and share photos with your anonymous buddy while keeping your identity hidden."
       }
-    },
-    "android": {
-      "package": "com.secretbuddy.app",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#12002f"
-      },
-      "permissions": []
     },
     "web": {
       "bundler": "metro",
@@ -45,6 +36,7 @@
           }
         }
       ]
-    ]
+    ],
+    "owner": "franciscogfsm"
   }
 }
