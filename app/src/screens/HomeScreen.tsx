@@ -79,6 +79,9 @@ export const HomeScreen = () => {
   const [nextPromptTime, setNextPromptTime] = useState<Date | null>(null);
   const [showCameraModal, setShowCameraModal] = useState(false);
 
+  // Demo control - toggle between received photo and photo challenge
+  const [hasReceivedPhoto, setHasReceivedPhoto] = useState(true); // Change to false to show photo challenge instead
+
   // Random photo prompts that appear throughout the day
   const randomPrompts = [
     "Share the view from your window",
@@ -507,7 +510,7 @@ export const HomeScreen = () => {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Today's Prompt - Show only during notification time (12-21h) and when paired */}
+        {/* Today's Prompt - Show only when no received photo to avoid clutter */}
         {(() => {
           const now = new Date();
           const currentHour = now.getHours();
@@ -519,7 +522,8 @@ export const HomeScreen = () => {
             pairing.phase === "matched" || pairing.phase === "submission-open";
           // For demo: always show during valid time, even if not officially paired
           const isDemoTime = currentHour >= 2 && currentHour < 4;
-          return isValidTime && (isPaired || isDemoTime);
+          // Only show photo challenge if no received photo (to avoid clutter)
+          return isValidTime && (isPaired || isDemoTime) && !hasReceivedPhoto;
         })() && (
           <Animated.View
             style={[
@@ -613,6 +617,60 @@ export const HomeScreen = () => {
               </View>
             </Animated.View>
           </Animated.View>
+        )}
+
+        {/* Received Photo from Mystery Buddy - Priority over photo challenge */}
+        {(() => {
+          const now = new Date();
+          const currentHour = now.getHours();
+          // Show received photo during the same demo time as prompt (2-4 AM)
+          const isDemoTime =
+            (currentHour >= 12 && currentHour < 21) ||
+            (currentHour >= 2 && currentHour < 4);
+          return isDemoTime && hasReceivedPhoto;
+        })() && (
+          <View style={styles.receivedPhotoCard}>
+            <View style={styles.receivedPhotoHeader}>
+              <View style={styles.receivedPhotoIcon}>
+                <Ionicons name="images" size={24} color="#F97316" />
+              </View>
+              <View style={styles.receivedPhotoHeaderText}>
+                <Text style={styles.receivedPhotoTitle}>Photo Received</Text>
+                <Text style={styles.receivedPhotoSubtitle}>
+                  Your mystery buddy shared something!
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.receivedPhotoContent}>
+              <View style={styles.photoPlaceholder}>
+                <Ionicons name="image" size={64} color="#6B7280" />
+                <Text style={styles.photoPlaceholderText}>
+                  Tap to view received photo
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.viewPhotoButton}
+                onPress={() =>
+                  Alert.alert(
+                    "View Photo",
+                    "Here you would see the photo from your mystery buddy!"
+                  )
+                }
+              >
+                <Ionicons name="eye" size={20} color="#FFFFFF" />
+                <Text style={styles.viewPhotoButtonText}>View Photo</Text>
+              </TouchableOpacity>
+
+              <View style={styles.receivedPhotoInfo}>
+                <Text style={styles.receivedPhotoInfoText}>
+                  ⏰ Received 5 minutes ago • 👤 Identity hidden until reveal
+                  time
+                </Text>
+              </View>
+            </View>
+          </View>
         )}
 
         {/* Game Mode Selection - Show first if not selected */}
@@ -1580,5 +1638,106 @@ const styles = StyleSheet.create({
   modalHeaderText: {
     flex: 1,
     paddingTop: 4,
+  },
+
+  // Received Photo Card Styles
+  receivedPhotoCard: {
+    borderRadius: 20,
+    backgroundColor: "rgba(6, 0, 18, 0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(249, 115, 22, 0.4)",
+    padding: 20,
+    shadowColor: "#F97316",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  receivedPhotoHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  receivedPhotoIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(249, 115, 22, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(249, 115, 22, 0.3)",
+  },
+  receivedPhotoHeaderText: {
+    flex: 1,
+  },
+  receivedPhotoTitle: {
+    ...typography.subtitle,
+    color: "#F97316",
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  receivedPhotoSubtitle: {
+    ...typography.body,
+    color: "#FED7AA",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  receivedPhotoContent: {
+    gap: 16,
+  },
+  photoPlaceholder: {
+    backgroundColor: "rgba(17, 24, 39, 0.6)",
+    borderRadius: 16,
+    padding: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "rgba(75, 85, 99, 0.3)",
+    borderStyle: "dashed",
+  },
+  photoPlaceholderText: {
+    ...typography.body,
+    color: "#9CA3AF",
+    fontSize: 14,
+    fontWeight: "500",
+    marginTop: 8,
+    textAlign: "center",
+  },
+  viewPhotoButton: {
+    backgroundColor: "#F97316",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    shadowColor: "#F97316",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  viewPhotoButtonText: {
+    ...typography.subtitle,
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  receivedPhotoInfo: {
+    backgroundColor: "rgba(17, 24, 39, 0.4)",
+    borderRadius: 8,
+    padding: 12,
+  },
+  receivedPhotoInfoText: {
+    ...typography.caption,
+    color: "#9CA3AF",
+    fontSize: 12,
+    fontWeight: "500",
+    textAlign: "center",
+    lineHeight: 16,
   },
 });
