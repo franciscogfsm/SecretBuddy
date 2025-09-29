@@ -30,9 +30,9 @@ export const MysteryCard = ({ prompt, buddy }: MysteryCardProps) => {
         </View>
         <Text style={styles.promptText}>{prompt.text}</Text>
         <View style={styles.buddySection}>
-          <BlurView intensity={70} tint="dark" style={styles.avatarPlaceholder}>
+          <View style={styles.avatarPlaceholder}>
             <Text style={styles.avatarText}>?</Text>
-          </BlurView>
+          </View>
           <View style={styles.buddyDetails}>
             <Text style={styles.buddyLabel}>{buddy.codename}</Text>
             <Text style={styles.buddyMeta}>Streak {buddy.streak} 🔥</Text>
@@ -101,10 +101,23 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "rgba(255, 255, 255, 0.2)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   avatarText: {
     ...typography.title,
     color: colors.textPrimary,
+    fontSize: 32,
+    fontWeight: "900",
+    textShadowColor: "rgba(0, 0, 0, 0.3)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   buddyDetails: {
     flex: 1,

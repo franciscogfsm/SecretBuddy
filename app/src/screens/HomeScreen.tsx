@@ -7,7 +7,11 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Dimensions,
+  Modal,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -29,66 +33,256 @@ type PairingStatus =
   | "revealing";
 
 export const HomeScreen = () => {
-  const { prompt, buddy, profile, setProfile } = useAppState();
+  const { prompt, buddy, profile, pairing, setProfile, setPairing } =
+    useAppState();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [pairingStatus, setPairingStatus] = useState<PairingStatus>("waiting");
+
+  const getCurrentPhase = () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+
+    if (currentHour >= 9 && currentHour < 12) {
+      return "pairing-pool"; // 9 AM - 12 PM: Pairing pool open
+    } else if (currentHour >= 12 && currentHour < 21) {
+      return "matched"; // 12 PM - 9 PM: Matched and receiving prompts
+    } else if (currentHour >= 21 && currentHour < 22) {
+      return "reveal-window"; // 9 PM - 10 PM: Identity reveal window
+    } else {
+      return "waiting"; // 10 PM - 9 AM: Waiting for next pairing
+    }
+  };
+
+  const getStatusMessage = () => {
+    const phase = getCurrentPhase();
+    switch (phase) {
+      case "pairing-pool":
+        return "Pairing pool is open! Join now to get matched.";
+      case "matched":
+        return "You're matched! Wait for random prompts throughout the day.";
+      case "reveal-window":
+        return "Identity reveal window is open! Discover your mystery buddy.";
+      case "waiting":
+        return "Next pairing opens tomorrow at 9:00 AM.";
+      default:
+        return "Welcome to SecretBuddy!";
+    }
+  };
   const [timeUntilWindow, setTimeUntilWindow] = useState<string>("");
   const [pulseAnim] = useState(new Animated.Value(1));
+  const [scaleAnim] = useState(new Animated.Value(1));
+  const [floatAnim] = useState(new Animated.Value(0));
+  const [glowAnim] = useState(new Animated.Value(0.7));
+  const [isGameModeSelected, setIsGameModeSelected] = useState(false);
+  const [showPairingSuccess, setShowPairingSuccess] = useState(false);
+  const [isPromptTime, setIsPromptTime] = useState(false);
+  const [nextPromptTime, setNextPromptTime] = useState<Date | null>(null);
+  const [showCameraModal, setShowCameraModal] = useState(false);
+
+  // Random photo prompts that appear throughout the day
+  const randomPrompts = [
+    "Share the view from your window",
+    "Show what you're currently looking at",
+    "Show your current surroundings",
+    "Take a photo of what you're drinking",
+    "Snap your workspace or study area",
+    "Photograph your favorite nearby object",
+    "Share what you're having for your next meal",
+    "Show your pet or a plant in your space",
+  ];
+
+  // Camera function for back camera only (no selfies allowed)
+  const takeBackPhoto = async () => {
+    console.log("takeBackPhoto called - showing reminder then opening camera");
+
+    // Simple reminder alert that doesn't block camera
+    Alert.alert("📷 Camera Ready", "No selfies please 🚫", [
+      {
+        text: "Got it!",
+        onPress: async () => {
+          await openCamera();
+        },
+      },
+    ]);
+  };
+
+  const handleCameraConfirm = async () => {
+    try {
+      console.log(
+        "handleCameraConfirm called - closing modal and opening camera"
+      );
+      setShowCameraModal(false);
+      // Small delay to ensure modal closes before opening camera
+      setTimeout(async () => {
+        console.log("About to call openCamera");
+        await openCamera();
+      }, 200);
+    } catch (error) {
+      console.error("Error in handleCameraConfirm:", error);
+      Alert.alert("Error", "Failed to open camera. Please try again.");
+    }
+  };
+
+  const oldTakeBackPhoto = async () => {
+    try {
+      // Show appealing reminder before opening camera
+      Alert.alert(
+        "� Ready to Share?",
+        "🎭 Keep it mysterious!\n\n✅ Use BACK camera only\n❌ No selfies please\n\n🔮 Your mystery buddy can't wait to see what you're up to!",
+        [
+          { text: "Not now", style: "cancel" },
+          { text: "Let's do this! 🚀", onPress: openCamera },
+        ]
+      );
+    } catch (error) {
+      Alert.alert("Error", "Failed to take photo. Please try again.");
+      console.error("Camera error:", error);
+    }
+  };
+
+  const openCamera = async () => {
+    try {
+      console.log("openCamera function called");
+
+      // Check current camera permissions first
+      let cameraPermission = await ImagePicker.getCameraPermissionsAsync();
+      console.log("Current camera permission status:", cameraPermission.status);
+
+      // Only request if not already granted
+      if (cameraPermission.status !== "granted") {
+        console.log("Requesting camera permission...");
+        cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+        console.log("New camera permission status:", cameraPermission.status);
+      }
+
+      if (cameraPermission.status !== "granted") {
+        Alert.alert(
+          "Camera Permission",
+          "We need camera access to take photos for the game!"
+        );
+        return;
+      }
+
+      // Launch camera with back camera only (no selfie camera)
+      console.log("Launching camera...");
+      let result;
+      try {
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+          cameraType: ImagePicker.CameraType.back, // Force back camera
+        });
+        console.log("Camera result:", result);
+      } catch (cameraError: any) {
+        console.error("Camera launch error:", cameraError);
+        Alert.alert(
+          "Camera Error",
+          "Failed to launch camera: " +
+            (cameraError?.message || "Unknown error")
+        );
+        return;
+      }
+
+      if (!result.canceled) {
+        Alert.alert(
+          "Photo Taken!",
+          "Your photo has been sent to your mystery buddy!"
+        );
+        // Here you would upload the photo and handle the submission
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to take photo. Please try again.");
+      console.error("Camera error:", error);
+    }
+  };
 
   useEffect(() => {
-    const checkDailyWindow = () => {
+    // Check if game mode is selected
+    setIsGameModeSelected(!!profile?.mode);
+
+    const checkPromptTime = () => {
       const now = new Date();
       const currentHour = now.getHours();
       const currentMinute = now.getMinutes();
 
-      // Submission window: 12:00 - 14:30
-      const isSubmissionWindow =
-        currentHour >= 12 &&
-        (currentHour < 14 || (currentHour === 14 && currentMinute <= 30));
+      // Only show prompts during matched phase (12 PM - 9 PM)
+      const isMatchedPhase = currentHour >= 12 && currentHour < 21;
 
-      // Reveal window: 21:00 - 22:00
-      const isRevealWindow = currentHour >= 21 && currentHour < 22;
+      if (
+        (isMatchedPhase && pairing.phase === "matched") ||
+        currentHour === 2
+      ) {
+        // Simulate random prompt times (for demo, let's say every hour at random minutes)
+        const promptTimes = [2, 13, 15, 17, 19]; // 2 AM (temp), 1 PM, 3 PM, 5 PM, 7 PM
+        const isPromptHour = promptTimes.includes(currentHour);
+        const isPromptMinute = currentMinute >= 0 && currentMinute <= 30; // 30-minute window
 
-      // Pairing happens after submission window closes
-      const isPairingTime = currentHour >= 14 && currentHour < 21;
+        setIsPromptTime(isPromptHour && isPromptMinute);
 
-      if (isSubmissionWindow) {
-        if (buddy && prompt) {
-          setPairingStatus("paired");
-        } else {
-          setPairingStatus("submitting");
+        if (isPromptHour && isPromptMinute) {
+          const nextPrompt = new Date(now);
+          nextPrompt.setMinutes(30); // Prompt ends after 30 minutes
+          setNextPromptTime(nextPrompt);
         }
-      } else if (isPairingTime) {
-        setPairingStatus("pairing");
-      } else if (isRevealWindow) {
-        setPairingStatus("revealing");
       } else {
-        setPairingStatus("waiting");
-      }
-
-      // Calculate time until next window
-      if (pairingStatus === "waiting") {
-        const nextWindow = new Date();
-        nextWindow.setHours(12, 0, 0, 0);
-        if (now >= nextWindow) {
-          nextWindow.setDate(nextWindow.getDate() + 1);
-        }
-        const diff = nextWindow.getTime() - now.getTime();
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        setTimeUntilWindow(`${hours}h ${minutes}m`);
+        setIsPromptTime(false);
+        setNextPromptTime(null);
       }
     };
 
+    const checkDailyWindow = () => {
+      const now = new Date();
+      const currentHour = now.getHours();
+
+      // Pairing pool: 9 AM - 12 PM
+      const isPairingTime = currentHour >= 9 && currentHour < 12;
+
+      // Reveal window: 9 PM - 10 PM
+      const isRevealTime = currentHour >= 21 && currentHour < 22;
+
+      // Calculate time until next window
+      let nextWindow = new Date();
+      let timeText = "";
+
+      if (currentHour < 9) {
+        // Before pairing window
+        nextWindow.setHours(9, 0, 0, 0);
+        timeText = "Pairing opens at 09:00";
+      } else if (currentHour >= 9 && currentHour < 12) {
+        // During pairing window
+        timeText = "Pairing pool is open!";
+      } else if (currentHour >= 12 && currentHour < 21) {
+        // After pairing, before reveal
+        nextWindow.setHours(21, 0, 0, 0);
+        timeText = "Reveal opens at 21:00";
+      } else if (currentHour >= 21 && currentHour < 22) {
+        // During reveal window
+        timeText = "Reveal window is open!";
+      } else {
+        // After reveal, next day pairing
+        nextWindow.setDate(nextWindow.getDate() + 1);
+        nextWindow.setHours(9, 0, 0, 0);
+        timeText = "Next pairing at 09:00";
+      }
+
+      setTimeUntilWindow(timeText);
+    };
+
     checkDailyWindow();
-    const interval = setInterval(checkDailyWindow, 60000); // Check every minute
+    checkPromptTime();
+
+    const interval = setInterval(() => {
+      checkDailyWindow();
+      checkPromptTime();
+    }, 60000); // Check every minute
 
     return () => clearInterval(interval);
-  }, [buddy, prompt, pairingStatus]);
+  }, [pairing, profile?.mode]);
 
   useEffect(() => {
-    if (pairingStatus === "pairing") {
+    if (pairing.phase === "searching") {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -106,61 +300,153 @@ export const HomeScreen = () => {
     } else {
       pulseAnim.setValue(1);
     }
-  }, [pairingStatus, pulseAnim]);
+
+    // Animate prompt card when submission is open
+    if (pairing.phase === "submission-open") {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(scaleAnim, {
+            toValue: 1.02,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(scaleAnim, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      scaleAnim.setValue(1);
+    }
+  }, [pairing.phase, pulseAnim, scaleAnim]);
+
+  // Add floating animation for prompt box
+  useEffect(() => {
+    if (isPromptTime) {
+      // Floating animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(floatAnim, {
+            toValue: -8,
+            duration: 3000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(floatAnim, {
+            toValue: 0,
+            duration: 3000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+      // Glow animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowAnim, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: false,
+          }),
+          Animated.timing(glowAnim, {
+            toValue: 0.7,
+            duration: 2000,
+            useNativeDriver: false,
+          }),
+        ])
+      ).start();
+    } else {
+      floatAnim.setValue(0);
+      glowAnim.setValue(0.7);
+    }
+  }, [isPromptTime, floatAnim, glowAnim]);
+
+  const handleStartPairing = () => {
+    if (!profile?.mode) {
+      Alert.alert("Select Game Mode", "Please choose a game mode first!");
+      return;
+    }
+
+    // Start the pairing process
+    setPairing({
+      ...pairing,
+      phase: "searching",
+    });
+
+    // Simulate finding a match after 3 seconds
+    setTimeout(() => {
+      setPairing({
+        ...pairing,
+        phase: "paired-waiting",
+      });
+      Alert.alert(
+        "Match Found! 🎉",
+        "Great news! We found your perfect SecretBuddy. The submission window will open soon!"
+      );
+    }, 3000);
+  };
 
   const handlePairingPress = () => {
-    switch (pairingStatus) {
+    const phase = getCurrentPhase();
+
+    if (!isGameModeSelected) {
+      Alert.alert("Select Game Mode", "Please choose a game mode first!");
+      return;
+    }
+
+    switch (phase) {
+      case "pairing-pool":
+        Alert.alert(
+          "Joining Pairing Pool! 🎯",
+          "Great! You're now in the pairing pool. You'll be matched with someone soon and receive random prompts throughout the day!"
+        );
+        // Update pairing state to matched
+        setPairing({
+          ...pairing,
+          phase: "matched",
+        });
+        break;
+      case "matched":
+        Alert.alert(
+          "Check Your Prompts! �",
+          "You're matched! Random prompts will appear throughout the day. Film your surroundings and send them to your mystery buddy!"
+        );
+        break;
+      case "reveal-window":
+        navigation.navigate("Reveal");
+        break;
       case "waiting":
         Alert.alert(
-          "Daily Window",
-          "The submission window opens at 12:00. You'll get a notification when it's time!",
-          [{ text: "OK" }]
-        );
-        break;
-      case "submitting":
-        // Navigate to submission screen or show modal
-        Alert.alert(
-          "Submit Response",
-          "Time to share your mood with your Secret Buddy!"
-        );
-        break;
-      case "pairing":
-        Alert.alert(
-          "Finding Your Match",
-          "We're pairing you with someone special. Check back later!"
-        );
-        break;
-      case "paired":
-        Alert.alert(
-          "You're Paired!",
-          "Your Secret Buddy is ready. Check back tonight for the reveal!"
-        );
-        break;
-      case "revealing":
-        Alert.alert(
-          "Reveal Time!",
-          "Your Secret Buddy's identity is being revealed!"
+          "Pairing Pool Closed",
+          "The pairing pool opens tomorrow at 9:00 AM. Come back then to get matched!"
         );
         break;
     }
   };
 
   const getStatusText = () => {
-    switch (pairingStatus) {
-      case "waiting":
-        return `Next window in ${timeUntilWindow}`;
-      case "submitting":
+    switch (pairing.phase) {
+      case "not-paired":
+        return isGameModeSelected
+          ? "Ready to find your SecretBuddy?"
+          : "Select a game mode to begin";
+      case "searching":
+        return "Finding your perfect match...";
+      case "paired-waiting":
+        return "Matched! Waiting for submission window";
+      case "submission-open":
         return "Submit your response now!";
       case "submitted":
         return "Response submitted ✓";
-      case "pairing":
-        return "Finding your perfect match...";
-      case "paired":
-        return "Paired! Reveal tonight";
-      case "revealing":
-        return "Identity reveal in progress!";
+      case "matched":
+        return "Both responses in! Reveal coming soon";
+      case "reveal-ready":
+        return "🎉 Identity reveal time!";
       default:
-        return "";
+        return timeUntilWindow
+          ? `Next window in ${timeUntilWindow}`
+          : "Ready to connect!";
     }
   };
 
@@ -189,19 +475,23 @@ export const HomeScreen = () => {
   ];
 
   const getButtonText = () => {
-    switch (pairingStatus) {
+    const phase = getCurrentPhase();
+
+    if (!isGameModeSelected) {
+      return "Choose Game Mode First";
+    }
+
+    switch (phase) {
+      case "pairing-pool":
+        return "Join Pairing Pool";
+      case "matched":
+        return "Check for New Prompts";
+      case "reveal-window":
+        return "Reveal Identity";
       case "waiting":
-        return "Set Reminder";
-      case "submitting":
-        return "Submit Response";
-      case "pairing":
-        return "Check Status";
-      case "paired":
-        return "View Buddy";
-      case "revealing":
-        return "Reveal Now";
+        return "Pool Opens at 9:00 AM";
       default:
-        return "Pair Me";
+        return "Start Pairing";
     }
   };
 
@@ -211,12 +501,176 @@ export const HomeScreen = () => {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Today's Prompt - Top Priority */}
-        {pairingStatus === "submitting" && prompt && (
-          <View style={styles.promptCard}>
-            <Text style={styles.promptTitle}>Today's Prompt</Text>
-            <Text style={styles.promptText}>{prompt.text}</Text>
-            <Text style={styles.promptTime}>Submit by 14:30</Text>
+        {/* Today's Prompt - Show only during notification time (12-21h) and when paired */}
+        {(() => {
+          const now = new Date();
+          const currentHour = now.getHours();
+          // Demo mode: show between 2-4 AM for testing
+          const isValidTime =
+            (currentHour >= 12 && currentHour < 21) ||
+            (currentHour >= 2 && currentHour < 4);
+          const isPaired =
+            pairing.phase === "matched" || pairing.phase === "submission-open";
+          // For demo: always show during valid time, even if not officially paired
+          const isDemoTime = currentHour >= 2 && currentHour < 4;
+          return isValidTime && (isPaired || isDemoTime);
+        })() && (
+          <Animated.View
+            style={[
+              styles.promptCardContainer,
+              {
+                transform: [{ scale: scaleAnim }, { translateY: floatAnim }],
+              },
+            ]}
+          >
+            <Animated.View
+              style={[
+                styles.promptCard,
+                {
+                  shadowOpacity: glowAnim,
+                },
+              ]}
+            >
+              <View style={styles.promptHeader}>
+                <View style={styles.promptIconContainer}>
+                  <Ionicons name="camera" size={32} color="#ffffff" />
+                </View>
+                <View style={styles.promptHeaderText}>
+                  <Text style={styles.promptTitle}>Photo Challenge</Text>
+                  <View style={styles.promptTimer}>
+                    <Ionicons name="timer-outline" size={18} color="#6366F1" />
+                    <Text style={styles.promptTime}>
+                      {nextPromptTime
+                        ? `${Math.max(
+                            0,
+                            Math.floor(
+                              (nextPromptTime.getTime() -
+                                new Date().getTime()) /
+                                (1000 * 60)
+                            )
+                          )} minutes left`
+                        : "30 minutes remaining"}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.promptContent}>
+                <Text style={styles.promptText}>
+                  {
+                    randomPrompts[
+                      Math.floor(Math.random() * randomPrompts.length)
+                    ]
+                  }
+                </Text>
+
+                {/* Exciting call to action */}
+                <View style={styles.excitementBox}>
+                  <Text style={styles.excitementText}>📸 Hurry up!</Text>
+                  <Text style={styles.excitementSubtext}>
+                    Share this moment anonymously
+                  </Text>
+                </View>
+
+                <View style={styles.promptActions}>
+                  <TouchableOpacity
+                    style={styles.cameraButton}
+                    onPress={takeBackPhoto}
+                  >
+                    <View style={styles.cameraButtonIcon}>
+                      <Ionicons
+                        name="camera"
+                        size={24}
+                        color={colors.textPrimary}
+                      />
+                    </View>
+                    <Text style={styles.cameraButtonText}>Take Photo</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.emojiButton}
+                    onPress={() =>
+                      Alert.alert(
+                        "Quick React",
+                        "Send a reaction to your buddy!"
+                      )
+                    }
+                  >
+                    <Text style={styles.emojiButtonText}>Skip</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.promptRules}>
+                  <Text style={styles.promptRuleText}>
+                    • Keep your identity anonymous
+                  </Text>
+                  <Text style={styles.promptRuleText}>
+                    • No selfies or personal photos allowed
+                  </Text>
+                  <Text style={styles.promptHintText}>
+                    Your mystery buddy will see this photo but not know it's you
+                    until reveal time
+                  </Text>
+                </View>
+              </View>
+            </Animated.View>
+          </Animated.View>
+        )}
+
+        {/* Game Mode Selection - Show first if not selected */}
+        {!isGameModeSelected && (
+          <View style={styles.gameModeCard}>
+            <View style={styles.gameModeHeader}>
+              <Ionicons
+                name="game-controller-outline"
+                size={28}
+                color={colors.accentPurple}
+              />
+              <Text style={styles.gameModeTitle}>Choose Your Adventure</Text>
+            </View>
+            <Text style={styles.gameModeSubtitle}>
+              Select how you want to connect with others
+            </Text>
+            <View style={styles.modeOptions}>
+              {getModeOptions().map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.modeOption,
+                    profile?.mode === option.value && styles.modeOptionSelected,
+                  ]}
+                  onPress={() => handleModeSelect(option.value)}
+                >
+                  <View style={styles.modeOptionContent}>
+                    <Text
+                      style={[
+                        styles.modeOptionLabel,
+                        profile?.mode === option.value &&
+                          styles.modeOptionLabelSelected,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.modeOptionDesc,
+                        profile?.mode === option.value &&
+                          styles.modeOptionDescSelected,
+                      ]}
+                    >
+                      {option.description}
+                    </Text>
+                  </View>
+                  {profile?.mode === option.value && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={24}
+                      color={colors.accentPurple}
+                    />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
 
@@ -224,79 +678,83 @@ export const HomeScreen = () => {
         <Animated.View
           style={[
             styles.pairingCard,
-            pairingStatus === "pairing" && {
+            pairing.phase === "searching" && {
               transform: [{ scale: pulseAnim }],
             },
           ]}
         >
           <View style={styles.statusHeader}>
-            <Text style={styles.statusTitle}>Daily Connection</Text>
+            <Text style={styles.statusTitle}>
+              {getCurrentPhase() === "pairing-pool"
+                ? "Pairing Pool Open"
+                : getCurrentPhase() === "matched"
+                ? "You're Matched!"
+                : getCurrentPhase() === "reveal-window"
+                ? "Reveal Time"
+                : "Daily Connection"}
+            </Text>
             <View
               style={[
                 styles.statusIndicator,
-                { backgroundColor: getStatusColor(pairingStatus) },
+                {
+                  backgroundColor:
+                    getCurrentPhase() === "pairing-pool" ||
+                    getCurrentPhase() === "reveal-window"
+                      ? colors.accentTeal
+                      : getCurrentPhase() === "matched"
+                      ? colors.accentPurple
+                      : colors.textSecondary,
+                },
               ]}
             />
           </View>
-          <Text style={styles.statusText}>{getStatusText()}</Text>
+          <Text style={styles.statusText}>{getStatusMessage()}</Text>
 
           <PrimaryButton
             label={getButtonText()}
             onPress={handlePairingPress}
-            variant={pairingStatus === "submitting" ? "primary" : "ghost"}
-            disabled={pairingStatus === "waiting"}
+            variant={
+              getCurrentPhase() === "pairing-pool" ||
+              getCurrentPhase() === "reveal-window"
+                ? "primary"
+                : "ghost"
+            }
+            disabled={!isGameModeSelected || getCurrentPhase() === "waiting"}
           />
 
-          {pairingStatus === "pairing" && (
+          {pairing.phase === "searching" && (
             <View style={styles.searchingIndicator}>
-              <Text style={styles.searchingText}>🔍 Searching...</Text>
+              <View style={styles.searchingContent}>
+                <Animated.View
+                  style={[
+                    styles.searchingIcon,
+                    { transform: [{ scale: scaleAnim }] },
+                  ]}
+                >
+                  <Ionicons
+                    name="search"
+                    size={20}
+                    color={colors.accentPurple}
+                  />
+                </Animated.View>
+                <Text style={styles.searchingText}>
+                  Finding your perfect match...
+                </Text>
+              </View>
             </View>
           )}
         </Animated.View>
 
-        {/* Mystery Card - Only show when paired */}
-        {pairingStatus === "paired" && prompt && buddy && (
-          <MysteryCard prompt={prompt} buddy={buddy} />
-        )}
+        {/* Mystery Card - Temporarily disabled to use new prompt system */}
+        {/* {(pairing.phase === "paired-waiting" ||
+          pairing.phase === "submission-open" ||
+          pairing.phase === "matched") &&
+          prompt &&
+          buddy && <MysteryCard prompt={prompt} buddy={buddy} />} */}
 
-        {/* Game Mode Selection */}
-        <View style={styles.modeCard}>
-          <Text style={styles.modeTitle}>Game Mode</Text>
-          <Text style={styles.modeSubtitle}>
-            Choose how you want to connect with others
-          </Text>
-          <View style={styles.modeOptions}>
-            {getModeOptions().map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={[
-                  styles.modeOption,
-                  profile?.mode === option.value && styles.modeOptionSelected,
-                ]}
-                onPress={() => handleModeSelect(option.value)}
-              >
-                <Text
-                  style={[
-                    styles.modeOptionLabel,
-                    profile?.mode === option.value &&
-                      styles.modeOptionLabelSelected,
-                  ]}
-                >
-                  {option.label}
-                </Text>
-                <Text
-                  style={[
-                    styles.modeOptionDesc,
-                    profile?.mode === option.value &&
-                      styles.modeOptionDescSelected,
-                  ]}
-                >
-                  {option.description}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {profile?.mode === "country" && (
+        {/* Country Selection for Country Mode */}
+        {isGameModeSelected && profile?.mode === "country" && (
+          <View style={styles.countryCard}>
             <CountryDropdown
               label="Select Country"
               value={profile?.country || ""}
@@ -307,16 +765,25 @@ export const HomeScreen = () => {
               }}
               placeholder="Choose your pairing country"
             />
-          )}
-          {profile?.mode === "friends" && (
+          </View>
+        )}
+
+        {/* Friends Management for Friends Mode */}
+        {isGameModeSelected && profile?.mode === "friends" && (
+          <View style={styles.friendsCard}>
             <TouchableOpacity
               style={styles.manageFriendsButton}
               onPress={() => navigation.navigate("Friends")}
             >
+              <Ionicons
+                name="people-outline"
+                size={20}
+                color={colors.accentPurple}
+              />
               <Text style={styles.manageFriendsText}>Manage Friends</Text>
             </TouchableOpacity>
-          )}
-        </View>
+          </View>
+        )}
 
         {/* Stats */}
         <View style={styles.metaSection}>
@@ -330,21 +797,103 @@ export const HomeScreen = () => {
           </View>
         </View>
       </ScrollView>
+
+      {/* Simple Camera Reminder Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showCameraModal}
+        onRequestClose={() => setShowCameraModal(false)}
+      >
+        <View style={styles.simpleModalOverlay}>
+          <View style={styles.simpleCameraModal}>
+            {/* Close button */}
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowCameraModal(false)}
+            >
+              <Ionicons name="close" size={20} color="#CBD5E1" />
+            </TouchableOpacity>
+
+            {/* Header with icon */}
+            <View style={styles.modalHeader}>
+              <View style={styles.anonymityIconContainer}>
+                <Ionicons name="eye-off" size={24} color="#6366F1" />
+              </View>
+              <View style={styles.modalHeaderText}>
+                <Text style={styles.simpleCameraTitle}>No selfies</Text>
+                <Text style={styles.simpleCameraSubtitle}>
+                  Please use back camera only to maintain anonymity
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.continueButton}
+              onPress={handleCameraConfirm}
+            >
+              <Text style={styles.continueButtonText}>Continue</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Pairing Success Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showPairingSuccess}
+        onRequestClose={() => setShowPairingSuccess(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.successIconContainer}>
+              <Ionicons
+                name="checkmark-circle"
+                size={80}
+                color={colors.accentTeal}
+              />
+            </View>
+            <Text style={styles.successTitle}>🎉 Pairing Successful!</Text>
+            <Text style={styles.successMessage}>
+              You've been matched with a mystery buddy! Wait for random photo
+              prompts throughout the day.
+            </Text>
+            <View style={styles.successInfoBox}>
+              <Text style={styles.successInfo}>
+                • Photo prompts will arrive randomly between 12 PM - 9 PM{"\n"}•
+                No selfies allowed - keep it mysterious!{"\n"}• Identity reveals
+                at 9 PM - 10 PM
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.successButton}
+              onPress={() => setShowPairingSuccess(false)}
+            >
+              <Text style={styles.successButtonText}>Got it!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </GradientBackground>
   );
 };
 
-const getStatusColor = (status: PairingStatus) => {
-  switch (status) {
-    case "waiting":
+const getStatusColor = (phase: string) => {
+  switch (phase) {
+    case "not-paired":
       return colors.textSecondary;
-    case "submitting":
-      return colors.accentTeal;
-    case "pairing":
+    case "searching":
       return colors.accentPurple;
-    case "paired":
+    case "paired-waiting":
+      return colors.accentTeal;
+    case "submission-open":
+      return colors.accentTeal;
+    case "submitted":
       return colors.accentPink;
-    case "revealing":
+    case "matched":
+      return colors.accentPink;
+    case "reveal-ready":
       return colors.danger;
     default:
       return colors.textSecondary;
@@ -359,28 +908,133 @@ const styles = StyleSheet.create({
     paddingBottom: 140,
     gap: 28,
   },
+  promptCardContainer: {
+    // Container for transform animations (native driver)
+  },
   promptCard: {
-    borderRadius: 24,
-    backgroundColor: "rgba(6, 0, 18, 0.72)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    padding: 22,
+    borderRadius: 20,
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderWidth: 1.5,
+    borderColor: "rgba(99, 102, 241, 0.5)",
+    padding: 24,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 16,
+  },
+
+  promptHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
   },
   promptTitle: {
     ...typography.subtitle,
-    color: colors.textPrimary,
-    marginBottom: 12,
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 4,
   },
   promptText: {
     ...typography.body,
-    color: colors.textPrimary,
-    marginBottom: 16,
+    color: "#F0F0F0",
+    fontSize: 16,
+    fontWeight: "500",
+    marginBottom: 20,
     lineHeight: 24,
+    textAlign: "center",
   },
   promptTime: {
     ...typography.caption,
-    color: colors.accentTeal,
+    color: "#6366F1",
+    fontSize: 14,
     fontWeight: "600",
+    marginLeft: 6,
+  },
+
+  promptIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#6366F1",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 16,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+
+  promptHeaderText: {
+    flex: 1,
+    gap: 8,
+  },
+
+  promptTimer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  promptContent: {
+    gap: 20,
+    marginTop: 16,
+  },
+
+  promptActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 8,
+  },
+
+  promptActionButton: {
+    flex: 1,
+    backgroundColor: "rgba(255, 79, 183, 0.15)",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 79, 183, 0.3)",
+  },
+
+  promptActionText: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  promptSecondaryButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+  },
+
+  promptSecondaryText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  promptHint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    textAlign: "center",
+    opacity: 0.8,
+    fontStyle: "italic",
+    marginTop: 8,
   },
   pairingCard: {
     borderRadius: 24,
@@ -417,6 +1071,58 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.accentPurple,
     fontWeight: "600",
+  },
+
+  searchingContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
+  searchingIcon: {
+    backgroundColor: "rgba(156, 107, 255, 0.1)",
+    borderRadius: 15,
+    padding: 8,
+  },
+
+  // Game Mode Card Styles
+  gameModeCard: {
+    borderRadius: 24,
+    backgroundColor: "rgba(6, 0, 18, 0.72)",
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.3)",
+    padding: 24,
+    shadowColor: "rgba(156, 107, 255, 0.4)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+
+  gameModeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 12,
+  },
+
+  gameModeTitle: {
+    ...typography.title,
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: "800",
+  },
+
+  gameModeSubtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginBottom: 20,
+    fontSize: 16,
+  },
+
+  modeOptionContent: {
+    flex: 1,
   },
   headerTitle: {
     ...typography.display,
@@ -468,15 +1174,25 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   modeOption: {
-    borderRadius: 16,
-    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 20,
+    padding: 20,
     backgroundColor: "rgba(11, 5, 32, 0.5)",
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.08)",
+    marginBottom: 12,
+    shadowColor: "rgba(0, 0, 0, 0.3)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   modeOptionSelected: {
     backgroundColor: "rgba(156, 107, 255, 0.15)",
     borderColor: colors.accentPurple,
+    shadowColor: "rgba(156, 107, 255, 0.4)",
+    shadowOpacity: 0.6,
   },
   modeOptionLabel: {
     ...typography.subtitle,
@@ -500,9 +1216,382 @@ const styles = StyleSheet.create({
     borderColor: colors.accentPurple,
     padding: 16,
     alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
   },
   manageFriendsText: {
     ...typography.subtitle,
     color: colors.accentPurple,
+    marginLeft: 8,
+    fontWeight: "600",
+  },
+
+  // Additional Cards
+  countryCard: {
+    backgroundColor: "rgba(6, 0, 18, 0.8)",
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.2)",
+    shadowColor: "rgba(156, 107, 255, 0.3)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+
+  friendsCard: {
+    backgroundColor: "rgba(6, 0, 18, 0.8)",
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.2)",
+    shadowColor: "rgba(156, 107, 255, 0.3)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: "rgba(6, 0, 18, 0.9)",
+    borderRadius: 24,
+    padding: 30,
+    alignItems: "center",
+    width: "90%",
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.3)",
+  },
+  successIconContainer: {
+    marginBottom: 20,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  successMessage: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginBottom: 20,
+    lineHeight: 22,
+  },
+  successInfoBox: {
+    backgroundColor: "rgba(156, 107, 255, 0.1)",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.2)",
+  },
+  successInfo: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  successButton: {
+    backgroundColor: colors.accentTeal,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 25,
+    width: "100%",
+    alignItems: "center",
+  },
+  successButtonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
+  // Camera Button Styles
+  cameraButton: {
+    backgroundColor: "#6366F1",
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    flex: 1,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  cameraButtonIcon: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 20,
+    padding: 6,
+  },
+  cameraButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  emojiButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 100,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  emojiButtonText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // New Prompt Rules Styles
+  promptRules: {
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    borderRadius: 12,
+    padding: 16,
+    gap: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: "#6366F1",
+  },
+  promptRuleText: {
+    ...typography.caption,
+    color: "#E0E0E0",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  promptHintText: {
+    ...typography.caption,
+    color: "#A0A0A0",
+    fontSize: 12,
+    fontStyle: "italic",
+    marginTop: 4,
+    lineHeight: 16,
+  },
+
+  // No Selfies Warning Styles
+  noSelfiesWarning: {
+    backgroundColor: "rgba(255, 71, 87, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 71, 87, 0.3)",
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginVertical: 12,
+  },
+  warningIconContainer: {
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  slashOverlay: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    backgroundColor: "rgba(255, 71, 87, 0.9)",
+    borderRadius: 8,
+    padding: 1,
+  },
+  warningText: {
+    ...typography.subtitle,
+    color: "#FF4757",
+    fontSize: 16,
+    fontWeight: "700",
+    flex: 1,
+  },
+  warningSubtext: {
+    ...typography.caption,
+    color: "#FF8A95",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+
+  // Excitement Box Styles (replaces red warning)
+  excitementBox: {
+    backgroundColor: "rgba(99, 102, 241, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.3)",
+    borderRadius: 16,
+    padding: 16,
+    alignItems: "center",
+    marginVertical: 12,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  excitementText: {
+    ...typography.subtitle,
+    color: "#6366F1",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  excitementSubtext: {
+    ...typography.caption,
+    color: "#A5B4FC",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+
+  // Simple Camera Modal Styles - Modern & Clean
+  simpleModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  simpleCameraModal: {
+    backgroundColor: "#1E1B4B",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    width: "85%",
+    maxWidth: 320,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.2)",
+  },
+  simpleCameraTitle: {
+    ...typography.title,
+    color: "#F8FAFC",
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 6,
+    textAlign: "left",
+  },
+  simpleCameraButtons: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+    alignItems: "center",
+  },
+  simpleCameraCancel: {
+    backgroundColor: "rgba(71, 85, 105, 0.3)",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.2)",
+  },
+  simpleCameraCancelText: {
+    ...typography.caption,
+    color: "#94A3B8",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  simpleCameraConfirm: {
+    flex: 1,
+    backgroundColor: "#8B5CF6",
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: "center",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 12,
+    borderWidth: 2,
+    borderColor: "rgba(139, 92, 246, 0.4)",
+    transform: [{ scale: 1.02 }],
+  },
+  simpleCameraConfirmText: {
+    ...typography.subtitle,
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "700",
+  },
+
+  // New professional styles
+  closeButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(71, 85, 105, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
+  },
+  modalContent: {
+    paddingTop: 16,
+    alignItems: "center",
+    width: "100%",
+  },
+  simpleCameraSubtitle: {
+    ...typography.body,
+    color: "#94A3B8",
+    fontSize: 14,
+    fontWeight: "400",
+    marginBottom: 0,
+    textAlign: "left",
+    lineHeight: 20,
+  },
+  continueButton: {
+    backgroundColor: "#6366F1",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    alignItems: "center",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+    width: "100%",
+  },
+  continueButtonText: {
+    ...typography.subtitle,
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
+  // Modal header with anonymity icon
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 16,
+    marginBottom: 24,
+    paddingTop: 8,
+  },
+  anonymityIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(99, 102, 241, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.3)",
+  },
+  modalHeaderText: {
+    flex: 1,
+    paddingTop: 4,
   },
 });

@@ -7,6 +7,24 @@ import { colors, typography } from "../theme";
 type InputFieldProps = TextInputProps & {
   label: string;
   hint?: string;
+  autoComplete?:
+    | "email"
+    | "password"
+    | "new-password"
+    | "current-password"
+    | "username"
+    | "name"
+    | "given-name"
+    | "family-name"
+    | "off";
+  textContentType?:
+    | "emailAddress"
+    | "password"
+    | "newPassword"
+    | "username"
+    | "givenName"
+    | "familyName"
+    | "name";
 };
 
 export const InputField = ({
@@ -15,6 +33,8 @@ export const InputField = ({
   style,
   onFocus,
   onBlur,
+  autoComplete,
+  textContentType,
   ...rest
 }: InputFieldProps) => {
   const [focused, setFocused] = useState(false);
@@ -26,6 +46,8 @@ export const InputField = ({
         style={[styles.input, focused && styles.inputFocused, style]}
         placeholderTextColor="rgba(255,255,255,0.4)"
         cursorColor={colors.accentPink}
+        autoComplete={autoComplete}
+        textContentType={textContentType}
         onFocus={(event) => {
           setFocused(true);
           onFocus?.(event);

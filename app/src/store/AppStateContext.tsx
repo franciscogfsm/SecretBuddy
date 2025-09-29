@@ -70,7 +70,7 @@ const PROFILE_STORAGE_KEY = "secretbuddy.profile";
 
 const defaultPrompt: Prompt = {
   id: "p-001",
-  text: "Share a 10-second glimpse of the space you're in right now without showing faces.",
+  text: "Take a photo of your morning coffee ☕ • No selfies allowed",
   gradient: "purplePink",
   expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 4).toISOString(),
 };
@@ -84,7 +84,7 @@ const defaultBuddy: MysteryBuddy = {
 };
 
 const defaultPairing: PairingData = {
-  phase: "paired-waiting",
+  phase: "matched",
   submissionWindowStart: new Date(
     Date.now() + 1000 * 60 * 60 * 2
   ).toISOString(),

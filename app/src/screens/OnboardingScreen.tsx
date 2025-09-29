@@ -23,6 +23,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { CountryDropdown } from "../components/CountryDropdown";
 import { InputField } from "../components/InputField";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { ErrorModal } from "../components/ErrorModal";
 import { useAuth } from "../context/AuthContext";
 import type { RootStackParamList } from "../navigation/types";
 import { useAppState } from "../store/AppStateContext";
@@ -77,6 +78,17 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     password: string;
   } | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [errorModal, setErrorModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: "error" | "warning" | "info";
+  }>({
+    visible: false,
+    title: "",
+    message: "",
+    type: "error",
+  });
 
   const fadeAnim = useState(new Animated.Value(0))[0];
 
@@ -107,6 +119,82 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     return signupSteps[signupStage];
   }, [signupStage, isSignup]);
 
+  // Custom error helper function
+  const showCustomError = (
+    title: string,
+    message: string,
+    type: "error" | "warning" | "info" = "error"
+  ) => {
+    setErrorModal({
+      visible: true,
+      title,
+      message,
+      type,
+    });
+  };
+
+  const hideErrorModal = () => {
+    setErrorModal((prev) => ({ ...prev, visible: false }));
+  };
+
+  // Format Firebase errors into user-friendly messages
+  const getCustomErrorMessage = (error: any) => {
+    if (error?.code) {
+      switch (error.code) {
+        case "auth/email-already-in-use":
+          return {
+            title: "Email Already Registered",
+            message:
+              "This email is already registered. Try signing in instead or use a different email.",
+          };
+        case "auth/invalid-credential":
+        case "auth/wrong-password":
+          return {
+            title: "Incorrect Credentials",
+            message:
+              "The email or password you entered is incorrect. Please check and try again.",
+          };
+        case "auth/user-not-found":
+          return {
+            title: "Account Not Found",
+            message:
+              "We couldn't find an account with this email. Try creating a new account instead.",
+          };
+        case "auth/weak-password":
+          return {
+            title: "Weak Password",
+            message:
+              "Please choose a stronger password with at least 6 characters.",
+          };
+        case "auth/invalid-email":
+          return {
+            title: "Invalid Email",
+            message: "Please enter a valid email address.",
+          };
+        case "auth/too-many-requests":
+          return {
+            title: "Too Many Attempts",
+            message:
+              "Too many failed attempts. Please wait a few minutes before trying again.",
+          };
+        case "auth/network-request-failed":
+          return {
+            title: "Network Error",
+            message: "Please check your internet connection and try again.",
+          };
+        default:
+          return {
+            title: "Authentication Error",
+            message: "Something went wrong. Please try again.",
+          };
+      }
+    }
+    return {
+      title: "Unexpected Error",
+      message: error?.message || "Something went wrong. Please try again.",
+    };
+  };
+
   useEffect(() => {
     if (route.params?.mode) {
       setAuthMode(route.params.mode);
@@ -131,17 +219,19 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     const numericAge = Number(age);
 
     if (!trimmedName || !trimmedCountry) {
-      Alert.alert(
-        "Add a few details",
-        "Your name and country help friends know it's really you."
+      showCustomError(
+        "Missing Details",
+        "Your name and country help friends know it's really you.",
+        "warning"
       );
       return null;
     }
 
     if (Number.isNaN(numericAge) || numericAge < 18) {
-      Alert.alert(
-        "Age requirement",
-        "You must be 18 or older to use SecretBuddy."
+      showCustomError(
+        "Age Requirement",
+        "You must be 18 or older to use SecretBuddy.",
+        "warning"
       );
       return null;
     }
@@ -155,25 +245,28 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!normalizedEmail || !passwordValue) {
-      Alert.alert(
-        "Account details needed",
-        "Enter an email and password to continue."
+      showCustomError(
+        "Missing Credentials",
+        "Enter an email and password to continue.",
+        "warning"
       );
       return null;
     }
 
     if (!emailPattern.test(normalizedEmail)) {
-      Alert.alert(
-        "Email looks off",
-        "Double-check the address before you continue."
+      showCustomError(
+        "Invalid Email",
+        "Double-check the email address before you continue.",
+        "warning"
       );
       return null;
     }
 
     if (passwordValue.length < 6) {
-      Alert.alert(
-        "Password too short",
-        "Use at least 6 characters for your password."
+      showCustomError(
+        "Password Too Short",
+        "Use at least 6 characters for your password.",
+        "warning"
       );
       return null;
     }
@@ -219,9 +312,10 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     }
 
     if (!acceptedTerms) {
-      Alert.alert(
-        "Accept the terms",
-        "Please agree to the Terms of Service and Privacy Policy to continue."
+      showCustomError(
+        "Accept Terms",
+        "Please agree to the Terms of Service and Privacy Policy to continue.",
+        "warning"
       );
       return;
     }
@@ -237,9 +331,10 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     }
 
     if (!signupCredentials && !user) {
-      Alert.alert(
-        "Almost there",
-        "Go back and confirm your account details before finishing up."
+      showCustomError(
+        "Almost There!",
+        "Go back and confirm your account details before finishing up.",
+        "warning"
       );
       return;
     }
@@ -262,10 +357,8 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       ) {
         return;
       }
-      Alert.alert(
-        "Couldn't create account",
-        err instanceof Error ? err.message : "Please try again."
-      );
+      const errorInfo = getCustomErrorMessage(err);
+      showCustomError(errorInfo.title, errorInfo.message);
     } finally {
       setActiveAction(null);
     }
@@ -288,10 +381,8 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       ) {
         return;
       }
-      Alert.alert(
-        "Couldn't sign in",
-        err instanceof Error ? err.message : "Please try again."
-      );
+      const errorInfo = getCustomErrorMessage(err);
+      showCustomError(errorInfo.title, errorInfo.message);
     } finally {
       setActiveAction(null);
     }
@@ -299,9 +390,10 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
 
   const handleProvider = async (provider: "google") => {
     if (authMode === "signup" && signupStage === 0 && !acceptedTerms) {
-      Alert.alert(
-        "Accept the terms",
-        "Please agree to the Terms of Service and Privacy Policy to continue."
+      showCustomError(
+        "Accept Terms",
+        "Please agree to the Terms of Service and Privacy Policy to continue.",
+        "warning"
       );
       return;
     }
@@ -325,10 +417,8 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       ) {
         return;
       }
-      Alert.alert(
-        "Couldn't sign in",
-        err instanceof Error ? err.message : "Please try again."
-      );
+      const errorInfo = getCustomErrorMessage(err);
+      showCustomError(errorInfo.title, errorInfo.message);
     } finally {
       setActiveAction(null);
     }
@@ -431,12 +521,19 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                   value={name}
                   onChangeText={setName}
                   placeholder="John Doe"
+                  autoComplete="name"
+                  textContentType="name"
+                  autoCapitalize="words"
                 />
                 <InputField
                   label="Username"
                   value={username}
                   onChangeText={setUsername}
                   placeholder="johndoe123"
+                  autoComplete="username"
+                  textContentType="username"
+                  autoCapitalize="none"
+                  autoCorrect={false}
                 />
                 <Text style={styles.ageWarning}>
                   You must be 18 or older to use SecretBuddy.
@@ -527,6 +624,8 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    autoComplete="email"
+                    textContentType="emailAddress"
                     placeholder="you@example.com"
                   />
                   <InputField
@@ -535,6 +634,14 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                     onChangeText={setPassword}
                     placeholder="Minimum 6 characters"
                     secureTextEntry
+                    autoComplete={
+                      authMode === "signup"
+                        ? "new-password"
+                        : "current-password"
+                    }
+                    textContentType={
+                      authMode === "signup" ? "newPassword" : "password"
+                    }
                   />
                 </View>
 
@@ -594,9 +701,10 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                       <TouchableOpacity
                         style={styles.forgotLink}
                         onPress={() =>
-                          Alert.alert(
-                            "Forgot password?",
-                            "Contact support@secretbuddy.app for help resetting your password."
+                          showCustomError(
+                            "Forgot Password?",
+                            "Contact support@secretbuddy.app for help resetting your password.",
+                            "info"
                           )
                         }
                       >
@@ -606,10 +714,6 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                       </TouchableOpacity>
                     </>
                   )}
-
-                  {authError ? (
-                    <Text style={styles.errorText}>{authError}</Text>
-                  ) : null}
                 </View>
 
                 <View style={styles.actionStack}>
@@ -675,6 +779,15 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* Custom Error Modal */}
+      <ErrorModal
+        visible={errorModal.visible}
+        title={errorModal.title}
+        message={errorModal.message}
+        type={errorModal.type}
+        onClose={hideErrorModal}
+      />
     </GradientBackground>
   );
 };
