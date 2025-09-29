@@ -87,7 +87,7 @@ export const HomeScreen = () => {
     "Take a photo of what you're drinking",
     "Snap your workspace or study area",
     "Photograph your favorite nearby object",
-    "Share what you're having for your next meal",
+    "Share what you're having for your meal",
     "Show your pet or a plant in your space",
   ];
 
@@ -96,14 +96,20 @@ export const HomeScreen = () => {
     console.log("takeBackPhoto called - showing reminder then opening camera");
 
     // Simple reminder alert that doesn't block camera
-    Alert.alert("📷 Camera Ready", "No selfies please 🚫", [
-      {
-        text: "Got it!",
-        onPress: async () => {
-          await openCamera();
+    Alert.alert(
+      "Camera Guidelines",
+      "IMPORTANT: Use back camera only!\n\n• Do NOT flip to front camera\n• No selfies allowed\n• Keep your identity hidden\n\nViolating these rules may result in removal from the game.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "I understand",
+          style: "default",
+          onPress: async () => {
+            await openCamera();
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   const handleCameraConfirm = async () => {
@@ -563,14 +569,6 @@ export const HomeScreen = () => {
                     ]
                   }
                 </Text>
-
-                {/* Exciting call to action */}
-                <View style={styles.excitementBox}>
-                  <Text style={styles.excitementText}>📸 Hurry up!</Text>
-                  <Text style={styles.excitementSubtext}>
-                    Share this moment anonymously
-                  </Text>
-                </View>
 
                 <View style={styles.promptActions}>
                   <TouchableOpacity
@@ -1422,33 +1420,22 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  // Excitement Box Styles (replaces red warning)
-  excitementBox: {
-    backgroundColor: "rgba(99, 102, 241, 0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(99, 102, 241, 0.3)",
-    borderRadius: 16,
+  // Simple prompt instruction styles
+  promptInstruction: {
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    borderRadius: 12,
     padding: 16,
-    alignItems: "center",
     marginVertical: 12,
-    shadowColor: "#6366F1",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: "#6366F1",
   },
-  excitementText: {
-    ...typography.subtitle,
-    color: "#6366F1",
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  excitementSubtext: {
-    ...typography.caption,
-    color: "#A5B4FC",
-    fontSize: 13,
-    fontWeight: "500",
+  instructionText: {
+    ...typography.body,
+    color: "#E2E8F0",
+    fontSize: 15,
+    fontWeight: "400",
+    textAlign: "center",
+    lineHeight: 22,
   },
 
   // Simple Camera Modal Styles - Modern & Clean
