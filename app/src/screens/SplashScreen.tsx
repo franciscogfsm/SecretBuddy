@@ -316,8 +316,8 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   logoImage: {
-    width: "96%",
-    height: "96%",
+    width: "100%",
+    height: "100%",
   },
   textContainer: {
     alignItems: "center",

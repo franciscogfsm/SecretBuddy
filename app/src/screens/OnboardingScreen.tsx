@@ -677,6 +677,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                       style={[
                         styles.modeChip,
                         authMode === "signin" && styles.modeChipActive,
+                        styles.loginChip,
                       ]}
                     >
                       <Text
@@ -1059,25 +1060,36 @@ const styles = StyleSheet.create({
   },
   modeSwitch: {
     flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderRadius: 18,
-    padding: 4,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 24,
+    padding: 6,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.1)",
     position: "relative",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   activeIndicator: {
     position: "absolute",
-    top: 4,
+    top: 6,
+    left: 4,
     width: "50%",
     height: "100%",
-    borderRadius: 14,
-    backgroundColor: "rgba(138, 70, 255, 0.22)",
+    borderRadius: 18,
+    backgroundColor: "rgba(138, 70, 255, 0.4)",
+    shadowColor: colors.accentPurple,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 3,
   },
   modeChip: {
     flex: 1,
-    borderRadius: 14,
-    paddingVertical: 10,
+    borderRadius: 25,
+    paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1086,12 +1098,20 @@ const styles = StyleSheet.create({
   },
   modeChipLabel: {
     ...typography.caption,
-    color: "rgba(201,192,255,0.75)",
-    letterSpacing: 0.6,
+    color: "rgba(201,192,255,0.6)",
+    letterSpacing: 0.3,
     textTransform: "uppercase",
+    fontSize: 16,
+    fontWeight: "700",
+    textAlign: "center",
+    paddingRight: 0,
   },
   modeChipLabelActive: {
     color: colors.textPrimary,
+    fontWeight: "800",
+  },
+  loginChip: {
+    paddingVertical: 12,
   },
   cardSubtitle: {
     ...typography.body,
@@ -1207,9 +1227,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(138, 70, 255, 0.16)",
   },
   primaryButton: {
-    paddingVertical: 16, // Increased padding for a modern look
-    paddingHorizontal: 24,
-    borderRadius: 12, // Softer, rounded corners
+    paddingVertical: 20, // Increased vertical padding for a larger button
+    paddingHorizontal: 28, // Increased horizontal padding for a wider button
+    borderRadius: 14, // Slightly larger rounded corners
     backgroundColor: colors.accentPurple,
     shadowColor: "#000", // Subtle shadow for depth
     shadowOffset: { width: 0, height: 4 },
