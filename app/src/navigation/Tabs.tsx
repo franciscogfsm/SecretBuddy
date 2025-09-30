@@ -216,7 +216,7 @@ const AnimatedTabBar = ({
   }, [indicatorPosition, routeIndices, tabWidth]);
 
   return (
-    <View style={[styles.tabBarRoot, { paddingBottom: 15 }]}>
+    <View style={[styles.tabBarRoot, { paddingBottom: 20 }]}>
       <View
         style={styles.tabBar}
         onLayout={(event) => setContainerWidth(event.nativeEvent.layout.width)}
@@ -503,11 +503,11 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 8,
+      height: 12,
     },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
   },
@@ -521,17 +521,17 @@ const styles = StyleSheet.create({
     shadowColor: colors.accentPurple,
     shadowOffset: {
       width: 0,
-      height: 0,
+      height: 2,
     },
-    shadowOpacity: 0.8,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    elevation: 8,
   },
   tabButton: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    height: 56,
+    height: 50,
     borderRadius: 28,
   },
   ripple: {

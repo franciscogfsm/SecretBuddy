@@ -1015,7 +1015,7 @@ const styles = StyleSheet.create({
   },
   card: {
     borderRadius: 28,
-    padding: 20,
+    padding: 24,
     gap: 16,
     backgroundColor: "rgba(14, 8, 38, 0.55)",
     borderWidth: 1,
@@ -1207,7 +1207,7 @@ const styles = StyleSheet.create({
     alignItems: "stretch",
   },
   formStack: {
-    gap: 16,
+    gap: 12,
     alignItems: "stretch",
   },
   metaSection: {

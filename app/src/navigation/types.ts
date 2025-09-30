@@ -4,7 +4,7 @@ export type RootStackParamList = {
   Onboarding: { mode?: "signup" | "signin" };
   MainTabs: undefined;
   Settings: undefined;
-  Reveal: undefined;
+  Reveal: { demo?: boolean; bothRevealed?: boolean };
   Chat: { isTimed: boolean };
   Friends: undefined;
 };

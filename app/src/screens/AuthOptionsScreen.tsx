@@ -444,8 +444,8 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 30,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
     justifyContent: "center",
   },
   heroSection: {
@@ -472,7 +472,7 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
   authCard: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     borderRadius: 24,
     overflow: "hidden",
     shadowColor: "#000",
@@ -495,19 +495,20 @@ const styles = StyleSheet.create({
     elevation: 3, // For Android shadow
   },
   cardContent: {
-    padding: 28,
-    gap: 20,
+    padding: 24,
+    gap: 16,
   },
   socialButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 18,
-    paddingHorizontal: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     borderRadius: 20,
-    gap: 12,
+    gap: 10,
     borderWidth: 1.5,
-    minHeight: 56,
+    minHeight: 52,
+    maxWidth: width - 80, // Ensure buttons don't exceed screen width minus padding
   },
   googleButton: {
     backgroundColor: "rgba(255, 255, 255, 0.98)",
@@ -528,17 +529,17 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   googleButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     color: "#1f1f1f",
   },
   appleButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     color: "white",
   },
   socialButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     color: colors.background,
   },
@@ -575,12 +576,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 18,
-    paddingHorizontal: 24,
-    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 10,
   },
   emailButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     color: colors.textPrimary,
   },

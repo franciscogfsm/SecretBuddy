@@ -445,7 +445,7 @@ export const HomeScreen = () => {
         );
         break;
       case "reveal-window":
-        navigation.navigate("Reveal");
+        navigation.navigate("Reveal" as never);
         break;
       case "waiting":
         Alert.alert(
@@ -914,6 +914,26 @@ export const HomeScreen = () => {
             <Text style={styles.metaTitle}>Points</Text>
             <Text style={styles.metaValue}>420 pts</Text>
           </View>
+        </View>
+
+        {/* Demo Reveal Button */}
+        <View style={styles.demoSection}>
+          <TouchableOpacity
+            style={styles.demoButton}
+            onPress={() => navigation.navigate("Reveal", { demo: true })}
+          >
+            <Ionicons name="eye" size={20} color="#FFFFFF" />
+            <Text style={styles.demoButtonText}>🎭 Demo Reveal (Both)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.demoButton}
+            onPress={() =>
+              navigation.navigate("Reveal", { demo: true, bothRevealed: false })
+            }
+          >
+            <Ionicons name="eye-off" size={20} color="#FFFFFF" />
+            <Text style={styles.demoButtonText}>👻 Demo Reveal (Ghosted)</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -1802,5 +1822,34 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     textAlign: "center",
     lineHeight: 16,
+  },
+
+  // Demo Button Styles
+  demoSection: {
+    marginTop: 16,
+    alignItems: "center",
+  },
+  demoButton: {
+    backgroundColor: "rgba(156, 107, 255, 0.2)",
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.4)",
+    shadowColor: "rgba(156, 107, 255, 0.3)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  demoButtonText: {
+    ...typography.subtitle,
+    color: "#9C6BFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

@@ -175,16 +175,7 @@ export const SplashScreen = ({ navigation }: Props) => {
             ]}
           >
             <View style={styles.logoWrapper}>
-              <LinearGradient
-                colors={[
-                  "rgba(47, 13, 103, 0.7)",
-                  "rgba(51, 10, 132, 0.7)",
-                  "rgba(57, 10, 122, 0.7)",
-                ]}
-                style={styles.logoGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
+              <View style={styles.logoGradient}>
                 <View style={styles.logoInset}>
                   <Image
                     source={require("../../assets/icon1.png")}
@@ -192,17 +183,7 @@ export const SplashScreen = ({ navigation }: Props) => {
                     resizeMode="cover"
                   />
                 </View>
-                <Animated.View
-                  style={[
-                    StyleSheet.absoluteFill,
-                    {
-                      backgroundColor: "rgba(255,255,255,0.4)",
-                      opacity: glowAnim,
-                      borderRadius: 22,
-                    },
-                  ]}
-                />
-              </LinearGradient>
+              </View>
             </View>
           </Animated.View>
 
@@ -286,11 +267,11 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#2860b357",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.5,
-    shadowRadius: 22,
-    elevation: 14,
+    shadowColor: "#8b56da57",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.7,
+    shadowRadius: 25,
+    elevation: 16,
     padding: 6,
     backgroundColor: "transparent",
   },
@@ -301,10 +282,15 @@ const styles = StyleSheet.create({
     bottom: 6,
     left: 6,
     borderRadius: 22,
-    backgroundColor: "#0B0720",
+    backgroundColor: "transparent",
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: colors.accentPurple,
+    shadowOffset: { width: 2, height: 8 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+    elevation: 10,
   },
   logoInner: {
     width: "100%",

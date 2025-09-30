@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { colors, typography } from "../theme";
 
@@ -29,6 +30,14 @@ export const PrimaryButton = ({
       (disabled || loading) && styles.disabled,
     ]}
   >
+    {variant === "primary" && (
+      <LinearGradient
+        colors={["#9C6BFF", "#8A46FF"]}
+        style={[StyleSheet.absoluteFill, { borderRadius: 25 }]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+    )}
     {loading ? (
       <ActivityIndicator
         size="small"
@@ -48,21 +57,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 20,
+    borderRadius: 25,
     paddingVertical: 20,
     paddingHorizontal: 28,
     gap: 10,
     minHeight: 60,
   },
   primary: {
-    backgroundColor: "rgba(156, 107, 255, 0.25)",
-    borderWidth: 1.5,
-    borderColor: "rgba(156, 107, 255, 0.5)",
-    shadowColor: colors.accentPurple,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
+    backgroundColor: "transparent",
+    shadowColor: "rgba(138, 70, 255, 0.3)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
     shadowRadius: 16,
-    elevation: 4,
+    elevation: 6,
   },
   ghost: {
     backgroundColor: "rgba(255, 255, 255, 0.08)",

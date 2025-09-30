@@ -65,7 +65,7 @@ export const InputField = ({
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 20,
+    marginBottom: 12,
   },
   label: {
     ...typography.subtitle,
