@@ -35,6 +35,13 @@ export const AuthOptionsScreen = ({ navigation }: Props) => {
   const scaleAnim = useState(new Animated.Value(0.95))[0];
   const insets = useSafeAreaInsets();
 
+  // Bubble animations
+  const bubble1Anim = useState(new Animated.Value(0))[0];
+  const bubble2Anim = useState(new Animated.Value(0))[0];
+  const bubble3Anim = useState(new Animated.Value(0))[0];
+  const bubble4Anim = useState(new Animated.Value(0))[0];
+  const bubble5Anim = useState(new Animated.Value(0))[0];
+
   const { googleSignIn } = useAuth();
 
   useEffect(() => {
@@ -55,6 +62,33 @@ export const AuthOptionsScreen = ({ navigation }: Props) => {
         useNativeDriver: true,
       }),
     ]).start();
+
+    // Bubble animations
+    const animateBubble = (anim: Animated.Value, delay: number) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.parallel([
+            Animated.timing(anim, {
+              toValue: 1,
+              duration: 3000,
+              useNativeDriver: false,
+            }),
+          ]),
+          Animated.timing(anim, {
+            toValue: 0,
+            duration: 3000,
+            useNativeDriver: false,
+          }),
+        ])
+      ).start();
+    };
+
+    animateBubble(bubble1Anim, 0);
+    animateBubble(bubble2Anim, 500);
+    animateBubble(bubble3Anim, 1000);
+    animateBubble(bubble4Anim, 1500);
+    animateBubble(bubble5Anim, 2000);
   }, []);
 
   const handleGoogleSignIn = async () => {
@@ -79,19 +113,137 @@ export const AuthOptionsScreen = ({ navigation }: Props) => {
         end={{ x: 1, y: 1 }}
       />
 
-      {/* Geometric accent elements */}
-      <View style={styles.geometricContainer}>
-        <LinearGradient
-          colors={["#6C3BFF", "#FF4FB7"]}
-          style={[styles.geometricShape, styles.shape1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+      {/* Animated Bubbles Background */}
+      <View style={styles.bubblesContainer}>
+        <Animated.View
+          style={[
+            styles.bubble,
+            styles.bubble1,
+            {
+              transform: [
+                {
+                  translateY: bubble1Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -100],
+                  }),
+                },
+                {
+                  scale: bubble1Anim.interpolate({
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [0.8, 1.2, 0.8],
+                  }),
+                },
+              ],
+              opacity: bubble1Anim.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0.3, 0.7, 0.3],
+              }),
+            },
+          ]}
         />
-        <LinearGradient
-          colors={["#1FC7B4", "#2360FF"]}
-          style={[styles.geometricShape, styles.shape2]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+        <Animated.View
+          style={[
+            styles.bubble,
+            styles.bubble2,
+            {
+              transform: [
+                {
+                  translateY: bubble2Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -120],
+                  }),
+                },
+                {
+                  scale: bubble2Anim.interpolate({
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [1, 0.8, 1],
+                  }),
+                },
+              ],
+              opacity: bubble2Anim.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0.4, 0.8, 0.4],
+              }),
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.bubble,
+            styles.bubble3,
+            {
+              transform: [
+                {
+                  translateY: bubble3Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -80],
+                  }),
+                },
+                {
+                  scale: bubble3Anim.interpolate({
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [0.9, 1.1, 0.9],
+                  }),
+                },
+              ],
+              opacity: bubble3Anim.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0.2, 0.6, 0.2],
+              }),
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.bubble,
+            styles.bubble4,
+            {
+              transform: [
+                {
+                  translateY: bubble4Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -150],
+                  }),
+                },
+                {
+                  scale: bubble4Anim.interpolate({
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [1.1, 0.9, 1.1],
+                  }),
+                },
+              ],
+              opacity: bubble4Anim.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0.5, 0.9, 0.5],
+              }),
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.bubble,
+            styles.bubble5,
+            {
+              transform: [
+                {
+                  translateY: bubble5Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -90],
+                  }),
+                },
+                {
+                  scale: bubble5Anim.interpolate({
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [0.7, 1.3, 0.7],
+                  }),
+                },
+              ],
+              opacity: bubble5Anim.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0.3, 0.7, 0.3],
+              }),
+            },
+          ]}
         />
       </View>
 
@@ -116,9 +268,9 @@ export const AuthOptionsScreen = ({ navigation }: Props) => {
 
             {/* Auth Options Card */}
             <View style={styles.authCard}>
-              <BlurView intensity={70} tint="dark" style={styles.blurView}>
+              <BlurView intensity={0} tint="light" style={styles.blurView}>
                 <LinearGradient
-                  colors={["rgba(255,255,255,0.10)", "rgba(255,255,255,0.03)"]}
+                  colors={["rgba(255,255,255,0.15)", "rgba(255,255,255,0.05)"]}
                   style={styles.cardGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
@@ -234,7 +386,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  geometricContainer: {
+  bubblesContainer: {
     position: "absolute",
     top: 0,
     left: 0,
@@ -242,22 +394,47 @@ const styles = StyleSheet.create({
     bottom: 0,
     overflow: "hidden",
   },
-  geometricShape: {
+  bubble: {
     position: "absolute",
-    borderRadius: 100,
-    opacity: 0.15,
+    borderRadius: 50,
+    opacity: 0.4, // Slightly increased opacity for better visibility
+    borderWidth: 1, // Added border for a modern look
+    borderColor: "rgba(255, 255, 255, 0.2)", // Subtle border color
   },
-  shape1: {
-    width: width * 0.8,
-    height: width * 0.8,
-    top: -width * 0.4,
-    right: -width * 0.3,
+  bubble1: {
+    width: width * 0.4,
+    height: width * 0.4,
+    top: height * 0.1, // Spread across the screen
+    left: width * 0.1,
+    backgroundColor: "rgba(108, 59, 255, 0.3)",
   },
-  shape2: {
-    width: width * 0.6,
-    height: width * 0.6,
-    bottom: -width * 0.2,
-    left: -width * 0.2,
+  bubble2: {
+    width: width * 0.3,
+    height: width * 0.3,
+    top: height * 0.4, // Spread across the screen
+    right: width * 0.15,
+    backgroundColor: "rgba(255, 79, 183, 0.35)",
+  },
+  bubble3: {
+    width: width * 0.25,
+    height: width * 0.25,
+    top: height * 0.6, // Spread across the screen
+    left: width * 0.6,
+    backgroundColor: "rgba(31, 199, 180, 0.3)",
+  },
+  bubble4: {
+    width: width * 0.35,
+    height: width * 0.35,
+    top: height * 0.8, // Spread across the screen
+    left: width * 0.7,
+    backgroundColor: "rgba(35, 96, 255, 0.35)",
+  },
+  bubble5: {
+    width: width * 0.2,
+    height: width * 0.2,
+    top: height * 0.5, // Spread across the screen
+    right: width * 0.05,
+    backgroundColor: "rgba(156, 107, 255, 0.4)",
   },
   safeArea: {
     flex: 1,
@@ -295,25 +472,31 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
   authCard: {
-    marginHorizontal: 0,
-    borderRadius: 28,
+    marginHorizontal: 20,
+    borderRadius: 24,
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.7,
-    shadowRadius: 32,
-    elevation: 15,
-    backgroundColor: "rgba(5, 3, 18, 0.25)",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 12,
+    backgroundColor: "transparent",
   },
   cardGradient: {
-    borderWidth: 1.2,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)", // Subtle border for modern look
+    borderRadius: 24,
     padding: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.02)", // Slightly darker background for improved contrast
+    shadowColor: "#000", // Added shadow for depth
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1, // Subtle shadow opacity
+    shadowRadius: 6, // Slightly soft shadow edges
+    elevation: 3, // For Android shadow
   },
   cardContent: {
-    padding: 36,
-    gap: 16,
+    padding: 28,
+    gap: 20,
   },
   socialButton: {
     flexDirection: "row",
@@ -321,7 +504,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 18,
     paddingHorizontal: 24,
-    borderRadius: 16,
+    borderRadius: 20,
     gap: 12,
     borderWidth: 1.5,
     minHeight: 56,
@@ -377,7 +560,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   emailButton: {
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1.5,
     borderColor: "rgba(156, 107, 255, 0.35)",
     overflow: "hidden",
@@ -418,9 +601,9 @@ const styles = StyleSheet.create({
   },
   // Blur and icon styles
   blurView: {
-    borderRadius: 28,
+    borderRadius: 24,
     overflow: "hidden",
-    backgroundColor: "rgba(10, 8, 28, 0.35)",
+    backgroundColor: "rgba(255, 255, 255, 0.02)", // Further reduced opacity for enhanced transparency
   },
   iconContainer: {
     width: 28,

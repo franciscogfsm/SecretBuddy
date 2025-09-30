@@ -1206,4 +1206,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(138, 70, 255, 0.16)",
   },
+  primaryButton: {
+    paddingVertical: 16, // Increased padding for a modern look
+    paddingHorizontal: 24,
+    borderRadius: 12, // Softer, rounded corners
+    backgroundColor: colors.accentPurple,
+    shadowColor: "#000", // Subtle shadow for depth
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3, // For Android shadow
+  },
+  primaryButtonText: {
+    fontSize: 18, // Larger text for better readability
+    fontWeight: "600",
+    color: "white",
+    textAlign: "center",
+  },
+  heroSection: {
+    alignItems: "center",
+    marginBottom: 48,
+    paddingTop: 40, // Increased padding to move text higher
+  },
 });

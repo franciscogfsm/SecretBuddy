@@ -14,6 +14,7 @@ import { useState, useEffect } from "react";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { useAppState } from "../store/AppStateContext";
+import { useAuth } from "../context/AuthContext";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -21,6 +22,7 @@ export const SettingsScreen = () => {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { profile, setProfile } = useAppState();
+  const { user, signOut, loading: authLoading } = useAuth();
 
   // Settings state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -74,6 +76,30 @@ export const SettingsScreen = () => {
       `${setting} ${value ? "enabled" : "disabled"}`,
       [{ text: "OK" }]
     );
+  };
+
+  const handleSignOut = async () => {
+    Alert.alert("Log out", "Are you sure you want to leave SecretBuddy?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log out",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await signOut();
+            setProfile(null);
+            requestAnimationFrame(() =>
+              navigation.reset({ index: 0, routes: [{ name: "Onboarding" }] })
+            );
+          } catch (error) {
+            Alert.alert(
+              "Couldn't log out",
+              error instanceof Error ? error.message : "Please try again."
+            );
+          }
+        },
+      },
+    ]);
   };
 
   return (
@@ -389,6 +415,41 @@ export const SettingsScreen = () => {
               value={hapticFeedback}
             />
           </View>
+        </View>
+
+        {/* Account Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+
+          <TouchableOpacity
+            style={[
+              styles.settingItem,
+              { borderColor: colors.accentPink + "40" },
+            ]}
+            onPress={handleSignOut}
+            disabled={authLoading}
+          >
+            <View style={styles.settingLeft}>
+              <View style={styles.settingIcon}>
+                <Ionicons
+                  name="log-out-outline"
+                  size={20}
+                  color={colors.accentPink}
+                />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Log Out</Text>
+                <Text style={styles.settingDescription}>
+                  Sign out of your SecretBuddy account
+                </Text>
+              </View>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* Footer Space */}

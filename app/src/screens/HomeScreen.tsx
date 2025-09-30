@@ -85,7 +85,7 @@ export const HomeScreen = () => {
   const [showCameraModal, setShowCameraModal] = useState(false);
 
   // Control photo state - will be connected to backend
-  const [hasReceivedPhoto, setHasReceivedPhoto] = useState(false); // Will be dynamically set based on backend data
+  const [hasReceivedPhoto, setHasReceivedPhoto] = useState(true); // Will be dynamically set based on backend data
   const [hasViewedPhoto, setHasViewedPhoto] = useState(false); // Track if user viewed the received photo
   const [hasSentPhoto, setHasSentPhoto] = useState(false); // Track if user sent a photo
 
@@ -420,15 +420,23 @@ export const HomeScreen = () => {
 
     switch (phase) {
       case "pairing-pool":
-        Alert.alert(
-          "Joining Pairing Pool! 🎯",
-          "Great! You're now in the pairing pool. You'll be matched with someone soon and receive random prompts throughout the day!"
-        );
-        // Update pairing state to matched
+        // Start the searching animation
         setPairing({
           ...pairing,
-          phase: "matched",
+          phase: "searching",
         });
+
+        // Simulate finding a match after 3-5 seconds
+        setTimeout(() => {
+          setPairing({
+            ...pairing,
+            phase: "matched",
+          });
+          Alert.alert(
+            "Mystery Buddy Found! 🎉",
+            "Great news! We found your perfect mystery buddy. You'll receive random photo prompts throughout the day and discover their identity during reveal time!"
+          );
+        }, 4000);
         break;
       case "matched":
         Alert.alert(
@@ -455,7 +463,7 @@ export const HomeScreen = () => {
           ? "Ready to find your SecretBuddy?"
           : "Select a game mode to begin";
       case "searching":
-        return "Finding your perfect match...";
+        return "Searching for your mystery buddy... We'll notify you when we find the perfect match!";
       case "paired-waiting":
         return "Matched! Waiting for submission window";
       case "submission-open":
@@ -506,7 +514,9 @@ export const HomeScreen = () => {
 
     switch (phase) {
       case "pairing-pool":
-        return "Join Pairing Pool";
+        return pairing.phase === "searching"
+          ? "Finding your buddy..."
+          : "Join Pairing Pool";
       case "matched":
         return "Check for New Prompts";
       case "reveal-window":
@@ -636,6 +646,7 @@ export const HomeScreen = () => {
           const currentHour = now.getHours();
           // Show received photo during active hours when user has received one
           const isActiveTime = currentHour >= 12 && currentHour < 21;
+          //Change for seeing the card ->
           return isActiveTime && hasReceivedPhoto && !hasViewedPhoto;
         })() && (
           <Animated.View
@@ -724,14 +735,16 @@ export const HomeScreen = () => {
           <View style={styles.gameModeCard}>
             <View style={styles.gameModeHeader}>
               <Ionicons
-                name="game-controller-outline"
+                name="location-outline"
                 size={28}
                 color={colors.accentPurple}
               />
-              <Text style={styles.gameModeTitle}>Choose Your Adventure</Text>
+              <Text style={styles.gameModeTitle}>
+                Where should your buddy be from?
+              </Text>
             </View>
             <Text style={styles.gameModeSubtitle}>
-              Select how you want to connect with others
+              Choose where you'd like to find your mystery buddy
             </Text>
             <View style={styles.modeOptions}>
               {getModeOptions().map((option) => (
@@ -821,7 +834,11 @@ export const HomeScreen = () => {
                 ? "primary"
                 : "ghost"
             }
-            disabled={!isGameModeSelected || getCurrentPhase() === "waiting"}
+            disabled={
+              !isGameModeSelected ||
+              getCurrentPhase() === "waiting" ||
+              pairing.phase === "searching"
+            }
           />
 
           {pairing.phase === "searching" && (

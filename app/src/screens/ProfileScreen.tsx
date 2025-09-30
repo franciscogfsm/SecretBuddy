@@ -169,9 +169,11 @@ export const ProfileScreen = () => {
             onPress={handleSignOut}
             disabled={authLoading}
           >
-            <Text style={styles.logoutText}>
-              {authLoading ? "Logging out..." : "Log out"}
-            </Text>
+            <Ionicons
+              name="log-out-outline"
+              size={20}
+              color={colors.accentPink}
+            />
           </TouchableOpacity>
 
           <View style={styles.profileContent}>
@@ -667,7 +669,7 @@ const styles = StyleSheet.create({
     top: 24,
     right: 24,
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
     borderRadius: 24,
     backgroundColor: "rgba(255, 79, 183, 0.12)",
     borderWidth: 1,
@@ -677,13 +679,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
-  },
-
-  logoutText: {
-    ...typography.caption,
-    color: colors.accentPink,
-    fontSize: 14,
-    fontWeight: "700",
   },
 
   // Section Styles

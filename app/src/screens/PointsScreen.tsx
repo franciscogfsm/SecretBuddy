@@ -70,80 +70,86 @@ export const PointsScreen = () => {
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="automatic"
       >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Points &amp; Badges</Text>
-          <Text style={styles.subtitle}>
-            Stay consistent to unlock new gradients, frames, and special
-            prompts.
-          </Text>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.title}>Points &amp; Badges</Text>
+            <Text style={styles.subtitle}>
+              Stay consistent to unlock new gradients, frames, and special
+              prompts.
+            </Text>
+          </View>
+          <View style={styles.pill}>
+            <Text style={styles.pillLabel}>Lvl 12 • Radiant</Text>
+          </View>
         </View>
-        <View style={styles.pill}>
-          <Text style={styles.pillLabel}>Lvl 12 • Radiant</Text>
-        </View>
-      </View>
 
-      <View style={styles.highlightWrapper}>
-        <LinearGradient
-          colors={["rgba(156, 107, 255, 0.65)", "rgba(255, 79, 183, 0.35)"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.highlightCard}
-        >
-          <Text style={styles.sectionLabel}>Today&apos;s progress</Text>
-          <Text style={styles.pointsValue}>+25 pts</Text>
-          <Text style={styles.sectionCaption}>Video response completed</Text>
-          <View style={styles.progressTrack}>
-            <View
-              style={[
-                styles.progressFill,
-                { width: `${streakProgress * 100}%` },
-              ]}
-            />
-          </View>
-          <View style={styles.progressMeta}>
-            <Text style={styles.metaLabel}>72% towards weekly goal</Text>
-            <Text style={styles.metaValue}>3 tasks left</Text>
-          </View>
-        </LinearGradient>
-      </View>
-
-      <View style={styles.insightsRow}>
-        {insights.map((insight) => (
-          <View key={insight.label} style={styles.insightCard}>
-            <View
-              style={[styles.insightAccent, { backgroundColor: insight.tone }]}
-            />
-            <Text style={styles.insightLabel}>{insight.label}</Text>
-            <Text style={styles.insightValue}>{insight.value}</Text>
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.leaderboardCard}>
-        <Text style={styles.sectionHeading}>Leaderboards</Text>
-        {Object.entries(leaderboards).map(([label, data]) => (
-          <View key={label} style={styles.boardSection}>
-            <Text style={styles.boardTitle}>{label.toUpperCase()}</Text>
-            {data.map((item, index) => (
+        <View style={styles.highlightWrapper}>
+          <LinearGradient
+            colors={["rgba(156, 107, 255, 0.65)", "rgba(255, 79, 183, 0.35)"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.highlightCard}
+          >
+            <Text style={styles.sectionLabel}>Today&apos;s progress</Text>
+            <Text style={styles.pointsValue}>+25 pts</Text>
+            <Text style={styles.sectionCaption}>Video response completed</Text>
+            <View style={styles.progressTrack}>
               <View
-                key={item.name}
-                style={[styles.boardRow, index === 0 && styles.boardRowActive]}
-              >
-                <View style={styles.boardLeft}>
-                  <View style={styles.rankPill}>
-                    <Text style={styles.rankText}>{index + 1}</Text>
+                style={[
+                  styles.progressFill,
+                  { width: `${streakProgress * 100}%` },
+                ]}
+              />
+            </View>
+            <View style={styles.progressMeta}>
+              <Text style={styles.metaLabel}>72% towards weekly goal</Text>
+              <Text style={styles.metaValue}>3 tasks left</Text>
+            </View>
+          </LinearGradient>
+        </View>
+
+        <View style={styles.insightsRow}>
+          {insights.map((insight) => (
+            <View key={insight.label} style={styles.insightCard}>
+              <View
+                style={[
+                  styles.insightAccent,
+                  { backgroundColor: insight.tone },
+                ]}
+              />
+              <Text style={styles.insightLabel}>{insight.label}</Text>
+              <Text style={styles.insightValue}>{insight.value}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.leaderboardCard}>
+          <Text style={styles.sectionHeading}>Leaderboards</Text>
+          {Object.entries(leaderboards).map(([label, data]) => (
+            <View key={label} style={styles.boardSection}>
+              <Text style={styles.boardTitle}>{label.toUpperCase()}</Text>
+              {data.map((item, index) => (
+                <View
+                  key={item.name}
+                  style={[
+                    styles.boardRow,
+                    index === 0 && styles.boardRowActive,
+                  ]}
+                >
+                  <View style={styles.boardLeft}>
+                    <View style={styles.rankPill}>
+                      <Text style={styles.rankText}>{index + 1}</Text>
+                    </View>
+                    <Text style={styles.boardName}>{item.name}</Text>
                   </View>
-                  <Text style={styles.boardName}>{item.name}</Text>
+                  <Text style={styles.boardPoints}>{item.points} pts</Text>
                 </View>
-                <Text style={styles.boardPoints}>{item.points} pts</Text>
-              </View>
-            ))}
-          </View>
-        ))}
-      </View>
-    </ScrollView>
-  </GradientBackground>
+              ))}
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+    </GradientBackground>
   );
 };
 
