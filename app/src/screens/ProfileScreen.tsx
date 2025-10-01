@@ -11,6 +11,8 @@ import {
   Switch,
   TextInput,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -47,9 +49,11 @@ export const ProfileScreen = () => {
   const settingsAnim3 = useRef(new Animated.Value(0)).current;
 
   // Bio editing state
-  const [editingBio, setEditingBio] = useState(false);
+  const [showBioModal, setShowBioModal] = useState(false);
   const [bioText, setBioText] = useState(profile?.bio || "");
 
+  // Bottom sheet animation
+  const bottomSheetAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     // Start entrance animations
     Animated.parallel([
@@ -151,6 +155,37 @@ export const ProfileScreen = () => {
         ageVisible: !profile.ageVisible,
       });
     }
+  };
+
+  const openBioModal = () => {
+    setBioText(profile?.bio || "");
+    setShowBioModal(true);
+
+    // Smooth fade in
+    bottomSheetAnim.setValue(0);
+    Animated.timing(bottomSheetAnim, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeBioModal = () => {
+    // Smooth fade out
+    Animated.timing(bottomSheetAnim, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowBioModal(false);
+    });
+  };
+
+  const saveBio = () => {
+    if (profile) {
+      setProfile({ ...profile, bio: bioText.trim() });
+    }
+    closeBioModal();
   };
 
   return (
@@ -273,10 +308,7 @@ export const ProfileScreen = () => {
             <Text style={styles.sectionTitle}>About Me</Text>
             <TouchableOpacity
               style={styles.editBioButton}
-              onPress={() => {
-                setBioText(profile?.bio || "");
-                setEditingBio(true);
-              }}
+              onPress={openBioModal}
             >
               <Ionicons
                 name="create-outline"
@@ -315,10 +347,7 @@ export const ProfileScreen = () => {
                   </Text>
                   <TouchableOpacity
                     style={styles.addBioButton}
-                    onPress={() => {
-                      setBioText("");
-                      setEditingBio(true);
-                    }}
+                    onPress={openBioModal}
                   >
                     <Text style={styles.addBioButtonText}>Add Bio</Text>
                   </TouchableOpacity>
@@ -602,58 +631,85 @@ export const ProfileScreen = () => {
         <View style={styles.footerSpace} />
       </ScrollView>
 
-      {/* Bio Edit Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={editingBio}
-        onRequestClose={() => setEditingBio(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bioModalContainer}>
-            <View style={styles.bioModalHeader}>
-              <TouchableOpacity
-                style={styles.bioModalCloseButton}
-                onPress={() => setEditingBio(false)}
-              >
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
-              </TouchableOpacity>
-              <Text style={styles.bioModalTitle}>Edit Bio</Text>
-              <TouchableOpacity
-                style={styles.bioModalSaveButton}
-                onPress={() => {
-                  if (profile) {
-                    setProfile({ ...profile, bio: bioText.trim() });
-                  }
-                  setEditingBio(false);
-                }}
-              >
-                <Text style={styles.bioModalSaveText}>Save</Text>
-              </TouchableOpacity>
-            </View>
+      {/* Bio Edit Modal - Fixed Size */}
+      {showBioModal && (
+        <Modal
+          animationType="none"
+          transparent={true}
+          visible={showBioModal}
+          onRequestClose={closeBioModal}
+          presentationStyle="overFullScreen"
+        >
+          <Animated.View
+            style={[
+              styles.fullScreenOverlay,
+              {
+                opacity: bottomSheetAnim,
+              },
+            ]}
+          >
+            <TouchableOpacity
+              style={styles.overlayBackdrop}
+              onPress={closeBioModal}
+            />
 
-            <View style={styles.bioModalContent}>
-              <Text style={styles.bioModalSubtitle}>
-                Tell your friends a bit about yourself
-              </Text>
-              <TextInput
-                style={styles.bioTextInput}
-                placeholder="Write something interesting about yourself..."
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                value={bioText}
-                onChangeText={setBioText}
-                multiline
-                maxLength={100}
-                textAlignVertical="top"
-                autoFocus
-              />
-              <Text style={styles.bioCharCount}>
-                {bioText.length}/100 characters
-              </Text>
+            <View style={styles.centerContainer}>
+              <Animated.View
+                style={[
+                  styles.bioEditCard,
+                  {
+                    transform: [
+                      {
+                        scale: bottomSheetAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.95, 1],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <View style={styles.cardHeader}>
+                  <TouchableOpacity
+                    style={styles.closeBtn}
+                    onPress={closeBioModal}
+                  >
+                    <Ionicons
+                      name="close"
+                      size={20}
+                      color={colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                  <Text style={styles.cardTitle}>Edit Bio</Text>
+                  <TouchableOpacity style={styles.saveBtn} onPress={saveBio}>
+                    <Text style={styles.saveBtnText}>Save</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.cardContent}>
+                  <Text style={styles.cardSubtitle}>
+                    Tell your friends a bit about yourself
+                  </Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Write something interesting about yourself..."
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    value={bioText}
+                    onChangeText={setBioText}
+                    multiline
+                    maxLength={100}
+                    textAlignVertical="top"
+                    autoFocus
+                  />
+                  <Text style={styles.counter}>
+                    {bioText.length}/100 characters
+                  </Text>
+                </View>
+              </Animated.View>
             </View>
-          </View>
-        </View>
-      </Modal>
+          </Animated.View>
+        </Modal>
+      )}
     </GradientBackground>
   );
 };
@@ -1110,92 +1166,137 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // Bio Modal Styles
-  modalOverlay: {
-    flex: 1,
+  // Full Screen Modal Styles - Clean & Smooth
+  fullScreenOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "rgba(0, 0, 0, 0.8)",
-    justifyContent: "flex-end",
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+    height: "100%",
   },
 
-  bioModalContainer: {
-    backgroundColor: "rgba(6, 0, 18, 0.95)",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingBottom: 40,
+  overlayBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+
+  centerContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "flex-start",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 180,
+  },
+
+  keyboardContainer: {
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  bioEditCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    width: 340,
+    height: 340,
     borderWidth: 1,
     borderColor: "rgba(156, 107, 255, 0.3)",
     shadowColor: "rgba(156, 107, 255, 0.4)",
-    shadowOffset: { width: 0, height: -8 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.6,
-    shadowRadius: 16,
-    elevation: 16,
+    shadowRadius: 20,
+    elevation: 15,
+    overflow: "hidden",
   },
 
-  bioModalHeader: {
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255, 255, 255, 0.1)",
   },
 
-  bioModalCloseButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
   },
 
-  bioModalTitle: {
+  cardTitle: {
     ...typography.title,
     color: colors.textPrimary,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700",
-  },
-
-  bioModalSaveButton: {
-    backgroundColor: colors.accentPurple,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-
-  bioModalSaveText: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-
-  bioModalContent: {
-    padding: 20,
-    gap: 16,
-  },
-
-  bioModalSubtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
-    fontSize: 16,
+    flex: 1,
     textAlign: "center",
   },
 
-  bioTextInput: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  saveBtn: {
+    backgroundColor: colors.accentPurple,
+    borderRadius: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    shadowColor: colors.accentPurple,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+
+  saveBtnText: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+
+  cardContent: {
+    padding: 20,
+  },
+
+  cardSubtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 15,
+    textAlign: "center",
+    marginBottom: 18,
+  },
+
+  textInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 16,
-    borderWidth: 2,
-    borderColor: "rgba(156, 107, 255, 0.3)",
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.4)",
     padding: 16,
     color: colors.textPrimary,
     ...typography.body,
     fontSize: 16,
-    minHeight: 120,
+    lineHeight: 22,
+    height: 130,
     textAlignVertical: "top",
+    marginBottom: 12,
   },
 
-  bioCharCount: {
+  counter: {
     ...typography.caption,
     color: colors.textSecondary,
     fontSize: 12,
