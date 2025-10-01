@@ -71,95 +71,71 @@ export const SplashScreen = ({ navigation }: Props) => {
   useEntranceHaptics();
 
   useEffect(() => {
-    // Logo animation sequence
-    Animated.sequence([
-      // Logo appears with scale and fade
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 450,
-          useNativeDriver: true,
-        }),
-        Animated.timing(logoAnim, {
-          toValue: 1,
-          duration: 450,
-          delay: 150,
-          useNativeDriver: true,
-        }),
-      ]),
-      // Logo reveals with glow
-      Animated.sequence([
-        Animated.timing(glowAnim, {
-          toValue: 1,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowAnim, {
-          toValue: 0,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-      ]),
-      // Text slides up
-      Animated.timing(textAnim, {
-        toValue: 0,
-        duration: 350,
+    // Simplified, smoother animation sequence
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.timing(logoAnim, {
+        toValue: 1,
+        duration: 600,
         delay: 200,
         useNativeDriver: true,
       }),
     ]).start(() => {
-      // Start typewriter effect for app name
-      setTimeout(() => {
-        const fullText = "SecretBuddy";
-        let i = 0;
-        const interval = setInterval(() => {
-          setDisplayedText(fullText.slice(0, i + 1));
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
-            () => {}
-          );
-          i++;
-          if (i === fullText.length) {
-            setShowTagline(true);
-            clearInterval(interval);
-            // Navigate to auth screen after typing completes
-            setTimeout(() => {
-              navigation.replace("AuthOptions");
-            }, 1000);
-          }
-        }, 70);
-      }, 300);
+      // Smooth text slide-up
+      Animated.spring(textAnim, {
+        toValue: 0,
+        tension: 60,
+        friction: 8,
+        useNativeDriver: true,
+      }).start(() => {
+        // Start typewriter effect for app name
+        setTimeout(() => {
+          const fullText = "SecretBuddy";
+          let i = 0;
+          const interval = setInterval(() => {
+            setDisplayedText(fullText.slice(0, i + 1));
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+              () => {}
+            );
+            i++;
+            if (i === fullText.length) {
+              setShowTagline(true);
+              clearInterval(interval);
+              // Navigate to auth screen after typing completes
+              setTimeout(() => {
+                navigation.replace("AuthOptions");
+              }, 800);
+            }
+          }, 60);
+        }, 100);
+      });
     });
   }, []);
 
   return (
     <View style={styles.container}>
-      {/* Modern Background */}
+      {/* Modern Minimal Background */}
       <LinearGradient
-        colors={["#05030C", "#0B0520", "#140A35"]}
+        colors={["#030108", "#0A0515", "#160B2E"]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
 
-      {/* Enhanced Geometric Elements */}
-      <View style={styles.geometricContainer}>
-        <LinearGradient
-          colors={["#FF4FB7", "#9C6BFF"]}
-          style={[styles.geometricShape, styles.shape1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        />
-        <LinearGradient
-          colors={["#2EE6A9", "#1FC7B4"]}
-          style={[styles.geometricShape, styles.shape2]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        />
+      {/* Subtle Glow Effects */}
+      <View style={styles.glowContainer}>
+        <View style={[styles.glow, styles.glow1]} />
+        <View style={[styles.glow, styles.glow2]} />
       </View>
 
       <SafeAreaView style={styles.safeArea}>
@@ -214,7 +190,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  geometricContainer: {
+  glowContainer: {
     position: "absolute",
     top: 0,
     left: 0,
@@ -222,28 +198,24 @@ const styles = StyleSheet.create({
     bottom: 0,
     overflow: "hidden",
   },
-  geometricShape: {
+  glow: {
     position: "absolute",
-    borderRadius: 120,
-    opacity: 0.05,
+    borderRadius: 300,
+    opacity: 0.15,
   },
-  shape1: {
+  glow1: {
+    width: width * 1.5,
+    height: width * 1.5,
+    top: height * 0.2,
+    left: -width * 0.3,
+    backgroundColor: "#9C6BFF",
+  },
+  glow2: {
     width: width * 1.2,
     height: width * 1.2,
-    top: -width * 0.6,
+    bottom: -width * 0.2,
     right: -width * 0.4,
-  },
-  shape2: {
-    width: width * 0.9,
-    height: width * 0.9,
-    bottom: -width * 0.3,
-    left: -width * 0.3,
-  },
-  shape3: {
-    width: width * 0.7,
-    height: width * 0.7,
-    top: height * 0.2,
-    left: -width * 0.1,
+    backgroundColor: "#FF4FB7",
   },
   safeArea: {
     flex: 1,
@@ -262,35 +234,30 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   logoGradient: {
-    width: 120,
-    height: 120,
-    borderRadius: 28,
+    width: 140,
+    height: 140,
+    borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#8b56da57",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.7,
-    shadowRadius: 25,
-    elevation: 16,
-    padding: 6,
+    shadowColor: "#9C6BFF",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.6,
+    shadowRadius: 30,
+    elevation: 20,
+    padding: 8,
     backgroundColor: "transparent",
   },
   logoInset: {
     position: "absolute",
-    top: 6,
-    right: 6,
-    bottom: 6,
-    left: 6,
-    borderRadius: 22,
+    top: 8,
+    right: 8,
+    bottom: 8,
+    left: 8,
+    borderRadius: 26,
     backgroundColor: "transparent",
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: colors.accentPurple,
-    shadowOffset: { width: 2, height: 8 },
-    shadowOpacity: 0.8,
-    shadowRadius: 20,
-    elevation: 10,
   },
   logoInner: {
     width: "100%",
@@ -313,21 +280,18 @@ const styles = StyleSheet.create({
     ...typography.display,
     color: colors.textPrimary,
     textAlign: "center",
-    fontSize: 38,
+    fontSize: 42,
     fontWeight: "800",
-    letterSpacing: -1.2,
-    marginBottom: 12,
-    textShadowColor: "rgba(255, 79, 183, 0.3)",
-    textShadowOffset: { width: 0, height: 4 },
-    textShadowRadius: 8,
+    letterSpacing: -1.5,
+    marginBottom: 16,
   },
   tagline: {
     ...typography.body,
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "rgba(255, 255, 255, 0.7)",
     textAlign: "center",
-    fontSize: 17,
-    lineHeight: 26,
-    fontWeight: "500",
-    letterSpacing: 0.2,
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "400",
+    letterSpacing: 0.3,
   },
 });

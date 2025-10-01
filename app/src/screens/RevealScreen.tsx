@@ -16,6 +16,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { PrimaryButton } from "../components/PrimaryButton";
+import { ReportModal } from "../components/ReportModal";
+import { BlockConfirmModal } from "../components/BlockConfirmModal";
 import type { RootStackParamList } from "../navigation/types";
 import { useAppState } from "../store/AppStateContext";
 import { colors, typography } from "../theme";
@@ -28,6 +30,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "Reveal">;
 export const RevealScreen = ({ navigation, route }: Props) => {
   const { buddy } = useAppState();
   const [decision, setDecision] = useState<"continue" | "pass" | null>(null);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [blockModalVisible, setBlockModalVisible] = useState(false);
 
   // Check if we're in demo mode
   const isDemoMode = route.params?.demo === true;
@@ -823,6 +827,31 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                 }
               />
             </Animated.View>
+
+            {/* Safety Actions */}
+            <View style={styles.safetyActions}>
+              <Pressable
+                style={styles.safetyActionButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setReportModalVisible(true);
+                }}
+              >
+                <Ionicons name="flag-outline" size={18} color={colors.danger} />
+                <Text style={styles.safetyActionText}>Report</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.safetyActionButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setBlockModalVisible(true);
+                }}
+              >
+                <Ionicons name="ban-outline" size={18} color={colors.danger} />
+                <Text style={styles.safetyActionText}>Block</Text>
+              </Pressable>
+            </View>
           </>
         ) : (
           // Ghosting protection - show different messages based on participation
@@ -882,6 +911,39 @@ export const RevealScreen = ({ navigation, route }: Props) => {
       <Pressable onPress={() => navigation.goBack()} style={styles.closeButton}>
         <Ionicons name="close" size={24} color="rgba(255, 255, 255, 0.9)" />
       </Pressable>
+
+      {/* Report Modal */}
+      <ReportModal
+        visible={reportModalVisible}
+        onClose={() => setReportModalVisible(false)}
+        onSubmit={async (category, description) => {
+          // TODO: Implement Firebase report submission
+          console.log("User reported:", {
+            userId: currentBuddy?.id,
+            category,
+            description,
+          });
+        }}
+        reportType="user"
+        targetName={currentBuddy?.codename}
+      />
+
+      {/* Block Confirm Modal */}
+      <BlockConfirmModal
+        visible={blockModalVisible}
+        onClose={() => setBlockModalVisible(false)}
+        onConfirm={async (reason) => {
+          // TODO: Implement Firebase block logic
+          console.log("User blocked:", {
+            userId: currentBuddy?.id,
+            reason,
+          });
+          setBlockModalVisible(false);
+          // Navigate back after blocking
+          navigation.goBack();
+        }}
+        userName={currentBuddy?.codename || "User"}
+      />
     </View>
   );
 };
@@ -1636,5 +1698,32 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
     lineHeight: 20,
+  },
+
+  // Safety Actions Styles
+  safetyActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 20,
+    paddingHorizontal: 20,
+  },
+  safetyActionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "rgba(255, 107, 138, 0.1)",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 107, 138, 0.3)",
+  },
+  safetyActionText: {
+    ...typography.body,
+    color: colors.danger,
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

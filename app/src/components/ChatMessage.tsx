@@ -1,26 +1,37 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Animated, StyleSheet, Text, View } from "react-native";
-import { useEffect, useRef } from "react";
+import {
+  Animated,
+  StyleSheet,
+  Text,
+  View,
+  Image,
+  TouchableOpacity,
+} from "react-native";
+import { useEffect, useRef, useState } from "react";
 
 import { colors, typography } from "../theme";
 
 export type MessageType = {
   id: string;
-  text: string;
+  text?: string;
   timestamp: Date;
   isFromUser: boolean;
   status?: "sending" | "sent" | "delivered" | "read";
+  photoUrl?: string;
+  photoPrompt?: string;
 };
 
 type ChatMessageProps = {
   message: MessageType;
+  onReportPhoto?: (messageId: string) => void;
 };
 
-export const ChatMessage = ({ message }: ChatMessageProps) => {
+export const ChatMessage = ({ message, onReportPhoto }: ChatMessageProps) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(
     new Animated.Value(message.isFromUser ? 20 : -20)
   ).current;
+  const [showReportButton, setShowReportButton] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -88,16 +99,49 @@ export const ChatMessage = ({ message }: ChatMessageProps) => {
         style={[
           styles.bubble,
           message.isFromUser ? styles.sentBubble : styles.receivedBubble,
+          message.photoUrl && styles.photoBubble,
         ]}
       >
-        <Text
-          style={[
-            styles.messageText,
-            message.isFromUser ? styles.sentText : styles.receivedText,
-          ]}
-        >
-          {message.text}
-        </Text>
+        {message.photoUrl ? (
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => setShowReportButton(!showReportButton)}
+          >
+            {message.photoPrompt && (
+              <View style={styles.promptBadge}>
+                <Ionicons name="camera" size={14} color={colors.accentPurple} />
+                <Text style={styles.promptText}>{message.photoPrompt}</Text>
+              </View>
+            )}
+            <Image
+              source={{ uri: message.photoUrl }}
+              style={styles.photo}
+              resizeMode="cover"
+            />
+            {!message.isFromUser && showReportButton && onReportPhoto && (
+              <TouchableOpacity
+                style={styles.reportPhotoButton}
+                onPress={() => {
+                  onReportPhoto(message.id);
+                  setShowReportButton(false);
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="flag" size={16} color={colors.danger} />
+                <Text style={styles.reportPhotoText}>Report</Text>
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <Text
+            style={[
+              styles.messageText,
+              message.isFromUser ? styles.sentText : styles.receivedText,
+            ]}
+          >
+            {message.text}
+          </Text>
+        )}
       </View>
       <View style={styles.footer}>
         <Text style={styles.timestamp}>{formatTime(message.timestamp)}</Text>
@@ -169,5 +213,61 @@ const styles = StyleSheet.create({
   },
   statusContainer: {
     marginLeft: 6,
+  },
+  photoBubble: {
+    padding: 0,
+    overflow: "hidden",
+  },
+  photo: {
+    width: 220,
+    height: 220,
+    borderRadius: 18,
+  },
+  promptBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(11, 7, 32, 0.92)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.3)",
+    zIndex: 10,
+  },
+  promptText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  reportPhotoButton: {
+    position: "absolute",
+    bottom: 12,
+    right: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(11, 7, 32, 0.95)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1.5,
+    borderColor: colors.danger,
+    shadowColor: colors.danger,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 10,
+  },
+  reportPhotoText: {
+    ...typography.caption,
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

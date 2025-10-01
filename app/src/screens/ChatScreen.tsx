@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ChatInput } from "../components/ChatInput";
 import { ChatMessage, MessageType } from "../components/ChatMessage";
 import { GradientBackground } from "../components/GradientBackground";
+import { ReportModal } from "../components/ReportModal";
 import { colors, typography } from "../theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -80,6 +81,10 @@ export const ChatScreen = () => {
   const insets = useSafeAreaInsets();
   const tabBarHeight = 0; // ChatScreen is not in bottom tab navigator
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportingMessageId, setReportingMessageId] = useState<string | null>(
+    null
+  );
 
   // Track keyboard visibility and height to adjust spacing dynamically
   useEffect(() => {
@@ -257,8 +262,13 @@ export const ChatScreen = () => {
     }, 1000);
   };
 
+  const handleReportPhoto = (messageId: string) => {
+    setReportingMessageId(messageId);
+    setReportModalVisible(true);
+  };
+
   const renderMessage = ({ item }: { item: MessageType }) => (
-    <ChatMessage message={item} />
+    <ChatMessage message={item} onReportPhoto={handleReportPhoto} />
   );
 
   return (
@@ -388,6 +398,24 @@ export const ChatScreen = () => {
           </View>
         </KeyboardAvoidingView>
       </GradientBackground>
+
+      {/* Report Modal for Photos */}
+      <ReportModal
+        visible={reportModalVisible}
+        onClose={() => {
+          setReportModalVisible(false);
+          setReportingMessageId(null);
+        }}
+        onSubmit={async (category, description) => {
+          // TODO: Implement Firebase photo report submission
+          console.log("Photo reported:", {
+            messageId: reportingMessageId,
+            category,
+            description,
+          });
+        }}
+        reportType="photo"
+      />
     </View>
   );
 };

@@ -20,6 +20,8 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { TopHeader } from "../components/TopHeader";
+import { ReportModal } from "../components/ReportModal";
+import { BlockConfirmModal } from "../components/BlockConfirmModal";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -63,6 +65,8 @@ export const FriendsScreen = () => {
   const [showAllRequests, setShowAllRequests] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [friends, setFriends] = useState<Friend[]>([
     {
       id: "1",
@@ -596,12 +600,81 @@ export const FriendsScreen = () => {
                       </Text>
                     </View>
                   </View>
+
+                  {/* Safety Actions */}
+                  <View style={styles.safetyActionsContainer}>
+                    <TouchableOpacity
+                      style={styles.reportButton}
+                      onPress={() => {
+                        setReportModalVisible(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="flag-outline"
+                        size={20}
+                        color={colors.danger}
+                      />
+                      <Text style={styles.reportButtonText}>Report User</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.blockButton}
+                      onPress={() => {
+                        setBlockModalVisible(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="ban-outline"
+                        size={20}
+                        color={colors.danger}
+                      />
+                      <Text style={styles.blockButtonText}>Block User</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </>
             )}
           </View>
         </View>
       </Modal>
+
+      {/* Report Modal */}
+      <ReportModal
+        visible={reportModalVisible}
+        onClose={() => setReportModalVisible(false)}
+        onSubmit={async (category, description) => {
+          // TODO: Implement Firebase report submission
+          console.log("Report submitted:", {
+            userId: selectedFriend?.id,
+            category,
+            description,
+          });
+        }}
+        reportType="user"
+        targetName={selectedFriend?.name}
+      />
+
+      {/* Block Confirm Modal */}
+      <BlockConfirmModal
+        visible={blockModalVisible}
+        onClose={() => setBlockModalVisible(false)}
+        onConfirm={async (reason) => {
+          // TODO: Implement Firebase block logic
+          console.log("User blocked:", {
+            userId: selectedFriend?.id,
+            reason,
+          });
+          // Remove from friends list after blocking
+          if (selectedFriend) {
+            setFriends(friends.filter((f) => f.id !== selectedFriend.id));
+          }
+          setBlockModalVisible(false);
+          closeProfileModal();
+        }}
+        userName={selectedFriend?.name || "User"}
+      />
     </GradientBackground>
   );
 };
@@ -1109,5 +1182,55 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     fontWeight: "400",
+  },
+
+  // Safety Actions Styles
+  safetyActionsContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 20,
+    width: "100%",
+  },
+
+  reportButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "rgba(255, 107, 138, 0.1)",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 107, 138, 0.3)",
+  },
+
+  reportButtonText: {
+    ...typography.body,
+    color: colors.danger,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  blockButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "rgba(255, 107, 138, 0.1)",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 107, 138, 0.3)",
+  },
+
+  blockButtonText: {
+    ...typography.body,
+    color: colors.danger,
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

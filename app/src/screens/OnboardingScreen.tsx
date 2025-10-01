@@ -79,7 +79,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     password: string;
   } | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [switchWidth, setSwitchWidth] = useState(0);
+  const [tabContainerWidth, setTabContainerWidth] = useState(0);
   const [errorModal, setErrorModal] = useState<{
     visible: boolean;
     title: string;
@@ -93,7 +93,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
   });
 
   const fadeAnim = useState(new Animated.Value(0))[0];
-  const switchAnim = useState(
+  const tabSlideAnim = useState(
     new Animated.Value(authMode === "signup" ? 0 : 1)
   )[0];
 
@@ -110,12 +110,14 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
   }, [fadeAnim]);
 
   useEffect(() => {
-    Animated.timing(switchAnim, {
+    Animated.spring(tabSlideAnim, {
       toValue: authMode === "signup" ? 0 : 1,
-      duration: 300,
+      tension: 100,
+      friction: 10,
       useNativeDriver: true,
     }).start();
-  }, [authMode, switchAnim]);
+  }, [authMode, tabSlideAnim]);
+
   const isSignup = authMode === "signup";
   const isBusy = authLoading && activeAction !== null;
   const isEmailLoading = authLoading && activeAction === "email";
@@ -638,57 +640,66 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
               >
                 <View style={styles.cardHeader}>
                   <View
-                    style={styles.modeSwitch}
-                    onLayout={(e) => setSwitchWidth(e.nativeEvent.layout.width)}
+                    style={styles.modeTabs}
+                    onLayout={(e) =>
+                      setTabContainerWidth(e.nativeEvent.layout.width)
+                    }
                   >
+                    <TouchableOpacity
+                      onPress={() => setAuthMode("signup")}
+                      style={styles.tabButton}
+                      activeOpacity={0.7}
+                    >
+                      <Animated.Text
+                        style={[
+                          styles.tabLabel,
+                          authMode === "signup" && styles.tabLabelActive,
+                          {
+                            opacity: tabSlideAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [1, 0.5],
+                            }),
+                          },
+                        ]}
+                      >
+                        CREATE ACCOUNT
+                      </Animated.Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setAuthMode("signin")}
+                      style={styles.tabButton}
+                      activeOpacity={0.7}
+                    >
+                      <Animated.Text
+                        style={[
+                          styles.tabLabel,
+                          authMode === "signin" && styles.tabLabelActive,
+                          {
+                            opacity: tabSlideAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.5, 1],
+                            }),
+                          },
+                        ]}
+                      >
+                        LOG IN
+                      </Animated.Text>
+                    </TouchableOpacity>
                     <Animated.View
                       style={[
-                        styles.activeIndicator,
+                        styles.slidingIndicator,
                         {
                           transform: [
                             {
-                              translateX: switchAnim.interpolate({
+                              translateX: tabSlideAnim.interpolate({
                                 inputRange: [0, 1],
-                                outputRange: [0, switchWidth / 2],
+                                outputRange: [0, tabContainerWidth / 2],
                               }),
                             },
                           ],
                         },
                       ]}
                     />
-                    <TouchableOpacity
-                      onPress={() => setAuthMode("signup")}
-                      style={[
-                        styles.modeChip,
-                        authMode === "signup" && styles.modeChipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.modeChipLabel,
-                          authMode === "signup" && styles.modeChipLabelActive,
-                        ]}
-                      >
-                        Create account
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setAuthMode("signin")}
-                      style={[
-                        styles.modeChip,
-                        authMode === "signin" && styles.modeChipActive,
-                        styles.loginChip,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.modeChipLabel,
-                          authMode === "signin" && styles.modeChipLabelActive,
-                        ]}
-                      >
-                        Log in
-                      </Text>
-                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -824,29 +835,43 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                         <Text style={styles.dividerLabel}>or</Text>
                         <View style={styles.dividerLine} />
                       </View>
-                      <PrimaryButton
-                        label={
-                          authMode === "signup"
-                            ? "Sign up with Google"
-                            : "Log in with Google"
-                        }
-                        variant="ghost"
+                      <TouchableOpacity
+                        style={[
+                          styles.googleButton,
+                          (isBusy && activeAction !== "google") ||
+                          (authMode === "signup" &&
+                            signupStage === 0 &&
+                            !acceptedTerms)
+                            ? styles.googleButtonDisabled
+                            : null,
+                        ]}
                         onPress={() => handleProvider("google")}
-                        loading={isSocialLoading("google")}
                         disabled={
                           (isBusy && activeAction !== "google") ||
                           (authMode === "signup" &&
                             signupStage === 0 &&
                             !acceptedTerms)
                         }
-                        leadingIcon={
+                        activeOpacity={0.9}
+                      >
+                        <View style={styles.googleIconWrapper}>
                           <FontAwesome
                             name="google"
-                            size={18}
-                            color={colors.textSecondary}
+                            size={20}
+                            color="#4285F4"
                           />
-                        }
-                      />
+                        </View>
+                        <Text style={styles.googleButtonText}>
+                          {authMode === "signup"
+                            ? "Sign up with Google"
+                            : "Log in with Google"}
+                        </Text>
+                        {isSocialLoading("google") && (
+                          <View style={styles.googleButtonLoader}>
+                            <Text style={styles.loaderText}>...</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
                     </>
                   ) : null}
                 </View>
@@ -993,6 +1018,9 @@ const styles = StyleSheet.create({
   title: {
     ...typography.display,
     color: colors.textPrimary,
+    fontSize: 32,
+    fontWeight: "700",
+    letterSpacing: -0.5,
   },
   titleCompact: {
     fontSize: 28,
@@ -1001,6 +1029,9 @@ const styles = StyleSheet.create({
   subtitle: {
     ...typography.body,
     color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: "400",
   },
   subtitleCompact: {
     fontSize: 15,
@@ -1058,57 +1089,57 @@ const styles = StyleSheet.create({
   accountCardCompact: {
     gap: 16,
   },
-  modeSwitch: {
+  modeTabs: {
     flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: 24,
-    padding: 6,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    gap: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
     position: "relative",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
   },
-  activeIndicator: {
-    position: "absolute",
-    top: 6,
-    left: 4,
-    width: "50%",
-    height: "100%",
-    borderRadius: 18,
-    backgroundColor: "rgba(138, 70, 255, 0.4)",
-    shadowColor: colors.accentPurple,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  modeChip: {
+  tabButton: {
     flex: 1,
-    borderRadius: 25,
-    paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
+    paddingVertical: 16,
+    position: "relative",
   },
-  modeChipActive: {
-    // backgroundColor removed, handled by activeIndicator
+  tabButtonActive: {
+    // Active state handled by indicator and label color
   },
-  modeChipLabel: {
+  tabLabel: {
     ...typography.caption,
-    color: "rgba(201,192,255,0.6)",
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-    fontSize: 16,
-    fontWeight: "700",
-    textAlign: "center",
-    paddingRight: 0,
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.5,
   },
-  modeChipLabelActive: {
+  tabLabelActive: {
     color: colors.textPrimary,
-    fontWeight: "800",
+    fontWeight: "700",
+  },
+  activeTabIndicator: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: colors.accentPurple,
+    borderRadius: 2,
+  },
+  slidingIndicator: {
+    position: "absolute",
+    bottom: -1,
+    left: 0,
+    width: "50%",
+    height: 3,
+    backgroundColor: colors.accentPurple,
+    borderRadius: 2,
+    shadowColor: colors.accentPurple,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
+    elevation: 4,
   },
   loginChip: {
     paddingVertical: 12,
@@ -1217,6 +1248,46 @@ const styles = StyleSheet.create({
   actionStack: {
     gap: 14,
     alignItems: "stretch",
+  },
+  googleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    borderRadius: 30,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "rgba(0, 0, 0, 0.1)",
+    gap: 12,
+    shadowColor: "#4285F4",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  googleButtonDisabled: {
+    opacity: 0.5,
+  },
+  googleIconWrapper: {
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  googleButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1f1f1f",
+    letterSpacing: 0.3,
+  },
+  googleButtonLoader: {
+    marginLeft: 8,
+  },
+  loaderText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#4285F4",
   },
   termsSurface: {
     borderRadius: 18,
