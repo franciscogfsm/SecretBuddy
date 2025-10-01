@@ -42,8 +42,10 @@ export const RevealScreen = ({ navigation, route }: Props) => {
   // Use demo buddy if in demo mode, otherwise use real buddy
   const currentBuddy = isDemoMode ? demoBuddy : buddy;
 
-  // Check if both people have revealed (in demo mode, always true to show the reveal experience)
-  const bothHaveRevealed = isDemoMode ? true : buddy?.state === "revealed";
+  // Check if both people have revealed (in demo mode, use the bothRevealed param)
+  const bothHaveRevealed = isDemoMode
+    ? route.params?.bothRevealed ?? true
+    : buddy?.state === "revealed";
 
   // Professional reveal animation system
   const [animationStage, setAnimationStage] = useState<
@@ -823,23 +825,22 @@ export const RevealScreen = ({ navigation, route }: Props) => {
             </Animated.View>
           </>
         ) : (
-          // Only one person has revealed - show no reveal message
+          // Ghosting protection - show different messages based on participation
           <>
             <View style={styles.noRevealIcon}>
-              <Text style={styles.noRevealEmoji}></Text>
+              <Text style={styles.noRevealEmoji}>👻</Text>
             </View>
 
-            <Text style={styles.noRevealTitle}>Sorry, No Reveal This Time</Text>
-
+            {/* Default ghosting protection message */}
+            <Text style={styles.noRevealTitle}>No Messages, No Reveal</Text>
             <Text style={styles.noRevealSubtitle}>
-              You didn't participate in the reveal, so you don't get to see{" "}
-              {currentBuddy.codename}'s identity. The connection remains
-              mysterious.
+              Neither you nor your buddy sent enough messages during the day.
+              Stay active to unlock reveal time tomorrow!
             </Text>
-
-            <View style={styles.noRevealStatus}>
-              <Text style={styles.noRevealStatusText}>
-                Connection Status: Pending
+            <View style={styles.ghostingProtectionInfo}>
+              <Ionicons name="shield-checkmark" size={20} color="#F59E0B" />
+              <Text style={styles.ghostingProtectionText}>
+                Ghosting Protection: Send at least 1 message to unlock reveals
               </Text>
             </View>
 
@@ -1615,5 +1616,25 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.1,
     flex: 1,
+  },
+
+  // Ghosting protection styles
+  ghostingProtectionInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(245, 158, 11, 0.1)",
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.3)",
+    gap: 12,
+  },
+  ghostingProtectionText: {
+    color: "#F59E0B",
+    fontSize: 14,
+    fontWeight: "600",
+    flex: 1,
+    lineHeight: 20,
   },
 });

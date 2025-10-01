@@ -52,6 +52,7 @@ export type Profile = {
   ageVisible: boolean;
   country: string;
   mode: Mode;
+  bio?: string;
 };
 
 type AppState = {

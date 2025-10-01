@@ -49,6 +49,7 @@ type Friend = {
   avatar?: string;
   initials: string;
   lastActive?: string;
+  bio?: string;
 };
 
 export const FriendsScreen = () => {
@@ -71,6 +72,7 @@ export const FriendsScreen = () => {
       status: "friend",
       initials: "A",
       lastActive: "2 hours ago",
+      bio: "Love mystery adventures and coffee ☕ Always up for a good chat!",
     },
     {
       id: "2",
@@ -80,6 +82,7 @@ export const FriendsScreen = () => {
       status: "pending_sent",
       initials: "B",
       lastActive: "1 day ago",
+      bio: "Photographer and travel enthusiast 📸 Exploring the world one mystery at a time.",
     },
     {
       id: "3",
@@ -89,6 +92,7 @@ export const FriendsScreen = () => {
       status: "pending_received",
       initials: "C",
       lastActive: "3 hours ago",
+      bio: "Book lover and puzzle solver 📚 Let's discover secrets together!",
     },
     {
       id: "4",
@@ -98,6 +102,7 @@ export const FriendsScreen = () => {
       status: "friend",
       initials: "D",
       lastActive: "Active now",
+      bio: "Mystery enthusiast and nature lover 🌿 Always ready for adventure!",
     },
     {
       id: "5",
@@ -107,6 +112,7 @@ export const FriendsScreen = () => {
       status: "friend",
       initials: "E",
       lastActive: "15 min ago",
+      bio: "Art student with a passion for creativity 🎨 Let's create beautiful mysteries!",
     },
     {
       id: "6",
@@ -116,6 +122,7 @@ export const FriendsScreen = () => {
       status: "friend",
       initials: "F",
       lastActive: "1 hour ago",
+      bio: "Music producer and mystery solver 🎵 Life is a beautiful enigma.",
     },
     {
       id: "7",
@@ -125,6 +132,7 @@ export const FriendsScreen = () => {
       status: "pending_received",
       initials: "G",
       lastActive: "30 min ago",
+      bio: "Tech enthusiast and coding wizard 💻 Debugging mysteries one line at a time!",
     },
     {
       id: "8",
@@ -134,6 +142,7 @@ export const FriendsScreen = () => {
       status: "friend",
       initials: "H",
       lastActive: "5 hours ago",
+      bio: "Engineer and innovation lover ⚙️ Building the future, solving mysteries!",
     },
     {
       id: "9",
@@ -143,6 +152,7 @@ export const FriendsScreen = () => {
       status: "pending_sent",
       initials: "I",
       lastActive: "2 days ago",
+      bio: "Academic and knowledge seeker 📖 Every mystery is a lesson waiting to be learned.",
     },
     {
       id: "10",
@@ -152,6 +162,7 @@ export const FriendsScreen = () => {
       status: "friend",
       initials: "J",
       lastActive: "Just now",
+      bio: "Winter sports enthusiast and adventurer ❄️ Chillin' and solving mysteries!",
     },
   ]);
   const [searchResults, setSearchResults] = useState<Friend[]>([]);
@@ -548,6 +559,20 @@ export const FriendsScreen = () => {
                       </Text>
                     </View>
                   </View>
+
+                  {selectedFriend.bio && (
+                    <View style={styles.bioCard}>
+                      <View style={styles.bioHeader}>
+                        <Ionicons
+                          name="document-text-outline"
+                          size={20}
+                          color={colors.accentPurple}
+                        />
+                        <Text style={styles.bioTitle}>About</Text>
+                      </View>
+                      <Text style={styles.bioText}>{selectedFriend.bio}</Text>
+                    </View>
+                  )}
 
                   <View style={styles.statusContainer}>
                     <View
@@ -1051,5 +1076,38 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+
+  // Bio Card Styles
+  bioCard: {
+    backgroundColor: "rgba(156, 107, 255, 0.05)",
+    borderRadius: 16,
+    padding: 16,
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.2)",
+    marginTop: 8,
+  },
+
+  bioHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+
+  bioTitle: {
+    ...typography.subtitle,
+    color: colors.accentPurple,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  bioText: {
+    ...typography.body,
+    color: colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: "400",
   },
 });

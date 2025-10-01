@@ -9,12 +9,14 @@ import {
   Dimensions,
   Animated,
   Switch,
+  TextInput,
+  Modal,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useIsFocused, useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 
 import { GradientBackground } from "../components/GradientBackground";
@@ -43,6 +45,10 @@ export const ProfileScreen = () => {
   const settingsAnim1 = useRef(new Animated.Value(0)).current;
   const settingsAnim2 = useRef(new Animated.Value(0)).current;
   const settingsAnim3 = useRef(new Animated.Value(0)).current;
+
+  // Bio editing state
+  const [editingBio, setEditingBio] = useState(false);
+  const [bioText, setBioText] = useState(profile?.bio || "");
 
   useEffect(() => {
     // Start entrance animations
@@ -250,6 +256,75 @@ export const ProfileScreen = () => {
               )}
               {!user && <Text style={styles.email}>Not logged in</Text>}
             </Animated.View>
+          </View>
+        </Animated.View>
+
+        {/* Bio Section */}
+        <Animated.View
+          style={[
+            styles.sectionContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={styles.bioSectionHeader}>
+            <Text style={styles.sectionTitle}>About Me</Text>
+            <TouchableOpacity
+              style={styles.editBioButton}
+              onPress={() => {
+                setBioText(profile?.bio || "");
+                setEditingBio(true);
+              }}
+            >
+              <Ionicons
+                name="create-outline"
+                size={20}
+                color={colors.accentPurple}
+              />
+              <Text style={styles.editBioButtonText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.bioCard}>
+            <View style={styles.bioContent}>
+              {profile?.bio ? (
+                <>
+                  <View style={styles.bioHeader}>
+                    <Ionicons
+                      name="document-text-outline"
+                      size={20}
+                      color={colors.accentPurple}
+                    />
+                    <Text style={styles.bioTitle}>Your Bio</Text>
+                  </View>
+                  <Text style={styles.bioText}>{profile.bio}</Text>
+                </>
+              ) : (
+                <View style={styles.noBioContainer}>
+                  <Ionicons
+                    name="add-circle-outline"
+                    size={32}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={styles.noBioTitle}>Add your bio</Text>
+                  <Text style={styles.noBioDescription}>
+                    Tell your friends a bit about yourself! This will be visible
+                    when they view your profile.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.addBioButton}
+                    onPress={() => {
+                      setBioText("");
+                      setEditingBio(true);
+                    }}
+                  >
+                    <Text style={styles.addBioButtonText}>Add Bio</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
           </View>
         </Animated.View>
 
@@ -526,6 +601,59 @@ export const ProfileScreen = () => {
         {/* Footer Space */}
         <View style={styles.footerSpace} />
       </ScrollView>
+
+      {/* Bio Edit Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={editingBio}
+        onRequestClose={() => setEditingBio(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.bioModalContainer}>
+            <View style={styles.bioModalHeader}>
+              <TouchableOpacity
+                style={styles.bioModalCloseButton}
+                onPress={() => setEditingBio(false)}
+              >
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+              <Text style={styles.bioModalTitle}>Edit Bio</Text>
+              <TouchableOpacity
+                style={styles.bioModalSaveButton}
+                onPress={() => {
+                  if (profile) {
+                    setProfile({ ...profile, bio: bioText.trim() });
+                  }
+                  setEditingBio(false);
+                }}
+              >
+                <Text style={styles.bioModalSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.bioModalContent}>
+              <Text style={styles.bioModalSubtitle}>
+                Tell your friends a bit about yourself
+              </Text>
+              <TextInput
+                style={styles.bioTextInput}
+                placeholder="Write something interesting about yourself..."
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                value={bioText}
+                onChangeText={setBioText}
+                multiline
+                maxLength={100}
+                textAlignVertical="top"
+                autoFocus
+              />
+              <Text style={styles.bioCharCount}>
+                {bioText.length}/100 characters
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </GradientBackground>
   );
 };
@@ -877,5 +1005,200 @@ const styles = StyleSheet.create({
   // Footer Space
   footerSpace: {
     height: 20,
+  },
+
+  // Bio Section Styles
+  bioSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
+  },
+
+  editBioButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(156, 107, 255, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.3)",
+  },
+
+  editBioButtonText: {
+    ...typography.caption,
+    color: colors.accentPurple,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  bioCard: {
+    borderRadius: 20,
+    backgroundColor: "rgba(6, 0, 18, 0.6)",
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.2)",
+    shadowColor: "rgba(156, 107, 255, 0.3)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+
+  bioContent: {
+    padding: 20,
+  },
+
+  bioHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+
+  bioTitle: {
+    ...typography.subtitle,
+    color: colors.accentPurple,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  bioText: {
+    ...typography.body,
+    color: colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: "400",
+  },
+
+  noBioContainer: {
+    alignItems: "center",
+    paddingVertical: 20,
+    gap: 12,
+  },
+
+  noBioTitle: {
+    ...typography.subtitle,
+    color: colors.textSecondary,
+    fontSize: 18,
+    fontWeight: "600",
+  },
+
+  noBioDescription: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+    opacity: 0.8,
+    paddingHorizontal: 16,
+  },
+
+  addBioButton: {
+    backgroundColor: colors.accentPurple,
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+
+  addBioButtonText: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
+  // Bio Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    justifyContent: "flex-end",
+  },
+
+  bioModalContainer: {
+    backgroundColor: "rgba(6, 0, 18, 0.95)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: 40,
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.3)",
+    shadowColor: "rgba(156, 107, 255, 0.4)",
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 16,
+  },
+
+  bioModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+  },
+
+  bioModalCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  bioModalTitle: {
+    ...typography.title,
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: "700",
+  },
+
+  bioModalSaveButton: {
+    backgroundColor: colors.accentPurple,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+
+  bioModalSaveText: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
+  bioModalContent: {
+    padding: 20,
+    gap: 16,
+  },
+
+  bioModalSubtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 16,
+    textAlign: "center",
+  },
+
+  bioTextInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: "rgba(156, 107, 255, 0.3)",
+    padding: 16,
+    color: colors.textPrimary,
+    ...typography.body,
+    fontSize: 16,
+    minHeight: 120,
+    textAlignVertical: "top",
+  },
+
+  bioCharCount: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    textAlign: "right",
   },
 });

@@ -46,28 +46,43 @@ export const HomeScreen = () => {
     const now = new Date();
     const currentHour = now.getHours();
 
-    if (currentHour >= 9 && currentHour < 12) {
-      return "pairing-pool"; // 9 AM - 12 PM: Pairing pool open
-    } else if (currentHour >= 12 && currentHour < 21) {
-      return "matched"; // 12 PM - 9 PM: Matched and receiving prompts
+    if (currentHour >= 8 && currentHour < 13) {
+      return "pool-a"; // 8 AM - 1 PM: Pool A open
+    } else if (currentHour >= 13 && currentHour < 16) {
+      return "pool-b"; // 1 PM - 4 PM: Pool B open
     } else if (currentHour >= 21 && currentHour < 22) {
-      return "reveal-window"; // 9 PM - 10 PM: Identity reveal window
+      return "reveal-window"; // 9 PM - 10 PM: Identity reveal window for all paired users
     } else {
-      return "waiting"; // 10 PM - 9 AM: Waiting for next pairing
+      return "waiting"; // 4 PM - 8 AM & 1 AM - 8 AM: Waiting between pools
     }
+  };
+
+  const getCurrentPool = () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+
+    if (currentHour >= 8 && currentHour < 13) {
+      return "A";
+    } else if (currentHour >= 13 && currentHour < 16) {
+      return "B";
+    }
+    return null;
   };
 
   const getStatusMessage = () => {
     const phase = getCurrentPhase();
+    const currentPool = getCurrentPool();
     switch (phase) {
-      case "pairing-pool":
-        return "Pairing pool is open! Join now to get matched.";
-      case "matched":
-        return "You're matched! Wait for random prompts throughout the day.";
+      case "pool-a":
+        return `Pool A is open! Join to find your match (ends 1:00 PM).`;
+      case "pool-b":
+        return `Pool B is open! Join to find your match (ends 4:00 PM).`;
       case "reveal-window":
         return "Identity reveal window is open! Discover your mystery buddy.";
       case "waiting":
-        return "Next pairing opens tomorrow at 9:00 AM.";
+        return getCurrentPool()
+          ? "Between pools - next pool opens soon!"
+          : "Pools closed - Pool A opens at 8:00 AM.";
       default:
         return "Welcome to SecretBuddy!";
     }
@@ -88,6 +103,9 @@ export const HomeScreen = () => {
   const [hasReceivedPhoto, setHasReceivedPhoto] = useState(true); // Will be dynamically set based on backend data
   const [hasViewedPhoto, setHasViewedPhoto] = useState(false); // Track if user viewed the received photo
   const [hasSentPhoto, setHasSentPhoto] = useState(false); // Track if user sent a photo
+
+  // Ghosting warning state
+  const [showGhostingWarning, setShowGhostingWarning] = useState(true);
 
   // Random photo prompts that appear throughout the day
   const randomPrompts = [
@@ -419,7 +437,8 @@ export const HomeScreen = () => {
     }
 
     switch (phase) {
-      case "pairing-pool":
+      case "pool-a":
+      case "pool-b":
         // Start the searching animation
         setPairing({
           ...pairing,
@@ -432,17 +451,12 @@ export const HomeScreen = () => {
             ...pairing,
             phase: "matched",
           });
+          const poolName = getCurrentPool();
           Alert.alert(
             "Mystery Buddy Found! 🎉",
-            "Great news! We found your perfect mystery buddy. You'll receive random photo prompts throughout the day and discover their identity during reveal time!"
+            `Great news! We found your perfect mystery buddy in Pool ${poolName}. Send messages throughout the day to unlock reveal time!`
           );
         }, 4000);
-        break;
-      case "matched":
-        Alert.alert(
-          "Check Your Prompts!",
-          "You're matched! Random prompts will appear throughout the day. Film your surroundings and send them to your mystery buddy!"
-        );
         break;
       case "reveal-window":
         navigation.navigate("Reveal" as never);
@@ -511,16 +525,18 @@ export const HomeScreen = () => {
     }
 
     switch (phase) {
-      case "pairing-pool":
+      case "pool-a":
         return pairing.phase === "searching"
           ? "Finding your buddy..."
-          : "Join Pairing Pool";
-      case "matched":
-        return "Check for New Prompts";
+          : "Join Pool A";
+      case "pool-b":
+        return pairing.phase === "searching"
+          ? "Finding your buddy..."
+          : "Join Pool B";
       case "reveal-window":
         return "Reveal Identity";
       case "waiting":
-        return "Pool Opens at 9:00 AM";
+        return "Pool Closed";
       default:
         return "Start Pairing";
     }
@@ -827,6 +843,40 @@ export const HomeScreen = () => {
           </View>
         )}
 
+        {/* Ghosting Protection Info Card */}
+        {isGameModeSelected && showGhostingWarning && (
+          <View style={styles.ghostingInfoCard}>
+            <TouchableOpacity
+              style={styles.dismissButton}
+              onPress={() => setShowGhostingWarning(false)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle" size={24} color="#F59E0B" />
+            </TouchableOpacity>
+            <View style={styles.ghostingInfoHeader}>
+              <Ionicons name="shield-checkmark" size={24} color="#F59E0B" />
+              <Text style={styles.ghostingInfoTitle}>
+                Share Photos to Unlock Your Reveal!
+              </Text>
+            </View>
+            <Text style={styles.ghostingInfoText}>
+              Share at least 1 photo during the day to unlock reveal time at 9
+              PM. Only active participants get to see reveals.
+            </Text>
+            <View style={styles.ghostingInfoStats}>
+              <View style={styles.ghostingInfoStat}>
+                <Text style={styles.ghostingInfoStatNumber}>⏰</Text>
+                <Text style={styles.ghostingInfoStatText}>Reveal: 9-10 PM</Text>
+              </View>
+              <View style={styles.ghostingInfoStat}>
+                <Text style={styles.ghostingInfoStatNumber}>📸</Text>
+                <Text style={styles.ghostingInfoStatText}>Min: 1 photo</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Pairing Status Card */}
         <Animated.View
           style={[
@@ -838,10 +888,10 @@ export const HomeScreen = () => {
         >
           <View style={styles.statusHeader}>
             <Text style={styles.statusTitle}>
-              {getCurrentPhase() === "pairing-pool"
-                ? "Pairing Pool Open"
-                : getCurrentPhase() === "matched"
-                ? "You're Matched!"
+              {getCurrentPhase() === "pool-a"
+                ? "Pool A Open"
+                : getCurrentPhase() === "pool-b"
+                ? "Pool B Open"
                 : getCurrentPhase() === "reveal-window"
                 ? "Reveal Time"
                 : "Daily Connection"}
@@ -851,11 +901,10 @@ export const HomeScreen = () => {
                 styles.statusIndicator,
                 {
                   backgroundColor:
-                    getCurrentPhase() === "pairing-pool" ||
+                    getCurrentPhase() === "pool-a" ||
+                    getCurrentPhase() === "pool-b" ||
                     getCurrentPhase() === "reveal-window"
                       ? colors.accentTeal
-                      : getCurrentPhase() === "matched"
-                      ? colors.accentPurple
                       : colors.textSecondary,
                 },
               ]}
@@ -867,7 +916,8 @@ export const HomeScreen = () => {
             label={getButtonText()}
             onPress={handlePairingPress}
             variant={
-              getCurrentPhase() === "pairing-pool" ||
+              getCurrentPhase() === "pool-a" ||
+              getCurrentPhase() === "pool-b" ||
               getCurrentPhase() === "reveal-window"
                 ? "primary"
                 : "ghost"
@@ -1980,5 +2030,85 @@ const styles = StyleSheet.create({
     color: "#FF4FB7",
     fontSize: isSmallScreen ? 12 : 14,
     fontWeight: "600",
+  },
+
+  // Ghosting Protection Info Card Styles
+  ghostingInfoCard: {
+    borderRadius: isSmallScreen ? 16 : 18,
+    backgroundColor: "rgba(245, 158, 11, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.25)",
+    padding: isSmallScreen ? 12 : 16,
+    marginBottom: isSmallScreen ? 12 : 16,
+    shadowColor: "#F59E0B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+    position: "relative",
+  },
+  ghostingInfoHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+    paddingRight: 40, // Space for dismiss button
+  },
+  ghostingInfoTitle: {
+    ...typography.subtitle,
+    color: "#F59E0B",
+    fontSize: isSmallScreen ? 15 : 16,
+    fontWeight: "700",
+    lineHeight: isSmallScreen ? 18 : 20,
+  },
+  ghostingInfoText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: isSmallScreen ? 13 : 14,
+    lineHeight: isSmallScreen ? 18 : 20,
+    marginBottom: isSmallScreen ? 12 : 14,
+  },
+  ghostingInfoStats: {
+    flexDirection: "row",
+    gap: isSmallScreen ? 10 : 12,
+  },
+  ghostingInfoStat: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(245, 158, 11, 0.05)",
+    borderRadius: 8,
+    padding: isSmallScreen ? 8 : 10,
+  },
+  ghostingInfoStatNumber: {
+    fontSize: 18,
+  },
+  ghostingInfoStatText: {
+    ...typography.caption,
+    color: "#F59E0B",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  // Dismiss Button Styles
+  dismissButton: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
+    borderWidth: 1.5,
+    borderColor: "rgba(245, 158, 11, 0.4)",
+    shadowColor: "#F59E0B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
 });
