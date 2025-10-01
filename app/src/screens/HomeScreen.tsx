@@ -448,10 +448,8 @@ export const HomeScreen = () => {
         navigation.navigate("Reveal" as never);
         break;
       case "waiting":
-        Alert.alert(
-          "Pairing Pool Closed",
-          "The pairing pool opens tomorrow at 9:00 AM. Come back then to get matched!"
-        );
+        // For demo purposes, allow reveal even when pairing pool is closed
+        navigation.navigate("Reveal", { demo: true, bothRevealed: true });
         break;
     }
   };
@@ -535,110 +533,150 @@ export const HomeScreen = () => {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Today's Prompt - Show only when no received photo to avoid clutter */}
-        {(() => {
-          const now = new Date();
-          const currentHour = now.getHours();
-          // Show prompts during active hours (12 PM - 9 PM)
-          const isValidTime = currentHour >= 12 && currentHour < 21;
-          const isPaired =
-            pairing.phase === "matched" || pairing.phase === "submission-open";
-          // Only show photo challenge if no received photo (to avoid clutter) AND user hasn't sent photo yet
-          return isValidTime && isPaired && !hasReceivedPhoto && !hasSentPhoto;
-        })() && (
+        {/* Reveal Time Card - Show for testing */}
+        {isGameModeSelected && (
           <Animated.View
             style={[
-              styles.promptCardContainer,
+              styles.revealTimeCard,
               {
-                transform: [{ scale: scaleAnim }, { translateY: floatAnim }],
+                opacity: pulseAnim,
+                transform: [{ scale: pulseAnim }],
               },
             ]}
           >
-            <Animated.View
-              style={[
-                styles.promptCard,
-                {
-                  shadowOpacity: glowAnim,
-                },
-              ]}
-            >
-              <View style={styles.promptHeader}>
-                <View style={styles.promptIconContainer}>
-                  <Ionicons name="camera" size={32} color="#ffffff" />
-                </View>
-                <View style={styles.promptHeaderText}>
-                  <Text style={styles.promptTitle}>Photo Challenge</Text>
-                  <View style={styles.promptTimer}>
-                    <Ionicons name="timer-outline" size={18} color="#6366F1" />
-                    <Text style={styles.promptTime}>
-                      {nextPromptTime
-                        ? `${Math.max(
-                            0,
-                            Math.floor(
-                              (nextPromptTime.getTime() -
-                                new Date().getTime()) /
-                                (1000 * 60)
-                            )
-                          )} minutes left`
-                        : "30 minutes remaining"}
-                    </Text>
-                  </View>
-                </View>
+            <View style={styles.revealTimeHeader}>
+              <View style={styles.revealTimeIcon}>
+                <Ionicons name="eye" size={32} color="#FF4FB7" />
               </View>
-
-              <View style={styles.promptContent}>
-                <Text style={styles.promptText}>
-                  {
-                    randomPrompts[
-                      Math.floor(Math.random() * randomPrompts.length)
-                    ]
-                  }
+              <View style={styles.revealTimeHeaderText}>
+                <Text style={styles.revealTimeTitle}>🎭 Reveal Time!</Text>
+                <Text style={styles.revealTimeSubtitle}>
+                  Tap to reveal your mystery buddy's identity
                 </Text>
-
-                <View style={styles.promptActions}>
-                  <TouchableOpacity
-                    style={styles.cameraButton}
-                    onPress={takeBackPhoto}
-                  >
-                    <View style={styles.cameraButtonIcon}>
-                      <Ionicons
-                        name="camera"
-                        size={24}
-                        color={colors.textPrimary}
-                      />
-                    </View>
-                    <Text style={styles.cameraButtonText}>Take Photo</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.emojiButton}
-                    onPress={() =>
-                      Alert.alert(
-                        "Quick React",
-                        "Send a reaction to your buddy!"
-                      )
-                    }
-                  >
-                    <Text style={styles.emojiButtonText}>Skip</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.promptRules}>
-                  <Text style={styles.promptRuleText}>
-                    • Keep your identity anonymous
-                  </Text>
-                  <Text style={styles.promptRuleText}>
-                    • No selfies or personal photos allowed
-                  </Text>
-                  <Text style={styles.promptHintText}>
-                    Your mystery buddy will see this photo but not know it's you
-                    until reveal time
-                  </Text>
-                </View>
               </View>
-            </Animated.View>
+            </View>
+
+            <View style={styles.revealTimeContent}>
+              <Text style={styles.revealTimeMessage}>
+                The moment you've been waiting for! Discover who your
+                SecretBuddy really is and decide if you want to connect.
+              </Text>
+
+              <View style={styles.revealTimeButtons}>
+                <TouchableOpacity
+                  style={styles.revealTimeButton}
+                  onPress={handlePairingPress}
+                >
+                  <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+                  <Text style={styles.revealTimeButtonText}>Tap to Reveal</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.revealTimeDemoButton}
+                  onPress={() =>
+                    navigation.navigate("Reveal", {
+                      demo: true,
+                      bothRevealed: false,
+                    })
+                  }
+                >
+                  <Ionicons name="eye-off" size={16} color="#FF4FB7" />
+                  <Text style={styles.revealTimeDemoButtonText}>
+                    👻 Ghost Demo
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </Animated.View>
         )}
+        <Animated.View
+          style={[
+            styles.promptCardContainer,
+            {
+              transform: [{ scale: scaleAnim }, { translateY: floatAnim }],
+            },
+          ]}
+        >
+          <Animated.View
+            style={[
+              styles.promptCard,
+              {
+                shadowOpacity: glowAnim,
+              },
+            ]}
+          >
+            <View style={styles.promptHeader}>
+              <View style={styles.promptIconContainer}>
+                <Ionicons name="camera" size={32} color="#ffffff" />
+              </View>
+              <View style={styles.promptHeaderText}>
+                <Text style={styles.promptTitle}>Photo Challenge</Text>
+                <View style={styles.promptTimer}>
+                  <Ionicons name="timer-outline" size={18} color="#6366F1" />
+                  <Text style={styles.promptTime}>
+                    {nextPromptTime
+                      ? `${Math.max(
+                          0,
+                          Math.floor(
+                            (nextPromptTime.getTime() - new Date().getTime()) /
+                              (1000 * 60)
+                          )
+                        )} minutes left`
+                      : "30 minutes remaining"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.promptContent}>
+              <Text style={styles.promptText}>
+                {
+                  randomPrompts[
+                    Math.floor(Math.random() * randomPrompts.length)
+                  ]
+                }
+              </Text>
+
+              <View style={styles.promptActions}>
+                <TouchableOpacity
+                  style={styles.cameraButton}
+                  onPress={takeBackPhoto}
+                >
+                  <View style={styles.cameraButtonIcon}>
+                    <Ionicons
+                      name="camera"
+                      size={24}
+                      color={colors.textPrimary}
+                    />
+                  </View>
+                  <Text style={styles.cameraButtonText}>Take Photo</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.emojiButton}
+                  onPress={() =>
+                    Alert.alert("Quick React", "Send a reaction to your buddy!")
+                  }
+                >
+                  <Text style={styles.emojiButtonText}>Skip</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.promptRules}>
+                <Text style={styles.promptRuleText}>
+                  • Keep your identity anonymous
+                </Text>
+                <Text style={styles.promptRuleText}>
+                  • No selfies or personal photos allowed
+                </Text>
+                <Text style={styles.promptHintText}>
+                  Your mystery buddy will see this photo but not know it's you
+                  until reveal time
+                </Text>
+              </View>
+            </View>
+          </Animated.View>
+        </Animated.View>
 
         {/* Received Photo from Mystery Buddy - Priority over photo challenge */}
         {(() => {
@@ -915,26 +953,6 @@ export const HomeScreen = () => {
             <Text style={styles.metaValue}>420 pts</Text>
           </View>
         </View>
-
-        {/* Demo Reveal Button */}
-        <View style={styles.demoSection}>
-          <TouchableOpacity
-            style={styles.demoButton}
-            onPress={() => navigation.navigate("Reveal", { demo: true })}
-          >
-            <Ionicons name="eye" size={20} color="#FFFFFF" />
-            <Text style={styles.demoButtonText}>🎭 Demo Reveal (Both)</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.demoButton}
-            onPress={() =>
-              navigation.navigate("Reveal", { demo: true, bothRevealed: false })
-            }
-          >
-            <Ionicons name="eye-off" size={20} color="#FFFFFF" />
-            <Text style={styles.demoButtonText}>👻 Demo Reveal (Ghosted)</Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
 
       {/* Simple Camera Reminder Modal */}
@@ -1039,13 +1057,16 @@ const getStatusColor = (phase: string) => {
   }
 };
 
+const { width, height } = Dimensions.get("window");
+const isSmallScreen = width < 375 || height < 667;
+
 const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: isSmallScreen ? 16 : 24,
     paddingTop: 80,
     paddingBottom: 140,
-    gap: 28,
+    gap: isSmallScreen ? 20 : 28,
   },
   promptCardContainer: {
     // Container for transform animations (native driver)
@@ -1176,11 +1197,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   pairingCard: {
-    borderRadius: 24,
+    borderRadius: isSmallScreen ? 20 : 24,
     backgroundColor: "rgba(6, 0, 18, 0.72)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
-    padding: 22,
+    padding: isSmallScreen ? 18 : 22,
   },
   statusHeader: {
     flexDirection: "row",
@@ -1227,11 +1248,11 @@ const styles = StyleSheet.create({
 
   // Game Mode Card Styles
   gameModeCard: {
-    borderRadius: 24,
+    borderRadius: isSmallScreen ? 20 : 24,
     backgroundColor: "rgba(6, 0, 18, 0.72)",
     borderWidth: 1,
     borderColor: "rgba(156, 107, 255, 0.3)",
-    padding: 24,
+    padding: isSmallScreen ? 18 : 24,
     shadowColor: "rgba(156, 107, 255, 0.4)",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.6,
@@ -1249,15 +1270,17 @@ const styles = StyleSheet.create({
   gameModeTitle: {
     ...typography.title,
     color: colors.textPrimary,
-    fontSize: 22,
+    fontSize: isSmallScreen ? 18 : 22,
     fontWeight: "800",
+    lineHeight: isSmallScreen ? 24 : 28,
   },
 
   gameModeSubtitle: {
     ...typography.body,
     color: colors.textSecondary,
-    marginBottom: 20,
-    fontSize: 16,
+    marginBottom: isSmallScreen ? 16 : 20,
+    fontSize: isSmallScreen ? 14 : 16,
+    lineHeight: isSmallScreen ? 20 : 22,
   },
 
   modeOptionContent: {
@@ -1315,12 +1338,12 @@ const styles = StyleSheet.create({
   modeOption: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: isSmallScreen ? 16 : 20,
+    padding: isSmallScreen ? 16 : 20,
     backgroundColor: "rgba(11, 5, 32, 0.5)",
     borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.08)",
-    marginBottom: 12,
+    marginBottom: isSmallScreen ? 10 : 12,
     shadowColor: "rgba(0, 0, 0, 0.3)",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -1850,6 +1873,112 @@ const styles = StyleSheet.create({
     ...typography.subtitle,
     color: "#9C6BFF",
     fontSize: 14,
+    fontWeight: "600",
+  },
+  // Reveal Time Card Styles - Responsive for smaller phones
+  revealTimeCard: {
+    borderRadius: isSmallScreen ? 20 : 24,
+    backgroundColor: "rgba(255, 79, 183, 0.1)",
+    borderWidth: 2,
+    borderColor: "rgba(255, 79, 183, 0.4)",
+    padding: isSmallScreen ? 18 : 24,
+    shadowColor: "#FF4FB7",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
+    marginBottom: isSmallScreen ? 12 : 16,
+  },
+  revealTimeHeader: {
+    flexDirection: isSmallScreen ? "column" : "row",
+    alignItems: "center",
+    marginBottom: isSmallScreen ? 16 : 20,
+    gap: isSmallScreen ? 12 : 0,
+  },
+  revealTimeIcon: {
+    width: isSmallScreen ? 56 : 64,
+    height: isSmallScreen ? 56 : 64,
+    borderRadius: isSmallScreen ? 28 : 32,
+    backgroundColor: "rgba(255, 79, 183, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: isSmallScreen ? 0 : 16,
+    borderWidth: 2,
+    borderColor: "rgba(255, 79, 183, 0.3)",
+  },
+  revealTimeHeaderText: {
+    flex: 1,
+    alignItems: isSmallScreen ? "center" : "flex-start",
+  },
+  revealTimeTitle: {
+    ...typography.display,
+    color: "#FF4FB7",
+    fontSize: isSmallScreen ? 20 : 24,
+    fontWeight: "800",
+    marginBottom: 4,
+    textAlign: isSmallScreen ? "center" : "left",
+  },
+  revealTimeSubtitle: {
+    ...typography.body,
+    color: "#FFB3D9",
+    fontSize: isSmallScreen ? 14 : 16,
+    fontWeight: "500",
+    textAlign: isSmallScreen ? "center" : "left",
+    lineHeight: isSmallScreen ? 20 : 22,
+  },
+  revealTimeContent: {
+    gap: isSmallScreen ? 16 : 20,
+  },
+  revealTimeMessage: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: isSmallScreen ? 14 : 16,
+    lineHeight: isSmallScreen ? 20 : 24,
+    textAlign: "center",
+    paddingHorizontal: isSmallScreen ? 4 : 0,
+  },
+  revealTimeButton: {
+    backgroundColor: "#FF4FB7",
+    borderRadius: isSmallScreen ? 14 : 16,
+    paddingVertical: isSmallScreen ? 14 : 16,
+    paddingHorizontal: isSmallScreen ? 24 : 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: isSmallScreen ? 8 : 12,
+    shadowColor: "#FF4FB7",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 8,
+    minHeight: 52,
+  },
+  revealTimeButtonText: {
+    ...typography.subtitle,
+    color: "#FFFFFF",
+    fontSize: isSmallScreen ? 16 : 18,
+    fontWeight: "700",
+  },
+  revealTimeButtons: {
+    gap: isSmallScreen ? 10 : 12,
+  },
+  revealTimeDemoButton: {
+    backgroundColor: "rgba(255, 79, 183, 0.1)",
+    borderRadius: isSmallScreen ? 10 : 12,
+    paddingVertical: isSmallScreen ? 8 : 10,
+    paddingHorizontal: isSmallScreen ? 16 : 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: isSmallScreen ? 4 : 6,
+    borderWidth: 1,
+    borderColor: "rgba(255, 79, 183, 0.3)",
+    minHeight: 40,
+  },
+  revealTimeDemoButtonText: {
+    ...typography.caption,
+    color: "#FF4FB7",
+    fontSize: isSmallScreen ? 12 : 14,
     fontWeight: "600",
   },
 });

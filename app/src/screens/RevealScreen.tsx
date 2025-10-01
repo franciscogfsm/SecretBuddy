@@ -11,25 +11,23 @@ import {
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+
 import * as Haptics from "expo-haptics";
 
-import { CountdownChip } from "../components/CountdownChip";
 import { PrimaryButton } from "../components/PrimaryButton";
 import type { RootStackParamList } from "../navigation/types";
 import { useAppState } from "../store/AppStateContext";
 import { colors, typography } from "../theme";
 
 const { width, height } = Dimensions.get("window");
-const revealWindowSeconds = 60;
+const TAP_PROGRESS_WIDTH = 76;
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reveal">;
 
 export const RevealScreen = ({ navigation, route }: Props) => {
   const { buddy } = useAppState();
   const [decision, setDecision] = useState<"continue" | "pass" | null>(null);
-  const [revealState, setRevealState] = useState<
-    "waiting" | "ready" | "revealed"
-  >("ready");
 
   // Check if we're in demo mode
   const isDemoMode = route.params?.demo === true;
@@ -38,101 +36,341 @@ export const RevealScreen = ({ navigation, route }: Props) => {
   const demoBuddy = {
     codename: "MysticShadow",
     id: "demo-user",
-    hasRevealed: route.params?.bothRevealed !== false, // Allow demo to show one-sided reveal
+    hasRevealed: true, // Always true for demo mode to show reveal animation
   };
 
   // Use demo buddy if in demo mode, otherwise use real buddy
   const currentBuddy = isDemoMode ? demoBuddy : buddy;
 
-  // Check if both people have revealed (in demo mode, this comes from route params)
-  const bothHaveRevealed = isDemoMode ? demoBuddy.hasRevealed : true; // In real app, this would come from backend
+  // Check if both people have revealed (in demo mode, always true to show the reveal experience)
+  const bothHaveRevealed = isDemoMode ? true : buddy?.state === "revealed";
 
-  // Animation refs
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.8)).current;
-  const glowAnim = useRef(new Animated.Value(0)).current;
-  const sparkleAnim = useRef(new Animated.Value(0)).current;
-  const textGlowAnim = useRef(new Animated.Value(0)).current;
+  // Professional reveal animation system
+  const [animationStage, setAnimationStage] = useState<
+    "preparing" | "building" | "waitingTap" | "complete"
+  >("preparing");
+
+  // Interactive tap-to-reveal system
+  const [tapCount, setTapCount] = useState(0);
+  const [isRevealed, setIsRevealed] = useState(false);
+  const totalTapsNeeded = 5; // Number of taps needed to fully reveal
+
+  // Core animations - Initialize with visible values for debugging
+  const backgroundFade = useRef(new Animated.Value(0)).current;
+  const titleReveal = useRef(new Animated.Value(0)).current;
+  const cardReveal = useRef(new Animated.Value(0)).current;
+  const cardScale = useRef(new Animated.Value(0.85)).current;
+  const cardOpacity = useRef(new Animated.Value(0)).current;
+  const actionButtonsReveal = useRef(new Animated.Value(0)).current;
+  const statusReveal = useRef(new Animated.Value(0)).current;
+  const sparkleEffect = useRef(new Animated.Value(0)).current;
+
+  // Progressive reveal animations
+  const tapIndicatorPulse = useRef(new Animated.Value(1)).current;
+
+  // Suspense building animations
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const glowIntensity = useRef(new Animated.Value(0)).current;
+  const tapRingScale = useRef(new Animated.Value(0)).current;
+  const buttonGlow = useRef(new Animated.Value(0)).current;
+  const tapHintBounce = useRef(new Animated.Value(0)).current;
+
+  const sparkleLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const tapIndicatorLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const tapHintLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    // Dramatic entrance animation sequence
+    const createSuspensefulReveal = () => {
+      setAnimationStage("building");
+
+      const pulseLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.05,
+            duration: 900,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 900,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
+      pulseLoopRef.current = pulseLoop;
+      pulseLoop.start();
+
+      // Stage 1: More dramatic entrance - Background and initial setup
+      const entrySequence = Animated.sequence([
+        // Longer, more dramatic background fade
+        Animated.timing(backgroundFade, {
+          toValue: 1,
+          duration: 1200,
+          easing: Easing.out(Easing.back(1.5)),
+          useNativeDriver: true,
+        }),
+
+        // Add dramatic pause before title
+        Animated.delay(300),
+
+        // Stage 2: Enhanced title reveal with more suspense
+        Animated.parallel([
+          Animated.timing(titleReveal, {
+            toValue: 1,
+            duration: 1100,
+            easing: Easing.out(Easing.back(1.8)),
+            useNativeDriver: true,
+          }),
+          Animated.timing(statusReveal, {
+            toValue: 1,
+            duration: 900,
+            delay: 200,
+            easing: Easing.out(Easing.back(1.3)),
+            useNativeDriver: true,
+          }),
+        ]),
+
+        // Add another dramatic pause
+        Animated.delay(400),
+
+        // Stage 3: More dramatic card entrance with tap-to-reveal
+        Animated.parallel([
+          Animated.timing(cardOpacity, {
+            toValue: 1,
+            duration: 1200,
+            easing: Easing.out(Easing.back(1.4)),
+            useNativeDriver: true,
+          }),
+          Animated.spring(cardScale, {
+            toValue: 1,
+            tension: 30,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+          Animated.timing(cardReveal, {
+            toValue: 1,
+            duration: 1000,
+            easing: Easing.out(Easing.back(1.3)),
+            useNativeDriver: true,
+          }),
+          Animated.timing(glowIntensity, {
+            toValue: 0.4,
+            duration: 1300,
+            easing: Easing.out(Easing.back(1.2)),
+            useNativeDriver: true,
+          }),
+        ]),
+      ]);
+
+      entrySequence.start(() => {
+        setAnimationStage("waitingTap");
+      });
+
+      // Continuous sparkle effect
+      const sparkleLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(sparkleEffect, {
+            toValue: 1,
+            duration: 2000,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(sparkleEffect, {
+            toValue: 0,
+            duration: 2000,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
+      sparkleLoopRef.current = sparkleLoop;
+      sparkleLoop.start();
+
+      return () => {
+        entrySequence.stop();
+      };
+    };
+
+    // Strong haptic feedback for dramatic effect
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    const stopEntry = createSuspensefulReveal();
+
+    return () => {
+      stopEntry?.();
+      pulseLoopRef.current?.stop();
+      sparkleLoopRef.current?.stop();
+      tapIndicatorLoopRef.current?.stop();
+      tapHintLoopRef.current?.stop();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (animationStage === "waitingTap" && !isRevealed) {
+      const tapLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(tapIndicatorPulse, {
+            toValue: 1.1,
+            duration: 700,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(tapIndicatorPulse, {
+            toValue: 1,
+            duration: 700,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
+      tapIndicatorLoopRef.current = tapLoop;
+      tapLoop.start();
+
+      const bounceLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(tapHintBounce, {
+            toValue: -8,
+            duration: 500,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(tapHintBounce, {
+            toValue: 0,
+            duration: 500,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
+      tapHintLoopRef.current = bounceLoop;
+      bounceLoop.start();
+
+      return () => {
+        tapIndicatorLoopRef.current?.stop();
+        tapIndicatorPulse.setValue(1);
+        tapHintLoopRef.current?.stop();
+        tapHintBounce.setValue(0);
+      };
+    }
+
+    if (animationStage === "complete") {
+      tapIndicatorLoopRef.current?.stop();
+      tapIndicatorPulse.setValue(1);
+      tapHintLoopRef.current?.stop();
+      tapHintBounce.setValue(0);
+    }
+  }, [animationStage, isRevealed, tapIndicatorPulse, tapHintBounce]);
+
+  // Interactive tap-to-reveal handler
+  const handleTapToReveal = () => {
+    if (animationStage !== "waitingTap" || isRevealed) return;
+
+    const newTapCount = tapCount + 1;
+    setTapCount(newTapCount);
+    console.log(`Tap ${newTapCount}/${totalTapsNeeded}`);
+
+    // Haptic feedback for each tap
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // More dramatic animation sequence
     Animated.sequence([
-      // Initial fade in
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
+      Animated.spring(cardScale, {
+        toValue: 0.92,
+        tension: 80,
+        friction: 6,
         useNativeDriver: true,
       }),
-      // Scale up with bounce
-      Animated.spring(scaleAnim, {
+      Animated.spring(cardScale, {
+        toValue: 1.05,
+        tension: 60,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.spring(cardScale, {
         toValue: 1,
         tension: 100,
         friction: 8,
         useNativeDriver: true,
       }),
-      // Start glow and sparkle effects
-      Animated.parallel([
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(glowAnim, {
-              toValue: 1,
-              duration: 1500,
-              easing: Easing.inOut(Easing.sin),
-              useNativeDriver: true,
-            }),
-            Animated.timing(glowAnim, {
-              toValue: 0,
-              duration: 1500,
-              easing: Easing.inOut(Easing.sin),
-              useNativeDriver: true,
-            }),
-          ])
-        ),
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(sparkleAnim, {
-              toValue: 1,
-              duration: 2000,
-              easing: Easing.inOut(Easing.sin),
-              useNativeDriver: true,
-            }),
-            Animated.timing(sparkleAnim, {
-              toValue: 0,
-              duration: 2000,
-              easing: Easing.inOut(Easing.sin),
-              useNativeDriver: true,
-            }),
-          ])
-        ),
-        Animated.timing(textGlowAnim, {
-          toValue: 1,
-          duration: 800,
-          delay: 500,
-          useNativeDriver: true,
-        }),
-      ]),
     ]).start();
 
-    // Haptic feedback for reveal
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }, 200);
-  }, []);
+    // More dramatic ripple effect
+    tapRingScale.setValue(0);
+    Animated.timing(tapRingScale, {
+      toValue: 1,
+      duration: 650,
+      easing: Easing.out(Easing.back(1.2)),
+      useNativeDriver: true,
+    }).start();
+
+    // Check if fully revealed
+    if (newTapCount >= totalTapsNeeded) {
+      setIsRevealed(true);
+      setAnimationStage("complete");
+
+      // More dramatic final reveal animation
+      Animated.parallel([
+        Animated.timing(glowIntensity, {
+          toValue: 1,
+          duration: 1200,
+          easing: Easing.out(Easing.back(1.3)),
+          useNativeDriver: true,
+        }),
+        Animated.timing(actionButtonsReveal, {
+          toValue: 1,
+          duration: 800,
+          delay: 400,
+          easing: Easing.out(Easing.back(1.5)),
+          useNativeDriver: true,
+        }),
+        Animated.timing(buttonGlow, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.out(Easing.back(1.2)),
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // Strong haptic for completion
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    } else {
+      // Progressive glow with more dramatic timing
+      Animated.timing(glowIntensity, {
+        toValue: 0.4 + (newTapCount / totalTapsNeeded) * 0.4,
+        duration: 500,
+        easing: Easing.out(Easing.back(1.1)),
+        useNativeDriver: true,
+      }).start();
+      Animated.timing(buttonGlow, {
+        toValue: Math.min(newTapCount / totalTapsNeeded, 0.8),
+        duration: 600,
+        easing: Easing.out(Easing.back(1.2)),
+        useNativeDriver: true,
+      }).start();
+    }
+  };
 
   const handleDecision = (choice: "continue" | "pass") => {
     setDecision(choice);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-    // In a real app, this would send the decision to the backend
-    // For now, we'll just show the decision was made
-    if (currentBuddy) {
+    if (choice === "continue" && currentBuddy) {
+      // Navigate directly to chat with the buddy
+      setTimeout(() => {
+        navigation.navigate("Chat", { isTimed: false });
+      }, 300);
+    } else {
+      // Pass - show confirmation and go back
       setTimeout(() => {
         Alert.alert(
-          choice === "continue" ? "Chat Unlocked! 🎉" : "Connection Passed",
-          choice === "continue"
-            ? `You can now chat with ${currentBuddy.codename}!`
-            : "The connection has been closed.",
+          "Connection Passed",
+          "The connection has been closed. You'll be matched with someone new soon!",
           [
             {
               text: "OK",
@@ -140,7 +378,7 @@ export const RevealScreen = ({ navigation, route }: Props) => {
             },
           ]
         );
-      }, 500);
+      }, 300);
     }
   };
 
@@ -149,212 +387,500 @@ export const RevealScreen = ({ navigation, route }: Props) => {
     return null;
   }
 
-  const glowOpacity = glowAnim.interpolate({
+  const tapRemaining = Math.max(totalTapsNeeded - tapCount, 0);
+  const revealProgress = Math.min(tapCount / totalTapsNeeded, 1);
+  const cardBorderColors = useMemo<[string, string]>(
+    () =>
+      revealProgress >= 1
+        ? ["#FF6B9D", "#C084FC"] // Pink to purple when revealed
+        : ["#60A5FA", "#A78BFA"], // Blue to purple while tapping
+    [revealProgress]
+  );
+  const cardSurfaceColors = useMemo<[string, string]>(
+    () =>
+      revealProgress >= 1
+        ? ["rgba(17, 24, 39, 0.95)", "rgba(55, 65, 81, 0.85)"] // Dark elegant when revealed
+        : ["rgba(15, 23, 42, 0.92)", "rgba(30, 41, 59, 0.88)"], // Dark blue while tapping
+    [revealProgress]
+  );
+
+  // Professional animation interpolations
+  const sparkleScale = sparkleEffect.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.3, 0.8],
+    outputRange: [0.8, 1.2],
   });
 
-  const sparkleScale = sparkleAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.2],
+  const sparkleOpacity = sparkleEffect.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.3, 1, 0.3],
   });
 
   return (
     <View style={styles.container}>
-      {/* Animated Background */}
-      <LinearGradient
-        colors={["#05030C", "#0B0520", "#140A35", "#1A0F45"]}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      />
+      {/* Professional gradient background */}
+      <Animated.View
+        style={[StyleSheet.absoluteFill, { opacity: backgroundFade }]}
+      >
+        <LinearGradient
+          colors={["#0A0A0A", "#1A1A2E", "#16213E", "#1A237E"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      </Animated.View>
 
-      {/* Floating Geometric Elements */}
-      <View style={styles.geometricContainer}>
-        <Animated.View
-          style={[
-            styles.geometricShape,
-            styles.shape1,
-            { opacity: glowOpacity, transform: [{ scale: sparkleScale }] },
-          ]}
-        >
-          <LinearGradient
-            colors={["#FF4FB7", "#9C6BFF"]}
-            style={StyleSheet.absoluteFill}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          />
-        </Animated.View>
-        <Animated.View
-          style={[
-            styles.geometricShape,
-            styles.shape2,
-            { opacity: glowOpacity, transform: [{ scale: sparkleScale }] },
-          ]}
-        >
-          <LinearGradient
-            colors={["#2EE6A9", "#1FC7B4"]}
-            style={StyleSheet.absoluteFill}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          />
-        </Animated.View>
-      </View>
-
+      {/* Subtle sparkle effects */}
       <Animated.View
         style={[
-          styles.overlay,
+          styles.sparkleContainer,
           {
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }],
+            opacity: sparkleOpacity,
+            transform: [{ scale: sparkleScale }],
           },
         ]}
       >
-        <View style={styles.modal}>
-          {/* Reveal Glow Effect */}
-          <Animated.View
-            style={[
-              styles.revealGlow,
-              {
-                opacity: glowAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.4, 0.9],
-                }),
-              },
-            ]}
-          >
-            <LinearGradient
-              colors={["rgba(156, 107, 255, 0.3)", "rgba(255, 79, 183, 0.3)"]}
-              style={StyleSheet.absoluteFill}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-          </Animated.View>
-
-          {/* Main Content */}
-          <View style={styles.content}>
-            {bothHaveRevealed ? (
-              // Both have revealed - show full reveal experience
-              <>
-                <Animated.Text
-                  style={[
-                    styles.revealText,
-                    {
-                      opacity: textGlowAnim,
-                    },
-                  ]}
-                >
-                  ✨ REVEAL ✨
-                </Animated.Text>
-
-                <Animated.Text
-                  style={[
-                    styles.title,
-                    {
-                      opacity: textGlowAnim,
-                      transform: [
-                        {
-                          scale: textGlowAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0.8, 1],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                >
-                  It&apos;s {currentBuddy.codename}!
-                </Animated.Text>
-
-                <Text style={styles.subtitle}>
-                  The mystery is revealed! You can now choose to connect and
-                  start chatting, or pass if you're not interested.
-                </Text>
-
-                <View style={styles.statusContainer}>
-                  <Text style={styles.statusText}>
-                    💫 Connection Status: Revealed
-                  </Text>
-                </View>
-
-                <View style={styles.actions}>
-                  <PrimaryButton
-                    label={
-                      decision === "continue"
-                        ? "✨ Selected ✨"
-                        : "Continue Chatting"
-                    }
-                    onPress={() => handleDecision("continue")}
-                    disabled={decision === "continue"}
-                  />
-                  <PrimaryButton
-                    label={decision === "pass" ? "Selected" : "Pass"}
-                    variant="ghost"
-                    onPress={() => handleDecision("pass")}
-                    disabled={decision === "pass"}
-                  />
-                </View>
-              </>
-            ) : (
-              // Only one person has revealed - show ghosted message
-              <>
-                <View style={styles.ghostIcon}>
-                  <Text style={styles.ghostEmoji}>👻</Text>
-                </View>
-
-                <Text style={styles.ghostTitle}>You Ghosted Your Buddy</Text>
-
-                <Text style={styles.ghostSubtitle}>
-                  You revealed your identity, but {currentBuddy.codename} hasn't
-                  responded yet. They may not be ready to connect, or they might
-                  have moved on.
-                </Text>
-
-                <View style={styles.ghostStatus}>
-                  <Text style={styles.ghostStatusText}>
-                    🕐 Waiting for their response...
-                  </Text>
-                </View>
-
-                <View style={styles.ghostActions}>
-                  <PrimaryButton
-                    label="Send Reminder"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      Alert.alert(
-                        "Reminder Sent",
-                        `A gentle reminder has been sent to ${currentBuddy.codename}.`,
-                        [{ text: "OK" }]
-                      );
-                    }}
-                  />
-                  <PrimaryButton
-                    label="Move On"
-                    variant="ghost"
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      Alert.alert(
-                        "Connection Closed",
-                        "You've chosen to move on. This connection is now closed.",
-                        [
-                          {
-                            text: "OK",
-                            onPress: () => navigation.goBack(),
-                          },
-                        ]
-                      );
-                    }}
-                  />
-                </View>
-              </>
-            )}
-          </View>
-
-          <Pressable onPress={() => navigation.goBack()} style={styles.dismiss}>
-            <Text style={styles.dismissText}>Close</Text>
-          </Pressable>
-        </View>
+        <View style={[styles.sparkle, { top: "20%", right: "15%" }]} />
+        <View style={[styles.sparkle, { top: "60%", left: "10%" }]} />
+        <View style={[styles.sparkle, { bottom: "25%", right: "25%" }]} />
       </Animated.View>
+
+      {/* Professional main content */}
+      <View style={styles.mainContent}>
+        {bothHaveRevealed ? (
+          <>
+            {/* Professional reveal header */}
+            <Animated.View
+              style={[
+                styles.headerContainer,
+                {
+                  opacity: titleReveal,
+                  transform: [
+                    { scale: pulseAnim },
+                    {
+                      translateY: titleReveal.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [30, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <View style={styles.iconContainer}>
+                <Ionicons name="eye" size={32} color="#4F46E5" />
+              </View>
+              <Text style={styles.revealTitle}>Identity Revealed</Text>
+              <Text style={styles.revealSubtitle}>
+                Meet your secret connection
+              </Text>
+            </Animated.View>
+
+            {/* Connection Status - Now Visible */}
+            <Animated.View
+              style={[
+                styles.statusBanner,
+                {
+                  opacity: statusReveal,
+                  transform: [
+                    {
+                      translateY: statusReveal.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [20, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+              <Text style={styles.statusText}>Connection Established</Text>
+            </Animated.View>
+
+            {/* Interactive Tap-to-Reveal Profile Card */}
+            <Pressable
+              onPress={handleTapToReveal}
+              style={({ pressed }) => [
+                {
+                  opacity: pressed ? 0.9 : 1,
+                },
+              ]}
+            >
+              <Animated.View
+                style={[
+                  styles.profileCardContainer,
+                  {
+                    opacity: cardOpacity,
+                    transform: [
+                      { scale: cardScale },
+                      {
+                        translateY: cardReveal.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [50, 0],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                {/* Glow effect */}
+                <Animated.View
+                  style={[
+                    styles.cardGlow,
+                    {
+                      opacity: glowIntensity,
+                    },
+                  ]}
+                />
+
+                <LinearGradient
+                  colors={cardBorderColors}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.profileCardBorder}
+                >
+                  <View style={styles.profileCard}>
+                    <LinearGradient
+                      colors={cardSurfaceColors}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.profileCardSurface}
+                    />
+
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        styles.tapRipple,
+                        {
+                          opacity: tapRingScale.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.45, 0],
+                          }),
+                          transform: [
+                            {
+                              scale: tapRingScale.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [1, 1.6],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    />
+
+                    {/* Progressive reveal content */}
+                    <View style={styles.profileHeader}>
+                      <View style={styles.profileAvatar}>
+                        <Animated.Text
+                          style={[
+                            styles.profileAvatarText,
+                            {
+                              opacity: tapCount >= 1 ? 1 : 0.4,
+                            },
+                          ]}
+                        >
+                          {tapCount >= 1
+                            ? currentBuddy.codename.charAt(0).toUpperCase()
+                            : "?"}
+                        </Animated.Text>
+                      </View>
+                      <View style={styles.profileInfo}>
+                        <Animated.Text
+                          style={[
+                            styles.profileName,
+                            {
+                              opacity: tapCount >= 2 ? 1 : 0.4,
+                            },
+                          ]}
+                        >
+                          {tapCount >= 2 ? currentBuddy.codename : "???"}
+                        </Animated.Text>
+                        <Animated.Text
+                          style={[
+                            styles.profileDetail,
+                            {
+                              opacity: tapCount >= 3 ? 1 : 0.4,
+                            },
+                          ]}
+                        >
+                          {tapCount >= 3
+                            ? "Age: 25 • Location: Lisbon"
+                            : "Age: ?? • Location: ???"}
+                        </Animated.Text>
+                        <Animated.Text
+                          style={[
+                            styles.profileDetail,
+                            {
+                              opacity: tapCount >= 4 ? 1 : 0.4,
+                            },
+                          ]}
+                        >
+                          {tapCount >= 4
+                            ? "Interests: Photography, Travel, Music"
+                            : "Interests: ???, ???, ???"}
+                        </Animated.Text>
+                      </View>
+                    </View>
+
+                    {animationStage === "waitingTap" && (
+                      <View style={styles.tapTokenRow}>
+                        {Array.from({ length: totalTapsNeeded }).map(
+                          (_, index) => {
+                            const isFilled = index < tapCount;
+                            const isNext = index === tapCount && !isRevealed;
+
+                            if (isFilled) {
+                              return (
+                                <LinearGradient
+                                  key={`tap-token-${index}`}
+                                  colors={["#60A5FA", "#8B5CF6"]}
+                                  start={{ x: 0, y: 0 }}
+                                  end={{ x: 1, y: 1 }}
+                                  style={[
+                                    styles.tapToken,
+                                    styles.tapTokenFilled,
+                                  ]}
+                                >
+                                  <Ionicons
+                                    name="sparkles"
+                                    size={12}
+                                    color="#F8FAFF"
+                                  />
+                                </LinearGradient>
+                              );
+                            }
+
+                            return (
+                              <View
+                                key={`tap-token-${index}`}
+                                style={[
+                                  styles.tapToken,
+                                  isNext && styles.tapTokenNext,
+                                ]}
+                              >
+                                {isNext && (
+                                  <Ionicons
+                                    name="hand-left"
+                                    size={12}
+                                    color="#60A5FA"
+                                  />
+                                )}
+                              </View>
+                            );
+                          }
+                        )}
+                      </View>
+                    )}
+
+                    <View style={styles.tapMessageWrapper}>
+                      {animationStage === "waitingTap" && !isRevealed ? (
+                        <LinearGradient
+                          colors={[
+                            "rgba(96, 165, 250, 0.95)",
+                            "rgba(168, 85, 247, 0.85)",
+                          ]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.tapMessage}
+                        >
+                          <View style={styles.tapMessageIcon}>
+                            <Ionicons
+                              name="sparkles"
+                              size={18}
+                              color="#F9FAFF"
+                            />
+                          </View>
+                          <View style={styles.tapMessageText}>
+                            <Text style={styles.tapMessageTitle}>
+                              Tap to unveil
+                            </Text>
+                            <Text style={styles.tapMessageSubtitle}>
+                              {tapRemaining > 0
+                                ? `${tapRemaining} more ${
+                                    tapRemaining === 1 ? "tap" : "taps"
+                                  } to unlock`
+                                : "You're almost there"}
+                            </Text>
+                            <View style={styles.tapMessageTrack}>
+                              <View
+                                style={[
+                                  styles.tapMessageFill,
+                                  {
+                                    width: `${
+                                      Math.max(revealProgress, 0.08) * 100
+                                    }%`,
+                                  },
+                                ]}
+                              />
+                            </View>
+                          </View>
+                        </LinearGradient>
+                      ) : null}
+                    </View>
+
+                    {/* Bio section - reveals last */}
+                    <Animated.View
+                      style={[
+                        styles.profileBio,
+                        {
+                          opacity: tapCount >= 5 ? 1 : 0.4,
+                        },
+                      ]}
+                    >
+                      <Text style={styles.profileBioText}>
+                        {tapCount >= 5
+                          ? '"Love capturing moments and exploring new places. Always up for an adventure!"'
+                          : '"????? ????? ??????? ??? ??????? ??? ??????. ?????? ?? ??? ?? ???????!"'}
+                      </Text>
+                    </Animated.View>
+
+                    {/* Internal connection message */}
+                    {tapCount >= 5 && (
+                      <Pressable
+                        style={styles.internalMessage}
+                        onPress={() => {
+                          Haptics.impactAsync(
+                            Haptics.ImpactFeedbackStyle.Light
+                          );
+                          navigation.navigate("Chat", { isTimed: false });
+                        }}
+                      >
+                        <View style={styles.internalMessageContent}>
+                          <Ionicons
+                            name="chatbubbles"
+                            size={16}
+                            color="#10B981"
+                          />
+                          <Text style={styles.internalMessageText}>
+                            Send your first message!
+                          </Text>
+                          <Ionicons
+                            name="arrow-forward"
+                            size={14}
+                            color="#10B981"
+                            style={{ marginLeft: 4 }}
+                          />
+                        </View>
+                      </Pressable>
+                    )}
+                  </View>
+                </LinearGradient>
+              </Animated.View>
+            </Pressable>
+
+            {/* Professional Action Button */}
+            <Animated.View
+              style={[
+                styles.actionContainer,
+                {
+                  opacity: actionButtonsReveal,
+                  transform: [
+                    {
+                      translateY: actionButtonsReveal.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [30, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.buttonHalo,
+                  {
+                    opacity: 0, // Hide the halo completely to prevent the pink box
+                    backgroundColor: "transparent",
+                    shadowColor: "transparent",
+                    transform: [
+                      {
+                        scale: buttonGlow.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.8, 1.4],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+              <PrimaryButton
+                label={
+                  decision === "continue" ? "Opening Chat..." : "Start Chatting"
+                }
+                onPress={() => handleDecision("continue")}
+                disabled={decision === "continue"}
+                loading={decision === "continue"}
+                leadingIcon={
+                  decision === "continue" ? undefined : (
+                    <Ionicons
+                      name="chatbubbles"
+                      size={20}
+                      color={colors.textPrimary}
+                    />
+                  )
+                }
+              />
+            </Animated.View>
+          </>
+        ) : (
+          // Only one person has revealed - show no reveal message
+          <>
+            <View style={styles.noRevealIcon}>
+              <Text style={styles.noRevealEmoji}></Text>
+            </View>
+
+            <Text style={styles.noRevealTitle}>Sorry, No Reveal This Time</Text>
+
+            <Text style={styles.noRevealSubtitle}>
+              You didn't participate in the reveal, so you don't get to see{" "}
+              {currentBuddy.codename}'s identity. The connection remains
+              mysterious.
+            </Text>
+
+            <View style={styles.noRevealStatus}>
+              <Text style={styles.noRevealStatusText}>
+                Connection Status: Pending
+              </Text>
+            </View>
+
+            <View style={styles.noRevealActions}>
+              <PrimaryButton
+                label="Send Reminder"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  Alert.alert(
+                    "Reminder Sent",
+                    `A gentle reminder has been sent to ${currentBuddy.codename}.`,
+                    [{ text: "OK" }]
+                  );
+                }}
+              />
+              <PrimaryButton
+                label="Find New Buddy"
+                variant="ghost"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  Alert.alert(
+                    "Finding New Connection",
+                    "We'll help you find someone new to connect with.",
+                    [
+                      {
+                        text: "OK",
+                        onPress: () => navigation.goBack(),
+                      },
+                    ]
+                  );
+                }}
+              />
+            </View>
+          </>
+        )}
+      </View>
+
+      {/* Professional close button */}
+      <Pressable onPress={() => navigation.goBack()} style={styles.closeButton}>
+        <Ionicons name="close" size={24} color="rgba(255, 255, 255, 0.9)" />
+      </Pressable>
     </View>
   );
 };
@@ -362,6 +888,90 @@ export const RevealScreen = ({ navigation, route }: Props) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  // Floating orbs for dynamic background
+  floatingOrb1: {
+    position: "absolute",
+    top: "20%",
+    right: "10%",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(156, 107, 255, 0.3)",
+    shadowColor: "#9C6BFF",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+  },
+  floatingOrb2: {
+    position: "absolute",
+    bottom: "25%",
+    left: "5%",
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "rgba(255, 79, 183, 0.25)",
+    shadowColor: "#FF4FB7",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 15,
+  },
+  floatingOrb3: {
+    position: "absolute",
+    top: "60%",
+    right: "25%",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(46, 230, 169, 0.2)",
+    shadowColor: "#2EE6A9",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+  },
+  // Full screen content instead of modal
+  fullScreenContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 60,
+  },
+  sparkleField: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    pointerEvents: "none",
+  },
+  patternCircle: {
+    position: "absolute",
+    borderRadius: 150,
+    opacity: 0.05,
+  },
+  patternCircle1: {
+    width: 300,
+    height: 300,
+    backgroundColor: "#9C6BFF",
+    top: -150,
+    right: -100,
+  },
+  patternCircle2: {
+    width: 200,
+    height: 200,
+    backgroundColor: "#FF4FB7",
+    bottom: -100,
+    left: -50,
+  },
+  patternCircle3: {
+    width: 250,
+    height: 250,
+    backgroundColor: "#2EE6A9",
+    top: "50%",
+    left: "60%",
+    marginTop: -125,
+    marginLeft: -125,
   },
   geometricContainer: {
     position: "absolute",
@@ -418,30 +1028,113 @@ const styles = StyleSheet.create({
     borderRadius: 52,
     overflow: "hidden",
   },
+  sparkleOverlay: {
+    position: "absolute",
+    top: -10,
+    left: -10,
+    right: -10,
+    bottom: -10,
+    pointerEvents: "none",
+  },
+  sparkle1: {
+    top: "10%",
+    right: "15%",
+    width: 6,
+    height: 6,
+    backgroundColor: "#FF4FB7",
+    shadowColor: "#FF4FB7",
+  },
+  sparkle2: {
+    top: "25%",
+    left: "20%",
+    width: 4,
+    height: 4,
+    backgroundColor: "#9C6BFF",
+    shadowColor: "#9C6BFF",
+  },
+  sparkle3: {
+    bottom: "30%",
+    right: "25%",
+    width: 8,
+    height: 8,
+    backgroundColor: "#2EE6A9",
+    shadowColor: "#2EE6A9",
+  },
+  sparkle4: {
+    bottom: "15%",
+    left: "18%",
+    width: 5,
+    height: 5,
+    backgroundColor: "#FFD700",
+    shadowColor: "#FFD700",
+  },
+  sparkle5: {
+    top: "45%",
+    right: "8%",
+    width: 7,
+    height: 7,
+    backgroundColor: "#FF6B9D",
+    shadowColor: "#FF6B9D",
+  },
+  sparkle6: {
+    top: "70%",
+    left: "12%",
+    width: 6,
+    height: 6,
+    backgroundColor: "#A78BFA",
+    shadowColor: "#A78BFA",
+  },
+  closeButton: {
+    position: "absolute",
+    top: 60,
+    right: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 100,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  closeButtonText: {
+    fontSize: 20,
+    color: "rgba(255, 255, 255, 0.9)",
+    fontWeight: "600",
+  },
   content: {
     alignItems: "center",
-    gap: 16,
+    gap: 24,
+    width: "100%",
   },
   revealText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.accentPurple,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF",
     textAlign: "center",
-    letterSpacing: 2,
+    letterSpacing: 3,
     textShadowColor: colors.accentPurple,
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 10,
+    marginBottom: 8,
   },
   title: {
     ...typography.display,
-    color: colors.textPrimary,
+    color: "#FFFFFF",
     textAlign: "center",
-    fontSize: 32,
-    fontWeight: "800",
-    letterSpacing: -1,
-    textShadowColor: "rgba(255, 79, 183, 0.4)",
+    fontSize: 36,
+    fontWeight: "900",
+    letterSpacing: -1.5,
+    textShadowColor: "rgba(255, 79, 183, 0.6)",
     textShadowOffset: { width: 0, height: 4 },
-    textShadowRadius: 12,
+    textShadowRadius: 15,
+    marginBottom: 16,
   },
   subtitle: {
     ...typography.body,
@@ -456,35 +1149,28 @@ const styles = StyleSheet.create({
   },
   statusContainer: {
     alignItems: "center",
-    marginTop: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    backgroundColor: "rgba(156, 107, 255, 0.1)",
-    borderRadius: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    backgroundColor: "rgba(156, 107, 255, 0.15)",
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(156, 107, 255, 0.3)",
-  },
-  statusText: {
-    ...typography.caption,
-    color: colors.accentPurple,
-    fontSize: 14,
-    fontWeight: "600",
-    textAlign: "center",
+    borderColor: "rgba(156, 107, 255, 0.4)",
+    shadowColor: colors.accentPurple,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
   },
   actions: {
     width: "100%",
-    gap: 12,
-    marginTop: 8,
+    maxWidth: 380,
+    gap: 18,
+    marginTop: 32,
+    paddingHorizontal: 16,
   },
-  dismiss: {
-    alignItems: "center",
-    marginTop: 16,
-  },
-  dismissText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    opacity: 0.7,
-  },
+
   // Ghosted state styles
   ghostIcon: {
     alignItems: "center",
@@ -530,5 +1216,404 @@ const styles = StyleSheet.create({
     width: "100%",
     gap: 12,
     marginTop: 8,
+  },
+  // No reveal state styles
+  noRevealIcon: {
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  noRevealEmoji: {
+    fontSize: 48,
+    opacity: 0.8,
+  },
+  noRevealTitle: {
+    ...typography.display,
+    color: colors.textPrimary,
+    textAlign: "center",
+    fontSize: 28,
+    fontWeight: "700",
+    letterSpacing: -0.5,
+  },
+  noRevealSubtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 24,
+    paddingHorizontal: 8,
+  },
+  noRevealStatus: {
+    alignItems: "center",
+    marginTop: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: "rgba(255, 165, 0, 0.1)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 165, 0, 0.3)",
+  },
+  noRevealStatusText: {
+    ...typography.caption,
+    color: "#FFA500",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  noRevealActions: {
+    width: "100%",
+    gap: 12,
+    marginTop: 8,
+  },
+  // Profile Card Styles - Modern glassmorphism design
+  profileCardContainer: {
+    width: "100%",
+    maxWidth: 380,
+    marginHorizontal: 16,
+    marginVertical: 20,
+    shadowColor: "rgba(99, 102, 241, 0.8)",
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.55,
+    shadowRadius: 40,
+    elevation: 20,
+  },
+  profileCardBorder: {
+    borderRadius: 32,
+    padding: 1.5,
+  },
+  profileCard: {
+    position: "relative",
+    borderRadius: 28,
+    padding: 32,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.16)",
+    backgroundColor: "rgba(6, 11, 38, 0.88)",
+  },
+  profileCardSurface: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 28,
+    opacity: 0.95,
+  },
+  profileHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  profileAvatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: colors.accentPurple,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 18,
+    shadowColor: colors.accentPurple,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  profileAvatarText: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  profileName: {
+    ...typography.title,
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 6,
+    letterSpacing: -0.3,
+  },
+  profileDetail: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 15,
+    marginBottom: 3,
+    fontWeight: "500",
+  },
+  profileBio: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 16,
+    padding: 18,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  profileBioText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    fontStyle: "italic",
+  },
+
+  // New Professional Styles
+  sparkleContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    pointerEvents: "none",
+  },
+  sparkle: {
+    position: "absolute",
+    width: 4,
+    height: 4,
+    backgroundColor: "#60A5FA",
+    borderRadius: 2,
+    shadowColor: "#60A5FA",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  mainContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Math.max(20, width * 0.05),
+    paddingVertical: Math.max(40, height * 0.08),
+  },
+  headerContainer: {
+    alignItems: "center",
+    marginBottom: Math.max(24, height * 0.03),
+  },
+  iconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(79, 70, 229, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: "rgba(79, 70, 229, 0.3)",
+  },
+  revealTitle: {
+    ...typography.display,
+    fontSize: Math.max(28, width * 0.07),
+    fontWeight: "900",
+    color: "#FFFFFF",
+    textAlign: "center",
+    letterSpacing: -0.5,
+    marginBottom: 8,
+  },
+  revealSubtitle: {
+    ...typography.body,
+    fontSize: Math.max(16, width * 0.04),
+    color: "rgba(255, 255, 255, 0.7)",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  statusBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.18)",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    marginBottom: Math.max(32, height * 0.04),
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.35)",
+  },
+  statusText: {
+    ...typography.caption,
+    fontSize: Math.max(15, width * 0.038),
+    fontWeight: "600",
+    color: "#10B981",
+    marginLeft: 8,
+  },
+  cardGlow: {
+    position: "absolute",
+    top: -10,
+    left: -10,
+    right: -10,
+    bottom: -10,
+    backgroundColor: "rgba(79, 70, 229, 0.1)",
+    borderRadius: 35,
+    shadowColor: "#4F46E5",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  actionContainer: {
+    width: "100%",
+    maxWidth: 320,
+    marginTop: Math.max(32, height * 0.04),
+  },
+  buttonHalo: {
+    position: "absolute",
+    top: -35,
+    left: -35,
+    right: -35,
+    bottom: -35,
+    borderRadius: 40,
+    backgroundColor: "rgba(79, 70, 229, 0.25)",
+    shadowColor: "#4F46E5",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.45,
+    shadowRadius: 30,
+    elevation: 12,
+  },
+
+  // Tap-to-reveal styles
+  tapRipple: {
+    position: "absolute",
+    top: 18,
+    left: 18,
+    right: 18,
+    bottom: 18,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: "rgba(96, 165, 250, 0.45)",
+  },
+  tapTokenRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  tapToken: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.22)",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 6,
+  },
+  tapTokenFilled: {
+    borderWidth: 0,
+    shadowColor: "rgba(129, 140, 248, 0.9)",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  tapTokenNext: {
+    borderColor: "rgba(129, 140, 248, 0.95)",
+    backgroundColor: "rgba(129, 140, 248, 0.18)",
+  },
+  tapMessageWrapper: {
+    marginTop: 16,
+  },
+  tapMessage: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(250, 210, 255, 0.4)",
+    shadowColor: "rgba(168, 85, 247, 0.7)",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  tapMessageIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(250, 210, 255, 0.22)",
+    borderWidth: 1,
+    borderColor: "rgba(250, 210, 255, 0.4)",
+    marginRight: 14,
+  },
+  tapMessageText: {
+    flex: 1,
+  },
+  tapMessageTitle: {
+    color: "#F9FBFF",
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: -0.1,
+    marginBottom: 2,
+  },
+  tapMessageSubtitle: {
+    color: "rgba(249, 251, 255, 0.88)",
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  tapMessageTrack: {
+    width: TAP_PROGRESS_WIDTH,
+    height: 6,
+    backgroundColor: "rgba(249, 250, 255, 0.24)",
+    borderRadius: 3,
+    overflow: "hidden",
+    marginTop: 10,
+  },
+  tapMessageFill: {
+    height: "100%",
+    backgroundColor: "#FDEEF9",
+    borderRadius: 3,
+  },
+  tapMessageComplete: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 18,
+    backgroundColor: "rgba(236, 72, 153, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(236, 72, 153, 0.45)",
+    shadowColor: "rgba(236, 72, 153, 0.6)",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  tapMessageCompleteText: {
+    color: "rgba(236, 253, 245, 0.95)",
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+
+  // Internal message styles
+  internalMessage: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.25)",
+    shadowColor: "rgba(16, 185, 129, 0.3)",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  internalMessageContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  internalMessageText: {
+    color: "#10B981",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.1,
+    flex: 1,
   },
 });

@@ -48,7 +48,7 @@ export const MysteryCard = ({ prompt, buddy }: MysteryCardProps) => {
         </View>
         <Pressable
           style={styles.revealLink}
-          onPress={() => navigation.navigate("Reveal")}
+          onPress={() => navigation.navigate("Reveal", { demo: true })}
         >
           <Text style={styles.revealText}>
             Reveal opens at{" "}

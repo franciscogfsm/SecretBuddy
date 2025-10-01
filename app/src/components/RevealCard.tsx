@@ -20,7 +20,7 @@ export const RevealCard = ({ buddy, pairing }: RevealCardProps) => {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const handleReveal = () => {
-    navigation.navigate("Reveal");
+    navigation.navigate("Reveal", { demo: true });
   };
 
   return (

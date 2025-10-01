@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import {
+  Alert,
   Animated,
   Easing,
   FlatList,
@@ -306,6 +307,30 @@ export const ChatScreen = () => {
               </View>
             </View>
 
+            <Pressable
+              style={styles.endChatButton}
+              hitSlop={8}
+              onPress={() => {
+                Alert.alert(
+                  "End Conversation",
+                  "Are you sure you want to end this conversation? This cannot be undone.",
+                  [
+                    {
+                      text: "Cancel",
+                      style: "cancel",
+                    },
+                    {
+                      text: "End Chat",
+                      style: "destructive",
+                      onPress: () => navigation.goBack(),
+                    },
+                  ]
+                );
+              }}
+            >
+              <Ionicons name="close-circle" size={20} color={colors.danger} />
+            </Pressable>
+
             {isTimed && isEphemeralMode && (
               <View style={styles.ephemeralIndicator}>
                 <Text style={styles.ephemeralText}>⚡</Text>
@@ -345,23 +370,21 @@ export const ChatScreen = () => {
                 ListFooterComponent={<View style={{ height: 12 }} />}
               />
             </View>
-            {isTimed && (
-              <Animated.View
-                style={[
-                  styles.chatInputContainer,
-                  {
-                    marginBottom: chatInputMarginAnim,
-                    paddingBottom: chatInputPaddingAnim,
-                  },
-                ]}
-              >
-                <ChatInput
-                  onSendMessage={handleSendMessage}
-                  bottomInset={0}
-                  disabled={hasExpired}
-                />
-              </Animated.View>
-            )}
+            <Animated.View
+              style={[
+                styles.chatInputContainer,
+                {
+                  marginBottom: chatInputMarginAnim,
+                  paddingBottom: chatInputPaddingAnim,
+                },
+              ]}
+            >
+              <ChatInput
+                onSendMessage={handleSendMessage}
+                bottomInset={0}
+                disabled={isTimed && hasExpired}
+              />
+            </Animated.View>
           </View>
         </KeyboardAvoidingView>
       </GradientBackground>
@@ -396,6 +419,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
+  },
+  endChatButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 71, 87, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
   },
   buddyInfo: {
     flexDirection: "row",

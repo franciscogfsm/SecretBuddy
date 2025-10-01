@@ -32,8 +32,8 @@ export const PrimaryButton = ({
   >
     {variant === "primary" && (
       <LinearGradient
-        colors={["#9C6BFF", "#8A46FF"]}
-        style={[StyleSheet.absoluteFill, { borderRadius: 25 }]}
+        colors={["#A855F7", "#EC4899"]}
+        style={[StyleSheet.absoluteFill, { borderRadius: 28 }]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
@@ -57,19 +57,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 25,
-    paddingVertical: 20,
-    paddingHorizontal: 28,
-    gap: 10,
-    minHeight: 60,
+    borderRadius: 28,
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    gap: 12,
+    minHeight: 56,
   },
   primary: {
     backgroundColor: "transparent",
-    shadowColor: "rgba(138, 70, 255, 0.3)",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 6,
+    shadowColor: "rgba(168, 85, 247, 0.45)",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 8,
   },
   ghost: {
     backgroundColor: "rgba(255, 255, 255, 0.08)",
@@ -84,8 +84,9 @@ const styles = StyleSheet.create({
   label: {
     ...typography.subtitle,
     color: colors.textPrimary,
-    fontWeight: "600",
-    fontSize: 18,
+    fontWeight: "700",
+    fontSize: 17,
+    letterSpacing: 0.2,
   },
   ghostLabel: {
     color: colors.textSecondary,
