@@ -13,6 +13,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -20,19 +21,34 @@ import { useIsFocused, useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { TopHeader } from "../components/TopHeader";
 import { useAuth } from "../context/AuthContext";
 import { useAppState } from "../store/AppStateContext";
+import { useUserProfile } from "../hooks/useUserProfile";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
+import { getCountryFlag } from "../utils/countryFlags";
 
-const { width: screenWidth } = Dimensions.get("window");
+const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
+const isSmallScreen = screenWidth < 375 || screenHeight < 667; // iPhone SE or smaller
 
 export const ProfileScreen = () => {
-  const { profile, setProfile } = useAppState();
+  const { profile: localProfile, setProfile } = useAppState();
   const { user, signOut, loading: authLoading } = useAuth();
+  const {
+    profile: firestoreProfile,
+    loading: profileLoading,
+    toggleAge,
+    saveBio,
+    uploadPhoto,
+    removePhoto,
+    points,
+    streak,
+    hearts,
+  } = useUserProfile();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const isFocused = useIsFocused();
@@ -50,7 +66,28 @@ export const ProfileScreen = () => {
 
   // Bio editing state
   const [showBioModal, setShowBioModal] = useState(false);
-  const [bioText, setBioText] = useState(profile?.bio || "");
+  const [bioText, setBioText] = useState(localProfile?.bio || "");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // Update bio text when profile changes
+  useEffect(() => {
+    if (firestoreProfile?.bio) {
+      setBioText(firestoreProfile.bio);
+    }
+  }, [firestoreProfile?.bio]);
+
+  // Use Firestore profile data with fallback to local
+  const profile = firestoreProfile
+    ? {
+        name: firestoreProfile.displayName,
+        username: firestoreProfile.username || "",
+        age: firestoreProfile.age || 18,
+        ageVisible: firestoreProfile.ageVisible,
+        country: firestoreProfile.country || "Portugal",
+        mode: "global" as const,
+        bio: firestoreProfile.bio,
+      }
+    : localProfile;
 
   // Bottom sheet animation
   const bottomSheetAnim = useRef(new Animated.Value(0)).current;
@@ -148,17 +185,16 @@ export const ProfileScreen = () => {
     ]);
   };
 
-  const toggleAgeVisibility = () => {
-    if (profile) {
-      setProfile({
-        ...profile,
-        ageVisible: !profile.ageVisible,
-      });
+  const handleToggleAgeVisibility = async () => {
+    try {
+      await toggleAge();
+    } catch (error) {
+      Alert.alert("Error", "Failed to update age visibility");
     }
   };
 
   const openBioModal = () => {
-    setBioText(profile?.bio || "");
+    setBioText(firestoreProfile?.bio || "");
     setShowBioModal(true);
 
     // Smooth fade in
@@ -181,12 +217,90 @@ export const ProfileScreen = () => {
     });
   };
 
-  const saveBio = () => {
-    if (profile) {
-      setProfile({ ...profile, bio: bioText.trim() });
+  const handleSaveBio = async () => {
+    try {
+      await saveBio(bioText.trim());
+      closeBioModal();
+    } catch (error) {
+      Alert.alert("Error", "Failed to save bio");
     }
-    closeBioModal();
   };
+
+  const handlePickImage = async () => {
+    try {
+      // Show helpful guidance before opening picker
+      Alert.alert(
+        "Choose Profile Photo",
+        "📸 Center your face in the square crop area\n\n✨ The photo will be displayed as a circle, so make sure your face is centered!",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Choose Photo",
+            onPress: async () => {
+              // Request permission
+              const { status } =
+                await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+              if (status !== "granted") {
+                Alert.alert(
+                  "Permission needed",
+                  "Please grant camera roll permissions to upload a profile photo."
+                );
+                return;
+              }
+
+              // Launch image picker with square crop
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: "images" as any,
+                allowsEditing: true,
+                aspect: [1, 1], // Square crop for circular display
+                quality: 0.8,
+              });
+
+              if (!result.canceled && result.assets[0]) {
+                setUploadingPhoto(true);
+                await uploadPhoto(result.assets[0].uri);
+                Alert.alert("Success", "Profile photo uploaded!");
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      Alert.alert("Error", "Failed to upload profile photo");
+      console.error(error);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    Alert.alert(
+      "Remove Photo",
+      "Are you sure you want to remove your profile photo?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setUploadingPhoto(true);
+              await removePhoto();
+              Alert.alert("Success", "Profile photo removed");
+            } catch (error) {
+              Alert.alert("Error", "Failed to remove profile photo");
+            } finally {
+              setUploadingPhoto(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // No loading screen needed - profile is pre-loaded on HomeScreen
+  // This ensures instant display when user navigates to Profile tab
 
   return (
     <GradientBackground gradient="midnight">
@@ -218,24 +332,53 @@ export const ProfileScreen = () => {
           </TouchableOpacity>
 
           <View style={styles.profileContent}>
-            <View style={styles.avatarGradient}>
-              <LinearGradient
-                colors={[
-                  "rgba(156, 107, 255, 0.15)",
-                  "rgba(255, 79, 183, 0.1)",
-                ]}
-                style={styles.avatarGradientInner}
-              >
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {(user?.displayName || profile?.name || "M")
-                      .charAt(0)
-                      .toUpperCase()}
-                  </Text>
-                </View>
-              </LinearGradient>
+            {/* Avatar on the left */}
+            <View style={styles.avatarSection}>
+              <View style={styles.avatarGradient}>
+                <LinearGradient
+                  colors={[
+                    "rgba(156, 107, 255, 0.15)",
+                    "rgba(255, 79, 183, 0.1)",
+                  ]}
+                  style={styles.avatarGradientInner}
+                >
+                  <View style={styles.avatar}>
+                    {uploadingPhoto ? (
+                      <ActivityIndicator
+                        size="large"
+                        color={colors.textPrimary}
+                      />
+                    ) : firestoreProfile?.profilePhotoUrl ? (
+                      <Image
+                        source={{ uri: firestoreProfile.profilePhotoUrl }}
+                        style={styles.avatarImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={styles.avatarText}>
+                        {(user?.displayName || profile?.name || "M")
+                          .charAt(0)
+                          .toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+                </LinearGradient>
+                {/* Edit Photo Button */}
+                <TouchableOpacity
+                  style={styles.editPhotoButton}
+                  onPress={handlePickImage}
+                  disabled={uploadingPhoto}
+                >
+                  <Ionicons
+                    name="camera"
+                    size={18}
+                    color={colors.textPrimary}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
 
+            {/* Info on the right */}
             <Animated.View
               style={[
                 styles.profileInfo,
@@ -285,7 +428,23 @@ export const ProfileScreen = () => {
                   </View>
                 )}
               </View>
-              {user?.email && <Text style={styles.email}>{user.email}</Text>}
+              {profile?.country && (
+                <View style={styles.countryContainer}>
+                  <Text style={styles.countryFlag}>
+                    {getCountryFlag(profile.country)}
+                  </Text>
+                  <Text style={styles.countryText}>{profile.country}</Text>
+                </View>
+              )}
+              {user?.email && (
+                <Text
+                  style={styles.email}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {user.email}
+                </Text>
+              )}
               {!user?.email && user && (
                 <Text style={styles.email}>No email found</Text>
               )}
@@ -388,7 +547,7 @@ export const ProfileScreen = () => {
                     color={colors.accentTeal}
                   />
                 </View>
-                <Text style={styles.statValue}>420</Text>
+                <Text style={styles.statValue}>{points}</Text>
                 <Text style={styles.statLabel} numberOfLines={1}>
                   Points
                 </Text>
@@ -414,7 +573,7 @@ export const ProfileScreen = () => {
                     color={colors.accentPink}
                   />
                 </View>
-                <Text style={styles.statValue}>12</Text>
+                <Text style={styles.statValue}>{streak}</Text>
                 <Text style={styles.statLabel} numberOfLines={1}>
                   Streak
                 </Text>
@@ -443,7 +602,7 @@ export const ProfileScreen = () => {
                     color={colors.accentPurple}
                   />
                 </View>
-                <Text style={styles.statValue}>5</Text>
+                <Text style={styles.statValue}>{hearts}</Text>
                 <Text style={styles.statLabel} numberOfLines={1}>
                   Hearts
                 </Text>
@@ -495,12 +654,44 @@ export const ProfileScreen = () => {
                     : "rgba(255, 255, 255, 0.6)"
                 }
                 ios_backgroundColor="rgba(255, 255, 255, 0.1)"
-                onValueChange={toggleAgeVisibility}
+                onValueChange={handleToggleAgeVisibility}
                 value={profile?.ageVisible || false}
                 style={styles.switch}
               />
             </View>
           </View>
+
+          {/* Remove Profile Photo Option */}
+          {firestoreProfile?.profilePhotoUrl && (
+            <TouchableOpacity
+              style={styles.removePhotoCard}
+              onPress={handleRemovePhoto}
+              disabled={uploadingPhoto}
+            >
+              <View style={styles.privacyCardContent}>
+                <View style={styles.removePhotoIconContainer}>
+                  <Ionicons
+                    name="trash-outline"
+                    size={24}
+                    color={colors.accentPink}
+                  />
+                </View>
+                <View style={styles.privacyTextContainer}>
+                  <Text style={styles.removePhotoLabel}>
+                    Remove Profile Photo
+                  </Text>
+                  <Text style={styles.privacyDescription}>
+                    Delete your current profile photo
+                  </Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={colors.textSecondary}
+                />
+              </View>
+            </TouchableOpacity>
+          )}
         </Animated.View>
 
         {/* Settings Section */}
@@ -685,7 +876,10 @@ export const ProfileScreen = () => {
                     />
                   </TouchableOpacity>
                   <Text style={styles.cardTitle}>Edit Bio</Text>
-                  <TouchableOpacity style={styles.saveBtn} onPress={saveBio}>
+                  <TouchableOpacity
+                    style={styles.saveBtn}
+                    onPress={handleSaveBio}
+                  >
                     <Text style={styles.saveBtnText}>Save</Text>
                   </TouchableOpacity>
                 </View>
@@ -726,12 +920,25 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
 
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+  },
+
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 16,
+  },
+
   // Profile Card Styles
   profileCard: {
-    borderRadius: 28,
+    borderRadius: isSmallScreen ? 24 : 28,
     backgroundColor: "rgba(6, 0, 18, 0.95)",
-    padding: 32,
-    marginBottom: 32,
+    padding: isSmallScreen ? 20 : 24,
+    marginBottom: isSmallScreen ? 24 : 32,
     borderWidth: 1,
     borderColor: "rgba(156, 107, 255, 0.2)",
     shadowColor: "rgba(156, 107, 255, 0.3)",
@@ -744,12 +951,19 @@ const styles = StyleSheet.create({
   },
 
   profileContent: {
+    flexDirection: "row",
     alignItems: "center",
-    gap: 28,
+    gap: isSmallScreen ? 16 : 20,
+  },
+
+  avatarSection: {
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
 
   avatarGradient: {
-    borderRadius: 60,
+    borderRadius: isSmallScreen ? 42 : 50,
     shadowColor: "rgba(156, 107, 255, 0.6)",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.8,
@@ -758,18 +972,18 @@ const styles = StyleSheet.create({
   },
 
   avatarGradientInner: {
-    borderRadius: 60,
-    padding: 6,
+    borderRadius: isSmallScreen ? 42 : 50,
+    padding: isSmallScreen ? 4 : 5,
   },
 
   avatar: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
+    width: isSmallScreen ? 75 : 90,
+    height: isSmallScreen ? 75 : 90,
+    borderRadius: isSmallScreen ? 37.5 : 45,
     backgroundColor: colors.accentPurple,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 4,
+    borderWidth: isSmallScreen ? 2.5 : 3,
     borderColor: "rgba(255, 255, 255, 0.25)",
     shadowColor: "rgba(156, 107, 255, 0.5)",
     shadowOffset: { width: 0, height: 8 },
@@ -781,46 +995,76 @@ const styles = StyleSheet.create({
   avatarText: {
     ...typography.display,
     color: colors.textPrimary,
-    fontSize: 42,
+    fontSize: isSmallScreen ? 30 : 36,
     fontWeight: "900",
   },
 
-  profileInfo: {
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: isSmallScreen ? 37.5 : 45,
+  },
+
+  editPhotoButton: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: isSmallScreen ? 28 : 32,
+    height: isSmallScreen ? 28 : 32,
+    borderRadius: isSmallScreen ? 14 : 16,
+    backgroundColor: colors.accentPurple,
     alignItems: "center",
-    gap: 12,
+    justifyContent: "center",
+    borderWidth: 2.5,
+    borderColor: colors.surface,
+    shadowColor: colors.accentPurple,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+
+  profileInfo: {
+    flex: 1,
+    alignItems: "flex-start",
+    gap: isSmallScreen ? 4 : 6,
+    minWidth: 0,
   },
 
   name: {
     ...typography.display,
     color: colors.textPrimary,
-    fontSize: 32,
+    fontSize: isSmallScreen ? 20 : 24,
     fontWeight: "800",
-    textAlign: "center",
-    letterSpacing: 0.5,
+    textAlign: "left",
+    letterSpacing: 0.3,
+    flexWrap: "wrap",
   },
 
   username: {
     ...typography.body,
     color: colors.textSecondary,
-    fontSize: 16,
+    fontSize: isSmallScreen ? 13 : 14,
     fontWeight: "500",
-    textAlign: "center",
+    textAlign: "left",
     opacity: 0.8,
-    marginTop: 4,
+    marginTop: 0,
   },
 
   ageContainer: {
-    alignItems: "center",
-    gap: 8,
+    alignItems: "flex-start",
+    gap: isSmallScreen ? 4 : 6,
+    marginTop: 2,
+    flexWrap: "wrap",
   },
 
   meta: {
     ...typography.body,
     color: colors.textSecondary,
-    fontSize: 17,
-    textAlign: "center",
+    fontSize: isSmallScreen ? 13 : 14,
+    textAlign: "left",
     opacity: 0.9,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 
   privacyIndicator: {
@@ -846,19 +1090,45 @@ const styles = StyleSheet.create({
   email: {
     ...typography.caption,
     color: colors.textSecondary,
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 8,
-    opacity: 0.8,
+    fontSize: isSmallScreen ? 11 : 12,
+    textAlign: "left",
+    marginTop: 2,
+    opacity: 0.7,
+  },
+
+  countryContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: isSmallScreen ? 5 : 6,
+    paddingHorizontal: isSmallScreen ? 8 : 10,
+    paddingVertical: isSmallScreen ? 4 : 5,
+    borderRadius: 14,
+    backgroundColor: "rgba(46, 230, 169, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(46, 230, 169, 0.3)",
+    marginTop: 4,
+    alignSelf: "flex-start",
+  },
+
+  countryFlag: {
+    fontSize: isSmallScreen ? 14 : 16,
+    lineHeight: isSmallScreen ? 14 : 16,
+  },
+
+  countryText: {
+    ...typography.caption,
+    color: colors.accentTeal,
+    fontSize: isSmallScreen ? 12 : 13,
+    fontWeight: "600",
   },
 
   logoutButton: {
     position: "absolute",
-    top: 24,
-    right: 24,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 24,
+    top: 20,
+    right: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 20,
     backgroundColor: "rgba(255, 79, 183, 0.12)",
     borderWidth: 1,
     borderColor: "rgba(255, 79, 183, 0.3)",
@@ -867,6 +1137,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+    zIndex: 10,
   },
 
   // Section Styles
@@ -1060,6 +1331,36 @@ const styles = StyleSheet.create({
 
   switch: {
     transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }],
+  },
+
+  // Remove Photo Card Styles
+  removePhotoCard: {
+    borderRadius: 20,
+    backgroundColor: "rgba(6, 0, 18, 0.6)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 79, 183, 0.2)",
+    marginTop: 12,
+    shadowColor: "rgba(255, 79, 183, 0.3)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+
+  removePhotoIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 79, 183, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  removePhotoLabel: {
+    ...typography.subtitle,
+    color: colors.accentPink,
+    fontSize: 17,
+    fontWeight: "600",
   },
 
   // Footer Space

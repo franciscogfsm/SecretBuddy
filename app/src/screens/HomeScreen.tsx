@@ -24,6 +24,7 @@ import { MysteryCard } from "../components/MysteryCard";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { TopHeader } from "../components/TopHeader";
 import { useAppState } from "../store/AppStateContext";
+import { useUserProfile } from "../hooks/useUserProfile";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -38,6 +39,12 @@ type PairingStatus =
 export const HomeScreen = () => {
   const { prompt, buddy, profile, pairing, setProfile, setPairing } =
     useAppState();
+
+  // Pre-load user profile immediately when entering HomeScreen
+  // This ensures profile data is ready when user navigates to ProfileScreen
+  const { profile: firestoreProfile, loading: profileLoading } =
+    useUserProfile();
+
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const isFocused = useIsFocused();

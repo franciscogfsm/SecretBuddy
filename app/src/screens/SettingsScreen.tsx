@@ -15,6 +15,7 @@ import { useState, useEffect, useRef } from "react";
 import { GradientBackground } from "../components/GradientBackground";
 import { useAppState } from "../store/AppStateContext";
 import { useAuth } from "../context/AuthContext";
+import { useUserProfile } from "../hooks/useUserProfile";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -24,6 +25,7 @@ export const SettingsScreen = () => {
   const route = useRoute();
   const { profile, setProfile } = useAppState();
   const { user, signOut, loading: authLoading } = useAuth();
+  const { deleteProfile } = useUserProfile();
 
   // Refs for scrolling to sections
   const scrollViewRef = useRef<ScrollView>(null);
@@ -424,13 +426,35 @@ export const SettingsScreen = () => {
                   {
                     text: "Delete",
                     style: "destructive",
-                    onPress: () => {
-                      // TODO: Implement account deletion logic
-                      Alert.alert(
-                        "Account Deletion",
-                        "Account deletion feature will be implemented soon.",
-                        [{ text: "OK" }]
-                      );
+                    onPress: async () => {
+                      try {
+                        // Delete profile from Firestore
+                        await deleteProfile();
+
+                        // Sign out and clear local state
+                        await signOut();
+                        setProfile(null);
+
+                        // Navigate to onboarding
+                        requestAnimationFrame(() =>
+                          navigation.reset({
+                            index: 0,
+                            routes: [{ name: "Onboarding" }],
+                          })
+                        );
+
+                        Alert.alert(
+                          "Account Deleted",
+                          "Your account has been permanently deleted."
+                        );
+                      } catch (error) {
+                        Alert.alert(
+                          "Couldn't delete account",
+                          error instanceof Error
+                            ? error.message
+                            : "Please try again."
+                        );
+                      }
                     },
                   },
                 ]

@@ -13,13 +13,13 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "baseUrl": "./src",
-    "types": ["jest", "react", "react-native"],
+    "types": ["jest", "react", "react-native", "node"],
     "paths": {
       "@firebase/auth": ["./node_modules/@firebase/auth/dist/index.rn.d.ts"],
       "@/*": ["./*"]
     }
   },
-  "include": ["src", "App.tsx", "jest.setup.ts"],
+  "include": ["src", "App.tsx", "jest.setup.ts", "scripts"],
   "exclude": ["node_modules", "babel.config.js", "metro.config.js"],
   "extends": "expo/tsconfig.base"
 }

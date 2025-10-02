@@ -8,6 +8,7 @@ export const colors = {
   accentPurple: "#9C6BFF",
   accentTeal: "#2EE6A9",
   danger: "#FF6B8A",
+  error: "#FF4444",
   overlay: "rgba(5, 3, 12, 0.78)",
   border: "rgba(255, 255, 255, 0.1)",
 } as const;

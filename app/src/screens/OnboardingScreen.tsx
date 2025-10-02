@@ -28,6 +28,7 @@ import { useAuth } from "../context/AuthContext";
 import type { RootStackParamList } from "../navigation/types";
 import { useAppState } from "../store/AppStateContext";
 import { colors, typography } from "../theme";
+import { createUserProfile, getUserProfile } from "../services/userService";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Onboarding">;
 
@@ -338,7 +339,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     };
   };
 
-  const enterApp = (details?: PersonaDetails | null) => {
+  const enterApp = async (details?: PersonaDetails | null) => {
     const derivedName = details?.trimmedName?.length
       ? details.trimmedName
       : profile?.name ?? user?.displayName ?? "New member";
@@ -348,6 +349,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     const derivedCountry =
       details?.trimmedCountry ?? profile?.country ?? "Global";
 
+    // Set profile in AppState first
     setProfile({
       name: derivedName,
       username: derivedUsername,
@@ -356,6 +358,36 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       country: derivedCountry,
       mode: profile?.mode ?? "global",
     });
+
+    // Create Firestore profile if user exists and profile doesn't exist yet
+    if (user) {
+      try {
+        const existingProfile = await getUserProfile(user.uid);
+
+        if (!existingProfile) {
+          console.log("🚀 Creating Firestore profile with onboarding data...");
+          console.log("Data:", {
+            username: derivedUsername,
+            age: derivedAge,
+            country: derivedCountry,
+          });
+
+          await createUserProfile(user.uid, {
+            displayName: derivedName,
+            email: user.email || "",
+            username: derivedUsername,
+            age: derivedAge,
+            country: derivedCountry,
+          });
+
+          console.log("✅ Firestore profile created successfully!");
+        }
+      } catch (error) {
+        console.error("❌ Error creating Firestore profile:", error);
+        // Continue anyway - profile will be created by useUserProfile hook
+      }
+    }
+
     navigation.replace("MainTabs");
   };
 
