@@ -568,7 +568,9 @@ export const ProfileScreen = () => {
           >
             <TouchableOpacity
               style={styles.settingsCard}
-              onPress={() => navigation.navigate("Settings")}
+              onPress={() =>
+                navigation.navigate("Settings", { scrollTo: "notifications" })
+              }
             >
               <View style={styles.settingsCardContent}>
                 <View style={styles.settingsIconContainer}>
@@ -605,7 +607,9 @@ export const ProfileScreen = () => {
           >
             <TouchableOpacity
               style={styles.settingsCard}
-              onPress={() => navigation.navigate("Settings")}
+              onPress={() =>
+                navigation.navigate("Settings", { scrollTo: "appSettings" })
+              }
             >
               <View style={styles.settingsCardContent}>
                 <View style={styles.settingsIconContainer}>
@@ -618,7 +622,7 @@ export const ProfileScreen = () => {
                 <View style={styles.settingsTextContainer}>
                   <Text style={styles.settingsLabel}>App Settings</Text>
                   <Text style={styles.settingsDescription}>
-                    Theme preferences, language, and accessibility
+                    Haptic feedback and accessibility options
                   </Text>
                 </View>
                 <Text style={styles.settingsChevron}>›</Text>

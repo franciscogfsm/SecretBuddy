@@ -22,8 +22,6 @@ import { ReportModal } from "../components/ReportModal";
 import { colors, typography } from "../theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const TIMED_CHAT_DURATION_MS = 1 * 60 * 1000; // 1 minute
-
 const historyMessagesSeed: MessageType[] = [
   {
     id: "m-1",
@@ -62,21 +60,12 @@ const historyMessagesSeed: MessageType[] = [
   },
 ];
 
-const timedChatSeed: MessageType[] = historyMessagesSeed.slice(0, 3);
-
 export const ChatScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { isTimed } = route.params as { isTimed: boolean };
-  const [messages, setMessages] = useState<MessageType[]>(
-    isTimed ? timedChatSeed : historyMessagesSeed
-  );
+  const [messages, setMessages] = useState<MessageType[]>(historyMessagesSeed);
   const historyMessagesRef = useRef<MessageType[]>(historyMessagesSeed);
-  const [isEphemeralMode, setIsEphemeralMode] = useState(isTimed);
-  const [remainingMs, setRemainingMs] = useState<number>(
-    isTimed ? TIMED_CHAT_DURATION_MS : 0
-  );
-  const [hasExpired, setHasExpired] = useState(!isTimed);
   const flatListRef = useRef<FlatList<MessageType>>(null);
   const insets = useSafeAreaInsets();
   const tabBarHeight = 0; // ChatScreen is not in bottom tab navigator
@@ -168,59 +157,20 @@ export const ChatScreen = () => {
     chatInputPaddingAnim,
   ]);
 
-  useEffect(() => {
-    if (!isEphemeralMode || !isTimed) {
-      return;
-    }
-
-    setRemainingMs(TIMED_CHAT_DURATION_MS);
-
-    const interval = setInterval(() => {
-      setRemainingMs((prev) => Math.max(prev - 1000, 0));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [isEphemeralMode, isTimed]);
-
-  useEffect(() => {
-    if ((!isEphemeralMode && hasExpired) || !isTimed) {
-      return;
-    }
-
-    if (isEphemeralMode && remainingMs === 0) {
-      setIsEphemeralMode(false);
-      setHasExpired(true);
-      setMessages(historyMessagesRef.current.slice(-7));
-      // Navigate back to Matches after expiration
-      setTimeout(() => {
-        navigation.goBack();
-      }, 2000); // Delay to show the ended message
-    }
-  }, [isEphemeralMode, remainingMs, hasExpired, navigation, isTimed]);
-
-  useEffect(() => {
-    const animation = setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    return () => clearTimeout(animation);
-  }, [messages]);
-
-  const formatCountdown = (ms: number) => {
-    const totalSeconds = Math.ceil(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  // Calculate time until midnight
+  const getTimeUntilMidnight = () => {
+    const now = new Date();
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 0);
+    const diff = midnight.getTime() - now.getTime();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m until midnight`;
   };
 
-  const statusLabel = isTimed
-    ? isEphemeralMode
-      ? `Timed chat • ${formatCountdown(remainingMs)}`
-      : hasExpired
-      ? "Chat ended"
-      : "Active • 7 day streak"
-    : "Conversation history";
+  const statusLabel = `Active • ${getTimeUntilMidnight()}`;
 
+  // Only scroll to bottom when user sends a new message
   const handleSendMessage = (text: string) => {
     const newMessage: MessageType = {
       id: Date.now().toString(),
@@ -232,6 +182,11 @@ export const ChatScreen = () => {
 
     setMessages((prev) => [...prev, newMessage]);
     historyMessagesRef.current = [...historyMessagesRef.current, newMessage];
+
+    // Scroll to bottom when sending a message
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
 
     // Simulate message being sent
     setTimeout(() => {
@@ -258,6 +213,10 @@ export const ChatScreen = () => {
           ...historyMessagesRef.current,
           replyMessage,
         ];
+        // Scroll to show the reply
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
       }, 2000);
     }, 1000);
   };
@@ -304,65 +263,56 @@ export const ChatScreen = () => {
               </View>
               <View>
                 <Text style={styles.buddyName}>Neon Fox</Text>
-                <View
-                  style={[
-                    styles.statusPill,
-                    isEphemeralMode
-                      ? styles.statusPillEphemeral
-                      : styles.statusPillActive,
-                  ]}
-                >
+                <View style={styles.statusPill}>
+                  <Ionicons
+                    name="time-outline"
+                    size={12}
+                    color={colors.textPrimary}
+                    style={{ marginRight: 4 }}
+                  />
                   <Text style={styles.buddyStatus}>{statusLabel}</Text>
                 </View>
               </View>
             </View>
-
-            <Pressable
-              style={styles.endChatButton}
-              hitSlop={8}
-              onPress={() => {
-                Alert.alert(
-                  "End Conversation",
-                  "Are you sure you want to end this conversation? This cannot be undone.",
-                  [
-                    {
-                      text: "Cancel",
-                      style: "cancel",
-                    },
-                    {
-                      text: "End Chat",
-                      style: "destructive",
-                      onPress: () => navigation.goBack(),
-                    },
-                  ]
-                );
-              }}
-            >
-              <Ionicons name="close-circle" size={20} color={colors.danger} />
-            </Pressable>
-
-            {isTimed && isEphemeralMode && (
-              <View style={styles.ephemeralIndicator}>
-                <Text style={styles.ephemeralText}>⚡</Text>
-              </View>
-            )}
           </View>
 
-          {isTimed && isEphemeralMode && (
-            <View style={styles.ephemeralWarning}>
-              <Text style={styles.ephemeralWarningText}>
-                💫 Chat ends after 1 minute
-              </Text>
+          {/* End Conversation - Subtle link style */}
+          <View style={styles.endConversationContainer}>
+            <View style={styles.endConversationRow}>
+              <View style={styles.expirationInfo}>
+                <Ionicons
+                  name="time-outline"
+                  size={14}
+                  color={colors.textSecondary}
+                />
+                <Text style={styles.expirationText}>
+                  Chat expires at midnight
+                </Text>
+              </View>
+              <Pressable
+                style={styles.endConversationLink}
+                onPress={() => {
+                  Alert.alert(
+                    "End Conversation?",
+                    "This will permanently close the chat and cannot be undone. Are you absolutely sure?",
+                    [
+                      {
+                        text: "Cancel",
+                        style: "cancel",
+                      },
+                      {
+                        text: "Yes, End Chat",
+                        style: "destructive",
+                        onPress: () => navigation.goBack(),
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Text style={styles.endConversationLinkText}>End chat</Text>
+              </Pressable>
             </View>
-          )}
-
-          {isTimed && !isEphemeralMode && hasExpired && (
-            <View style={styles.persistedNotice}>
-              <Text style={styles.persistedNoticeText}>
-                🔒 Chat ended • Old messages deleted
-              </Text>
-            </View>
-          )}
+          </View>
 
           <View style={styles.chatArea}>
             <View style={styles.messagesWrapper}>
@@ -392,7 +342,7 @@ export const ChatScreen = () => {
               <ChatInput
                 onSendMessage={handleSendMessage}
                 bottomInset={0}
-                disabled={isTimed && hasExpired}
+                disabled={false}
               />
             </Animated.View>
           </View>
@@ -496,16 +446,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
     alignSelf: "flex-start",
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 4,
     marginTop: 6,
-  },
-  statusPillEphemeral: {
-    backgroundColor: "rgba(255, 111, 138, 0.2)",
-  },
-  statusPillActive: {
     backgroundColor: "rgba(46, 230, 169, 0.18)",
   },
   chatArea: {
@@ -525,49 +472,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
   },
-  ephemeralIndicator: {
-    marginRight: 20,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "rgba(46, 230, 169, 0.24)",
+  endConversationContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: "rgba(6, 0, 18, 0.4)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.05)",
+  },
+  endConversationRow: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
   },
-  ephemeralText: {
+  expirationInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  expirationText: {
+    ...typography.caption,
+    color: colors.textSecondary,
     fontSize: 12,
-    color: colors.textPrimary,
   },
-  ephemeralWarning: {
-    backgroundColor: "rgba(6, 0, 18, 0.78)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 111, 138, 0.38)",
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    marginHorizontal: 24,
-    marginBottom: 16,
+  endConversationLink: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  ephemeralWarningText: {
+  endConversationLinkText: {
     ...typography.caption,
-    color: colors.danger,
-    textAlign: "center",
-    fontSize: 14,
-  },
-  persistedNotice: {
-    backgroundColor: "rgba(6, 0, 18, 0.78)",
-    borderWidth: 1,
-    borderColor: "rgba(46, 230, 169, 0.38)",
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    marginHorizontal: 24,
-    marginBottom: 16,
-  },
-  persistedNoticeText: {
-    ...typography.caption,
-    color: colors.accentTeal,
-    textAlign: "center",
-    fontSize: 14,
+    color: "rgba(239, 68, 68, 0.7)",
+    fontSize: 12,
+    fontWeight: "500",
+    textDecorationLine: "underline",
   },
 });

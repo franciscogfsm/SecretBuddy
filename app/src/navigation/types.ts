@@ -3,7 +3,7 @@ export type RootStackParamList = {
   AuthOptions: undefined;
   Onboarding: { mode?: "signup" | "signin" };
   MainTabs: undefined;
-  Settings: undefined;
+  Settings: { scrollTo?: "notifications" | "appSettings" } | undefined;
   SafetyGuidelines: undefined;
   BlockedUsers: undefined;
   ReportHistory: undefined;

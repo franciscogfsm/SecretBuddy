@@ -7,10 +7,10 @@ import {
   Switch,
   Alert,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { useAppState } from "../store/AppStateContext";
@@ -21,16 +21,44 @@ import type { RootStackParamList } from "../navigation/types";
 export const SettingsScreen = () => {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute();
   const { profile, setProfile } = useAppState();
   const { user, signOut, loading: authLoading } = useAuth();
+
+  // Refs for scrolling to sections
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [notificationsSectionY, setNotificationsSectionY] = useState(0);
+  const [appSettingsSectionY, setAppSettingsSectionY] = useState(0);
 
   // Settings state
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [promptReminders, setPromptReminders] = useState(true);
   const [revealAlerts, setRevealAlerts] = useState(true);
   const [streakReminders, setStreakReminders] = useState(false);
-  const [darkMode, setDarkMode] = useState(true);
   const [hapticFeedback, setHapticFeedback] = useState(true);
+
+  // Handle scroll to specific section
+  useEffect(() => {
+    const params = route.params as { scrollTo?: string } | undefined;
+    if (params?.scrollTo) {
+      setTimeout(() => {
+        if (params.scrollTo === "notifications" && notificationsSectionY > 0) {
+          scrollViewRef.current?.scrollTo({
+            y: notificationsSectionY - 210,
+            animated: true,
+          });
+        } else if (
+          params.scrollTo === "appSettings" &&
+          appSettingsSectionY > 0
+        ) {
+          scrollViewRef.current?.scrollTo({
+            y: appSettingsSectionY - 20,
+            animated: true,
+          });
+        }
+      }, 100);
+    }
+  }, [route.params, notificationsSectionY, appSettingsSectionY]);
 
   const handleBack = () => {
     navigation.goBack();
@@ -92,23 +120,20 @@ export const SettingsScreen = () => {
 
   return (
     <GradientBackground gradient="midnight">
+      {/* Header - Fixed at top */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Settings</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Ionicons
-              name="chevron-back"
-              size={24}
-              color={colors.textPrimary}
-            />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Settings</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-
         {/* Safety & Privacy Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Safety & Privacy</Text>
@@ -193,7 +218,12 @@ export const SettingsScreen = () => {
         </View>
 
         {/* Notifications Section */}
-        <View style={styles.section}>
+        <View
+          style={styles.section}
+          onLayout={(event) => {
+            setNotificationsSectionY(event.nativeEvent.layout.y);
+          }}
+        >
           <Text style={styles.sectionTitle}>Notifications</Text>
 
           <View style={styles.settingItem}>
@@ -332,42 +362,13 @@ export const SettingsScreen = () => {
         </View>
 
         {/* App Settings Section */}
-        <View style={styles.section}>
+        <View
+          style={styles.section}
+          onLayout={(event) => {
+            setAppSettingsSectionY(event.nativeEvent.layout.y);
+          }}
+        >
           <Text style={styles.sectionTitle}>App Settings</Text>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <View style={styles.settingIcon}>
-                <Ionicons
-                  name="moon-outline"
-                  size={20}
-                  color={colors.accentPurple}
-                />
-              </View>
-              <View style={styles.settingText}>
-                <Text style={styles.settingLabel}>Dark Mode</Text>
-                <Text style={styles.settingDescription}>
-                  Use dark theme (currently always enabled)
-                </Text>
-              </View>
-            </View>
-            <Switch
-              trackColor={{
-                false: "rgba(255, 255, 255, 0.1)",
-                true: colors.accentPurple + "33",
-              }}
-              thumbColor={
-                darkMode ? colors.accentPurple : "rgba(255, 255, 255, 0.6)"
-              }
-              ios_backgroundColor="rgba(255, 255, 255, 0.1)"
-              onValueChange={(value) => {
-                setDarkMode(value);
-                handleAppSetting("Dark Mode", value);
-              }}
-              value={darkMode}
-              disabled={true} // Currently always dark
-            />
-          </View>
 
           <View style={styles.settingItem}>
             <View style={styles.settingLeft}>
@@ -408,6 +409,53 @@ export const SettingsScreen = () => {
         {/* Account Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
+
+          <TouchableOpacity
+            style={[
+              styles.settingItem,
+              { borderColor: "rgba(255, 59, 48, 0.4)" },
+            ]}
+            onPress={() => {
+              Alert.alert(
+                "Delete Account",
+                "Are you sure you want to permanently delete your account? This will remove all your data from the app and server. This action cannot be undone.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: () => {
+                      // TODO: Implement account deletion logic
+                      Alert.alert(
+                        "Account Deletion",
+                        "Account deletion feature will be implemented soon.",
+                        [{ text: "OK" }]
+                      );
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <View style={styles.settingLeft}>
+              <View style={styles.settingIcon}>
+                <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={[styles.settingLabel, { color: "#FF3B30" }]}>
+                  Delete Account
+                </Text>
+                <Text style={styles.settingDescription}>
+                  Permanently delete all your data from app and server
+                </Text>
+              </View>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[
@@ -460,8 +508,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 32,
-    paddingHorizontal: 4,
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 20,
+    backgroundColor: "rgba(6, 0, 18, 0.95)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.05)",
   },
 
   backButton: {

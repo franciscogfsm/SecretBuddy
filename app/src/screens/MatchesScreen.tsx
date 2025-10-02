@@ -1,11 +1,23 @@
 import { useState, useEffect, useRef } from "react";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  Dimensions,
+} from "react-native";
 
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { GradientBackground } from "../components/GradientBackground";
 import { TopHeader } from "../components/TopHeader";
 import { colors, typography } from "../theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const { width } = Dimensions.get("window");
+const isSmallScreen = width < 375;
 
 type ChatItem = {
   id: string;
@@ -104,6 +116,12 @@ export const MatchesScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [chats, setChats] = useState<ChatItem[]>(dummyChats);
+  const flatListRef = useRef<FlatList>(null);
+
+  // Scroll to top whenever screen comes into focus
+  useFocusEffect(() => {
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+  });
 
   // Filter out the last 7 expired chats
   const visibleChats = chats
@@ -126,34 +144,69 @@ export const MatchesScreen = () => {
         style={[styles.chatItem, isRevealed && styles.chatItemRevealed]}
         onPress={() => handleChatPress(item)}
       >
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{item.avatarInitial}</Text>
+        {/* Avatar with badge */}
+        <View style={styles.avatarContainer}>
+          <View style={[styles.avatar, isRevealed && styles.avatarRevealed]}>
+            <Text style={styles.avatarText}>{item.avatarInitial}</Text>
+          </View>
           {isRevealed && <View style={styles.onlineIndicator} />}
         </View>
+
+        {/* Chat Info */}
         <View style={styles.chatInfo}>
           <View style={styles.nameRow}>
             <Text
               style={[styles.chatName, isRevealed && styles.chatNameRevealed]}
+              numberOfLines={1}
             >
               {item.name}
             </Text>
             {isRevealed && (
-              <View style={styles.urgentBadge}>
-                <Text style={styles.urgentText}>NEW</Text>
+              <View style={styles.revealedBadge}>
+                <Ionicons
+                  name="eye"
+                  size={10}
+                  color="#8B5CF6"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.revealedBadgeText}>REVEALED</Text>
               </View>
             )}
           </View>
-          <Text style={styles.lastMessage} numberOfLines={1}>
+
+          <Text style={styles.lastMessage} numberOfLines={2}>
             {isRevealed
-              ? "Identity revealed! Tap to chat ✨"
+              ? "Identity revealed! Chat is active until midnight"
               : item.lastMessage}
           </Text>
+
+          {/* Status Row */}
+          <View style={styles.statusRow}>
+            <Ionicons
+              name={isRevealed ? "time" : "checkmark-done"}
+              size={14}
+              color={isRevealed ? colors.accentTeal : colors.textSecondary}
+            />
+            <Text
+              style={[styles.statusText, isRevealed && styles.statusTextActive]}
+            >
+              {isRevealed
+                ? "Active • Expires at midnight"
+                : item.timestamp.toLocaleDateString()}
+            </Text>
+          </View>
         </View>
-        <View style={styles.rightSection}>
-          <Text style={styles.timestamp}>
-            {item.timestamp.toLocaleDateString()}
-          </Text>
+
+        {/* Right Indicator */}
+        <View style={styles.rightIndicator}>
           {isRevealed && <View style={styles.notificationDot} />}
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={
+              isRevealed ? colors.accentPurple : "rgba(255, 255, 255, 0.3)"
+            }
+          />
         </View>
       </Pressable>
     );
@@ -176,7 +229,31 @@ export const MatchesScreen = () => {
             <Text style={styles.title}>Matches</Text>
             <Text style={styles.subtitle}>Your secret connections</Text>
           </View>
+
+          {/* Info Card */}
+          <View style={styles.infoCard}>
+            <LinearGradient
+              colors={["rgba(139, 92, 246, 0.12)", "rgba(236, 72, 153, 0.12)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.infoGradient}
+            >
+              <View style={styles.infoRow}>
+                <View style={styles.infoIconWrapper}>
+                  <Ionicons name="timer-outline" size={20} color="#8B5CF6" />
+                </View>
+                <View style={styles.infoTextContainer}>
+                  <Text style={styles.infoTitle}>How it works</Text>
+                  <Text style={styles.infoText}>
+                    Chat until midnight • End conversation anytime
+                  </Text>
+                </View>
+              </View>
+            </LinearGradient>
+          </View>
+
           <FlatList
+            ref={flatListRef}
             data={visibleChats}
             keyExtractor={(item) => item.id}
             renderItem={renderChatItem}
@@ -212,112 +289,188 @@ const styles = StyleSheet.create({
   listContainer: {
     paddingBottom: 100,
   },
+  infoCard: {
+    marginBottom: 20,
+  },
+  infoGradient: {
+    borderRadius: 16,
+    padding: isSmallScreen ? 14 : 16,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.25)",
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  infoIconWrapper: {
+    width: isSmallScreen ? 36 : 40,
+    height: isSmallScreen ? 36 : 40,
+    borderRadius: isSmallScreen ? 10 : 12,
+    backgroundColor: "rgba(139, 92, 246, 0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.3)",
+  },
+  infoTextContainer: {
+    flex: 1,
+  },
+  infoTitle: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: isSmallScreen ? 14 : 15,
+    fontWeight: "700",
+    marginBottom: 4,
+    letterSpacing: -0.2,
+  },
+  infoText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: isSmallScreen ? 12 : 13,
+    lineHeight: isSmallScreen ? 17 : 18,
+  },
   chatItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    backgroundColor: "rgba(6, 0, 18, 0.72)",
-    borderRadius: 16,
-    marginBottom: 8,
+    paddingVertical: isSmallScreen ? 14 : 16,
+    paddingHorizontal: isSmallScreen ? 16 : 18,
+    backgroundColor: "rgba(6, 0, 18, 0.75)",
+    borderRadius: 20,
+    marginBottom: isSmallScreen ? 10 : 12,
     borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: colors.accentPurple,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 3,
   },
   chatItemRevealed: {
-    borderColor: colors.accentPurple,
+    borderColor: "rgba(139, 92, 246, 0.4)",
     borderWidth: 2,
-    backgroundColor: "rgba(156, 107, 255, 0.08)",
+    backgroundColor: "rgba(139, 92, 246, 0.08)",
     shadowColor: colors.accentPurple,
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  avatarContainer: {
+    position: "relative",
+    marginRight: isSmallScreen ? 12 : 14,
   },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.accentPurple,
+    width: isSmallScreen ? 52 : 58,
+    height: isSmallScreen ? 52 : 58,
+    borderRadius: isSmallScreen ? 16 : 18,
+    backgroundColor: "rgba(139, 92, 246, 0.25)",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 20,
+    borderWidth: 2,
+    borderColor: "rgba(139, 92, 246, 0.3)",
+  },
+  avatarRevealed: {
+    backgroundColor: colors.accentPurple,
+    borderColor: colors.accentPurple,
     shadowColor: colors.accentPurple,
     shadowOffset: {
       width: 0,
-      height: 3,
+      height: 4,
     },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.4,
     shadowRadius: 10,
-    elevation: 8,
+    elevation: 6,
   },
   avatarText: {
     ...typography.subtitle,
     color: colors.textPrimary,
-    fontSize: 20,
+    fontSize: isSmallScreen ? 18 : 20,
+    fontWeight: "700",
   },
   onlineIndicator: {
     position: "absolute",
-    top: 0,
-    right: 0,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    top: -2,
+    right: -2,
+    width: isSmallScreen ? 14 : 16,
+    height: isSmallScreen ? 14 : 16,
+    borderRadius: isSmallScreen ? 7 : 8,
     backgroundColor: colors.accentTeal,
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: "rgba(6, 0, 18, 0.9)",
+    shadowColor: colors.accentTeal,
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
+    elevation: 3,
   },
   chatInfo: {
     flex: 1,
+    gap: isSmallScreen ? 6 : 8,
   },
   nameRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 4,
+    gap: 8,
   },
   chatName: {
     ...typography.title,
     color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: isSmallScreen ? 16 : 17,
+    fontWeight: "600",
+    flex: 1,
+    letterSpacing: -0.3,
   },
   chatNameRevealed: {
     color: colors.accentPurple,
     fontWeight: "700",
   },
-  urgentBadge: {
-    marginLeft: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    backgroundColor: colors.danger,
+  revealedBadge: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: isSmallScreen ? 8 : 10,
+    paddingVertical: isSmallScreen ? 4 : 5,
+    borderRadius: 12,
+    backgroundColor: "rgba(139, 92, 246, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.35)",
   },
-  urgentText: {
-    fontSize: 10,
-    color: colors.textPrimary,
+  revealedBadgeText: {
+    fontSize: isSmallScreen ? 9 : 10,
+    color: "#8B5CF6",
     fontWeight: "800",
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   lastMessage: {
     ...typography.body,
     color: colors.textSecondary,
-    fontSize: 14,
+    fontSize: isSmallScreen ? 13 : 14,
+    lineHeight: isSmallScreen ? 18 : 20,
   },
-  rightSection: {
-    alignItems: "flex-end",
-    justifyContent: "center",
-    minWidth: 60,
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
-  timestamp: {
+  statusText: {
     ...typography.caption,
     color: colors.textSecondary,
-    fontSize: 12,
-    marginBottom: 4,
+    fontSize: isSmallScreen ? 11 : 12,
+  },
+  statusTextActive: {
+    color: colors.accentTeal,
+    fontWeight: "600",
+  },
+  rightIndicator: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginLeft: 8,
   },
   notificationDot: {
     width: 8,

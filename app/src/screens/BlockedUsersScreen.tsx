@@ -76,23 +76,19 @@ export const BlockedUsersScreen = () => {
 
   return (
     <GradientBackground gradient="midnight">
+      {/* Header - Fixed at top */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Blocked Users</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Ionicons
-              name="chevron-back"
-              size={24}
-              color={colors.textPrimary}
-            />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Blocked Users</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-
         {/* Info Card */}
         <View style={styles.infoCard}>
           <LinearGradient
@@ -216,8 +212,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: isSmallScreen ? 20 : 24,
-    paddingHorizontal: 4,
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 20,
+    backgroundColor: "rgba(6, 0, 18, 0.95)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.05)",
   },
 
   backButton: {
