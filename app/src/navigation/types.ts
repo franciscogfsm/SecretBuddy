@@ -4,6 +4,9 @@ export type RootStackParamList = {
   Onboarding: { mode?: "signup" | "signin" };
   MainTabs: undefined;
   Settings: undefined;
+  SafetyGuidelines: undefined;
+  BlockedUsers: undefined;
+  ReportHistory: undefined;
   Reveal: { demo?: boolean; bothRevealed?: boolean };
   Chat: { isTimed: boolean };
   Friends: undefined;

@@ -37,27 +37,15 @@ export const SettingsScreen = () => {
   };
 
   const handleBlockedUsers = () => {
-    Alert.alert(
-      "Blocked Users",
-      "This feature is coming soon! You'll be able to manage your blocked users list here.",
-      [{ text: "OK" }]
-    );
+    navigation.navigate("BlockedUsers");
   };
 
   const handleReportHistory = () => {
-    Alert.alert(
-      "Report History",
-      "This feature is coming soon! You'll be able to view your report history here.",
-      [{ text: "OK" }]
-    );
+    navigation.navigate("ReportHistory");
   };
 
   const handleSafetyGuidelines = () => {
-    Alert.alert(
-      "Safety Guidelines",
-      "• Always use back camera only\n• Never share personal information\n• Report inappropriate behavior\n• Keep conversations respectful\n• Use the block feature if needed",
-      [{ text: "Got it!" }]
-    );
+    navigation.navigate("SafetyGuidelines");
   };
 
   const handleNotificationSetting = (setting: string, value: boolean) => {

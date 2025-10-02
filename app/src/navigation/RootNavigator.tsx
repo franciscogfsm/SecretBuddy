@@ -10,6 +10,9 @@ import { AuthOptionsScreen } from "../screens/AuthOptionsScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { FriendsScreen } from "../screens/FriendsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
+import { SafetyGuidelinesScreen } from "../screens/SafetyGuidelinesScreen";
+import { BlockedUsersScreen } from "../screens/BlockedUsersScreen";
+import { ReportHistoryScreen } from "../screens/ReportHistoryScreen";
 import { useAppState } from "../store/AppStateContext";
 import { useAuth } from "../context/AuthContext";
 import { colors } from "../theme";
@@ -69,6 +72,33 @@ export const RootNavigator = () => {
       )}
       <Stack.Screen name="MainTabs" component={HomeTabs} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen
+        name="SafetyGuidelines"
+        component={SafetyGuidelinesScreen}
+        options={{
+          animation: "slide_from_right",
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
+        }}
+      />
+      <Stack.Screen
+        name="BlockedUsers"
+        component={BlockedUsersScreen}
+        options={{
+          animation: "slide_from_right",
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
+        }}
+      />
+      <Stack.Screen
+        name="ReportHistory"
+        component={ReportHistoryScreen}
+        options={{
+          animation: "slide_from_right",
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
+        }}
+      />
       <Stack.Screen
         name="Reveal"
         component={RevealScreen}
