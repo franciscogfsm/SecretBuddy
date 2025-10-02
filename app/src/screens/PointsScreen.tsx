@@ -1,55 +1,106 @@
-import React, { useRef, useCallback } from "react";
+import React, { useRef, useCallback, useEffect, useState } from "react";
 import { useIsFocused, useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  ActivityIndicator,
+} from "react-native";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { TopHeader } from "../components/TopHeader";
 import { colors, gradients, typography } from "../theme";
-
-const leaderboards = {
-  friends: [
-    { name: "You", points: 420 },
-    { name: "Lumi", points: 395 },
-    { name: "Kai", points: 360 },
-  ],
-  country: [
-    { name: "Nova", points: 880 },
-    { name: "You", points: 420 },
-    { name: "Rune", points: 390 },
-  ],
-};
-
-const insights = [
-  { label: "Daily streak", value: "12 days", tone: colors.accentPink },
-  { label: "This week", value: "+145 pts", tone: colors.accentPurple },
-  { label: "Next unlock", value: "Cosmic frame", tone: colors.accentTeal },
-];
-
-const badges = [
-  {
-    title: "Night Owl",
-    description: "Reply after 9pm",
-    gradient: gradients.midnight,
-  },
-  {
-    title: "Spark Starter",
-    description: "Send 10 prompts",
-    gradient: gradients.purplePink,
-  },
-  {
-    title: "Vibe Keeper",
-    description: "3-day streak",
-    gradient: gradients.tealBlue,
-  },
-];
-
-const streakProgress = 0.72;
+import { useAuth } from "../context/AuthContext";
+import { useUserProfile } from "../hooks/useUserProfile";
+import {
+  getUserBadges,
+  getUnlockedBadgeDetails,
+  ALL_BADGES,
+  Badge,
+} from "../services/badgeService";
 
 export const PointsScreen = () => {
+  const { user } = useAuth();
+  const { profile, points, streak, hearts } = useUserProfile();
   const isFocused = useIsFocused();
   const scrollRef = useRef<ScrollView>(null);
   const wasFocusedRef = useRef(false);
+
+  const [loading, setLoading] = useState(true);
+  const [unlockedBadges, setUnlockedBadges] = useState<Badge[]>([]);
+  const [totalBadgesCount, setTotalBadgesCount] = useState(0);
+
+  // Load user badges from database
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    const loadBadges = async () => {
+      try {
+        setLoading(true);
+        const badgeDetails = await getUnlockedBadgeDetails(user.uid);
+        setUnlockedBadges(badgeDetails);
+        setTotalBadgesCount(badgeDetails.length);
+      } catch (error) {
+        console.error("Error loading badges:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadBadges();
+  }, [user?.uid]);
+
+  // Calculate level based on points
+  const level = Math.floor(points / 50) + 1;
+  const levelName =
+    level >= 10
+      ? "Radiant"
+      : level >= 7
+      ? "Legendary"
+      : level >= 5
+      ? "Epic"
+      : level >= 3
+      ? "Advanced"
+      : "Beginner";
+
+  // Calculate weekly progress (mock for now - can be enhanced)
+  const weeklyGoal = 200;
+  const weeklyProgress = Math.min((points % 200) / weeklyGoal, 1);
+  const tasksLeft = Math.max(3 - Math.floor(weeklyProgress * 3), 0);
+
+  // Insights from real data
+  const insights = [
+    { label: "Daily streak", value: `${streak} days`, tone: colors.accentPink },
+    {
+      label: "This week",
+      value: `+${Math.floor(weeklyProgress * 200)} pts`,
+      tone: colors.accentPurple,
+    },
+    {
+      label: "Hearts left",
+      value: `${hearts} ❤️`,
+      tone: colors.accentTeal,
+    },
+  ];
+
+  // Mock leaderboards (can be enhanced with real data later)
+  const leaderboards = {
+    friends: [
+      { name: "You", points: points },
+      { name: "Lumi", points: Math.max(0, points - 25) },
+      { name: "Kai", points: Math.max(0, points - 60) },
+    ],
+    country: [
+      { name: "Nova", points: points + 460 },
+      { name: "You", points: points },
+      { name: "Rune", points: Math.max(0, points - 30) },
+    ],
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -60,7 +111,6 @@ export const PointsScreen = () => {
       wasFocusedRef.current = isFocused;
     }, [isFocused])
   );
-
   return (
     <GradientBackground gradient="midnight">
       <TopHeader />
@@ -79,7 +129,9 @@ export const PointsScreen = () => {
             </Text>
           </View>
           <View style={styles.pill}>
-            <Text style={styles.pillLabel}>Lvl 12 • Radiant</Text>
+            <Text style={styles.pillLabel}>
+              Lvl {level} • {levelName}
+            </Text>
           </View>
         </View>
 
@@ -91,19 +143,21 @@ export const PointsScreen = () => {
             style={styles.highlightCard}
           >
             <Text style={styles.sectionLabel}>Today&apos;s progress</Text>
-            <Text style={styles.pointsValue}>+25 pts</Text>
-            <Text style={styles.sectionCaption}>Video response completed</Text>
+            <Text style={styles.pointsValue}>+{points} pts</Text>
+            <Text style={styles.sectionCaption}>Total points earned</Text>
             <View style={styles.progressTrack}>
               <View
                 style={[
                   styles.progressFill,
-                  { width: `${streakProgress * 100}%` },
+                  { width: `${weeklyProgress * 100}%` },
                 ]}
               />
             </View>
             <View style={styles.progressMeta}>
-              <Text style={styles.metaLabel}>72% towards weekly goal</Text>
-              <Text style={styles.metaValue}>3 tasks left</Text>
+              <Text style={styles.metaLabel}>
+                {Math.floor(weeklyProgress * 100)}% towards weekly goal
+              </Text>
+              <Text style={styles.metaValue}>{tasksLeft} tasks left</Text>
             </View>
           </LinearGradient>
         </View>
@@ -121,6 +175,67 @@ export const PointsScreen = () => {
               <Text style={styles.insightValue}>{insight.value}</Text>
             </View>
           ))}
+        </View>
+
+        {/* Badges Section */}
+        <View style={styles.badgesSection}>
+          <Text style={styles.sectionHeading}>
+            Badges ({totalBadgesCount}/{ALL_BADGES.length})
+          </Text>
+          <Text style={styles.sectionSubtext}>
+            {totalBadgesCount === 0
+              ? "Start earning badges by being active!"
+              : `You've unlocked ${totalBadgesCount} badge${
+                  totalBadgesCount > 1 ? "s" : ""
+                }! Keep going!`}
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.badgeRow}
+            contentContainerStyle={styles.badgeRowContent}
+          >
+            {/* Show unlocked badges first */}
+            {unlockedBadges.map((badge) => (
+              <View key={badge.id} style={styles.badgeCard}>
+                <LinearGradient
+                  colors={badge.gradient as any}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.badgeGradient}
+                >
+                  <View style={styles.badgeOverlay} />
+                  <Text style={styles.badgeTitle}>{badge.title}</Text>
+                  <Text style={styles.badgeDescription}>
+                    {badge.description}
+                  </Text>
+                  <Text style={styles.badgeUnlocked}>✓ Unlocked</Text>
+                </LinearGradient>
+              </View>
+            ))}
+
+            {/* Show locked badges */}
+            {ALL_BADGES.filter(
+              (badge) => !unlockedBadges.find((ub) => ub.id === badge.id)
+            ).map((badge) => (
+              <View key={badge.id} style={styles.badgeCard}>
+                <LinearGradient
+                  colors={["rgba(50, 50, 50, 0.4)", "rgba(30, 30, 30, 0.4)"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.badgeGradient}
+                >
+                  <View style={styles.badgeLockedOverlay} />
+                  <Text style={styles.badgeTitleLocked}>{badge.title}</Text>
+                  <Text style={styles.badgeDescriptionLocked}>
+                    {badge.description}
+                  </Text>
+                  <Text style={styles.badgeLocked}>🔒 Locked</Text>
+                </LinearGradient>
+              </View>
+            ))}
+          </ScrollView>
         </View>
 
         <View style={styles.leaderboardCard}>
@@ -373,5 +488,74 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textPrimary,
     fontWeight: "600",
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginTop: 16,
+    fontSize: 16,
+  },
+  sectionSubtext: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 14,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  badgeRowContent: {
+    paddingVertical: 4,
+  },
+  badgeGradient: {
+    width: 160,
+    borderRadius: 20,
+    padding: 16,
+    marginRight: 14,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  badgeUnlocked: {
+    ...typography.caption,
+    color: colors.accentTeal,
+    marginTop: 8,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  badgeLockedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+  },
+  badgeTitleLocked: {
+    ...typography.subtitle,
+    color: colors.textSecondary,
+    opacity: 0.6,
+  },
+  badgeDescriptionLocked: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    opacity: 0.5,
+    marginTop: 6,
+  },
+  badgeLocked: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 8,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    opacity: 0.7,
   },
 });

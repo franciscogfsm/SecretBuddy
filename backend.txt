@@ -1,0 +1,112 @@
+Phase 1: Foundation (Start Here)
+1. User Profile & Points System ⭐ START HERE
+
+Difficulty: Easy
+Estimated time: 2-3 hours
+Same as before - basic user data
+2. Image Storage & Upload 🖼️ CRITICAL
+
+Difficulty: Easy-Medium
+Why second:
+ESSENTIAL for photo prompts feature
+Needed before friends/chat work
+Firebase Storage integration
+Already have expo-image-picker installed
+What to build:
+Firebase Storage bucket setup
+Upload image function (compress before upload)
+Get download URL
+Store image URLs in Firestore
+User profile photos
+Daily prompt photos
+Storage structure:
+Estimated time: 3-4 hours
+3. Push Notifications Setup 🔔 CRITICAL
+
+Difficulty: Medium
+Why third:
+Already have expo-notifications installed
+Needed for all real-time alerts
+Set up once, use everywhere
+What to build:
+Register device for push tokens
+Store push tokens in user document
+Cloud Functions to send notifications
+Handle notification permissions
+Estimated time: 3-4 hours
+🟡 Phase 2: Safety Features
+4. Friends System
+
+Difficulty: Easy-Medium
+Estimated time: 3-4 hours
+Now includes friend request notifications
+5. Block Users
+
+Difficulty: Easy-Medium
+Estimated time: 2-3 hours
+Same as before
+6. User Reports
+
+Difficulty: Medium
+Estimated time: 3-4 hours
+Same as before
+🟠 Phase 3: Core Messaging
+7. Chat System 
+
+Difficulty: Medium-Hard
+Why here:
+Real-time messaging
+What to build:
+Text messages
+Real-time listeners
+Typing indicators
+Read receipts
+Notification triggers:
+New message received
+Buddy replied
+Estimated time: 8-10 hours
+🟠 Phase 4: Badges & Gamification
+8. Badges System
+
+Difficulty: Medium
+Estimated time: 4-5 hours
+Badge images stored in Storage
+Unlock notifications
+🔴 Phase 5: Advanced Pairing (Most Complex)
+9. Daily Photo Prompts System 📸
+
+Difficulty: Hard
+Why here:
+Depends on Image Storage (#2)
+Depends on Notifications (#3)
+Complex scheduling logic
+What to build:
+dailyPrompts collection
+Daily prompt generation (Cloud Function - scheduled)
+Photo submission with Storage
+Track who submitted photos today
+Notification triggers:
+New daily prompt available (morning)
+Reminder if not submitted (afternoon)
+Last chance reminder (evening)
+Estimated time: 6-8 hours
+10. Pairing/Matching Function 🎲
+
+Difficulty: Very Hard
+Why last:
+Most complex logic
+Depends on everything above
+Algorithm for matching
+Reveal mechanics
+What to build:
+Matching algorithm
+matches collection
+Reveal countdown logic
+Photo exchange system
+Notification triggers:
+New match found! 🎉
+Buddy submitted photo
+Reveal countdown (3h, 1h, 30min)
+Identity revealed!
+Match expired
+Estimated time: 12-15 hours

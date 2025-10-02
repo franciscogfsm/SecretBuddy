@@ -69,6 +69,9 @@ export const ProfileScreen = () => {
   const [bioText, setBioText] = useState(localProfile?.bio || "");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
+  // Bottom sheet animation - MUST be declared before any conditional returns
+  const bottomSheetAnim = useRef(new Animated.Value(0)).current;
+
   // Update bio text when profile changes
   useEffect(() => {
     if (firestoreProfile?.bio) {
@@ -88,9 +91,6 @@ export const ProfileScreen = () => {
         bio: firestoreProfile.bio,
       }
     : localProfile;
-
-  // Bottom sheet animation
-  const bottomSheetAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     // Start entrance animations
     Animated.parallel([
