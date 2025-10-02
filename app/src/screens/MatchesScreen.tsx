@@ -245,7 +245,7 @@ export const MatchesScreen = () => {
                 <View style={styles.infoTextContainer}>
                   <Text style={styles.infoTitle}>How it works</Text>
                   <Text style={styles.infoText}>
-                    Chat until midnight • End conversation anytime
+                    Chat until midnight • End conversation anytime you want
                   </Text>
                 </View>
               </View>

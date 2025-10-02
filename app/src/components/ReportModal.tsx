@@ -9,26 +9,22 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from "react-native";
 import { colors, typography } from "../theme";
+import { reportUser, type ReportReason } from "../services/reportService";
 
-type ReportCategory =
-  | "inappropriate_content"
-  | "harassment"
-  | "spam"
-  | "fake_profile"
-  | "nudity"
-  | "violence"
-  | "other";
+type ReportCategory = ReportReason;
 
 type ReportType = "user" | "photo" | "message";
 
 interface ReportModalProps {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (category: ReportCategory, description: string) => void;
   reportType: ReportType;
   targetName?: string;
+  reportedUserId: string; // User being reported
+  reportingUserId: string; // User making the report
 }
 
 const reportCategories: {
@@ -62,16 +58,10 @@ const reportCategories: {
     description: "Impersonation or misleading identity",
   },
   {
-    key: "nudity",
-    label: "Nudity or Sexual Content",
+    key: "offensive_language",
+    label: "Offensive Language",
     icon: "eye-slash",
-    description: "Explicit sexual images or content",
-  },
-  {
-    key: "violence",
-    label: "Violence or Harm",
-    icon: "medkit",
-    description: "Content promoting violence or self-harm",
+    description: "Hate speech or discriminatory content",
   },
   {
     key: "other",
@@ -84,9 +74,10 @@ const reportCategories: {
 export const ReportModal = ({
   visible,
   onClose,
-  onSubmit,
   reportType,
   targetName,
+  reportedUserId,
+  reportingUserId,
 }: ReportModalProps) => {
   const [selectedCategory, setSelectedCategory] =
     useState<ReportCategory | null>(null);
@@ -109,18 +100,28 @@ export const ReportModal = ({
 
     setIsSubmitting(true);
     try {
-      await onSubmit(selectedCategory, description.trim());
-      Alert.alert(
-        "Report Submitted",
-        "Thank you for helping keep SecretBuddy safe. We'll review this report promptly.",
-        [{ text: "OK", onPress: handleClose }]
+      const result = await reportUser(
+        reportingUserId,
+        reportedUserId,
+        selectedCategory,
+        description.trim()
       );
+
+      if (result.success) {
+        Alert.alert(
+          "Report Submitted",
+          "Thank you for helping keep SecretBuddy safe. We'll review this report promptly.",
+          [{ text: "OK", onPress: handleClose }]
+        );
+      } else {
+        Alert.alert("Report Failed", result.message);
+        setIsSubmitting(false);
+      }
     } catch (error) {
       Alert.alert(
         "Submission Failed",
         "Unable to submit your report. Please try again."
       );
-    } finally {
       setIsSubmitting(false);
     }
   };

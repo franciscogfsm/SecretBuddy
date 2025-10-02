@@ -21,6 +21,7 @@ import { GradientBackground } from "../components/GradientBackground";
 import { ReportModal } from "../components/ReportModal";
 import { colors, typography } from "../theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "../context/AuthContext";
 
 const historyMessagesSeed: MessageType[] = [
   {
@@ -63,7 +64,12 @@ const historyMessagesSeed: MessageType[] = [
 export const ChatScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { isTimed } = route.params as { isTimed: boolean };
+  const { isTimed, matchedUserId, matchedUserName } = route.params as {
+    isTimed: boolean;
+    matchedUserId?: string;
+    matchedUserName?: string;
+  };
+  const { user } = useAuth();
   const [messages, setMessages] = useState<MessageType[]>(historyMessagesSeed);
   const historyMessagesRef = useRef<MessageType[]>(historyMessagesSeed);
   const flatListRef = useRef<FlatList<MessageType>>(null);
@@ -350,22 +356,19 @@ export const ChatScreen = () => {
       </GradientBackground>
 
       {/* Report Modal for Photos */}
-      <ReportModal
-        visible={reportModalVisible}
-        onClose={() => {
-          setReportModalVisible(false);
-          setReportingMessageId(null);
-        }}
-        onSubmit={async (category, description) => {
-          // TODO: Implement Firebase photo report submission
-          console.log("Photo reported:", {
-            messageId: reportingMessageId,
-            category,
-            description,
-          });
-        }}
-        reportType="photo"
-      />
+      {user && matchedUserId && (
+        <ReportModal
+          visible={reportModalVisible}
+          onClose={() => {
+            setReportModalVisible(false);
+            setReportingMessageId(null);
+          }}
+          reportType="photo"
+          targetName={matchedUserName}
+          reportedUserId={matchedUserId}
+          reportingUserId={user.uid}
+        />
+      )}
     </View>
   );
 };

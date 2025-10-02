@@ -33,6 +33,7 @@ export interface UserProfile {
   points: number;
   streak: number;
   hearts: number;
+  friendsCount?: number;
   createdAt: any;
   updatedAt: any;
   lastActive: any;
@@ -74,6 +75,7 @@ export const createUserProfile = async (
       points: 0,
       streak: 0,
       hearts: 5, // Start with 5 hearts
+      friendsCount: 0, // Start with 0 friends
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       lastActive: serverTimestamp(),

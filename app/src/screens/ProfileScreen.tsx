@@ -172,7 +172,10 @@ export const ProfileScreen = () => {
             await signOut();
             setProfile(null);
             requestAnimationFrame(() =>
-              navigation.reset({ index: 0, routes: [{ name: "Onboarding" }] })
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "Onboarding", params: { mode: "signin" } }],
+              })
             );
           } catch (error) {
             Alert.alert(
@@ -259,18 +262,24 @@ export const ProfileScreen = () => {
 
               if (!result.canceled && result.assets[0]) {
                 setUploadingPhoto(true);
-                await uploadPhoto(result.assets[0].uri);
-                Alert.alert("Success", "Profile photo uploaded!");
+                try {
+                  await uploadPhoto(result.assets[0].uri);
+                  setUploadingPhoto(false);
+                  Alert.alert("Success", "Profile photo uploaded!");
+                } catch (error) {
+                  setUploadingPhoto(false);
+                  Alert.alert("Error", "Failed to upload profile photo");
+                  console.error(error);
+                }
               }
             },
           },
         ]
       );
     } catch (error) {
+      setUploadingPhoto(false);
       Alert.alert("Error", "Failed to upload profile photo");
       console.error(error);
-    } finally {
-      setUploadingPhoto(false);
     }
   };
 

@@ -11,12 +11,15 @@ import {
   ScrollView,
   Modal,
   Dimensions,
+  ActivityIndicator,
+  Image,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useIsFocused, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { collection, query, where, onSnapshot, or } from "firebase/firestore";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { TopHeader } from "../components/TopHeader";
@@ -24,6 +27,22 @@ import { ReportModal } from "../components/ReportModal";
 import { BlockConfirmModal } from "../components/BlockConfirmModal";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
+import { useAuth } from "../context/AuthContext";
+import { db } from "../config/firebase";
+import {
+  searchUsersByUsername,
+  sendFriendRequest,
+  acceptFriendRequest,
+  declineFriendRequest,
+  getUserFriends,
+  getPendingFriendRequests,
+  getSentFriendRequests,
+  removeFriend,
+  blockUser,
+  type FriendProfile,
+} from "../services/friendService";
+import { getUserProfile } from "../services/userService";
+import { getCountryFlag } from "../utils/countryFlags";
 
 /**
  * FriendsScreen - Manage your SecretBuddy connections
@@ -42,179 +61,135 @@ import type { RootStackParamList } from "../navigation/types";
  * - none: No connection yet (can send friend request)
  */
 
-type Friend = {
-  id: string;
-  name: string;
-  username: string;
-  country: string;
-  status: "friend" | "pending_sent" | "pending_received" | "none";
-  avatar?: string;
-  initials: string;
-  lastActive?: string;
-  bio?: string;
-};
-
 export const FriendsScreen = () => {
+  const { user } = useAuth();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const isFocused = useIsFocused();
   const scrollRef = useRef<ScrollView>(null);
   const wasFocusedRef = useRef(false);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [showAllFriends, setShowAllFriends] = useState(false);
   const [showAllRequests, setShowAllRequests] = useState(false);
-  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+  const [selectedFriend, setSelectedFriend] = useState<FriendProfile | null>(
+    null
+  );
+  const [selectedFriendPrivacy, setSelectedFriendPrivacy] = useState<any>(null);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [blockModalVisible, setBlockModalVisible] = useState(false);
-  const [friends, setFriends] = useState<Friend[]>([
-    {
-      id: "1",
-      name: "Alice",
-      username: "alice_cooper",
-      country: "United States",
-      status: "friend",
-      initials: "A",
-      lastActive: "2 hours ago",
-      bio: "Love mystery adventures and coffee ☕ Always up for a good chat!",
-    },
-    {
-      id: "2",
-      name: "Bob",
-      username: "bob_smith",
-      country: "Canada",
-      status: "pending_sent",
-      initials: "B",
-      lastActive: "1 day ago",
-      bio: "Photographer and travel enthusiast 📸 Exploring the world one mystery at a time.",
-    },
-    {
-      id: "3",
-      name: "Charlie",
-      username: "charlie_brown",
-      country: "United Kingdom",
-      status: "pending_received",
-      initials: "C",
-      lastActive: "3 hours ago",
-      bio: "Book lover and puzzle solver 📚 Let's discover secrets together!",
-    },
-    {
-      id: "4",
-      name: "Diana",
-      username: "diana_prince",
-      country: "Australia",
-      status: "friend",
-      initials: "D",
-      lastActive: "Active now",
-      bio: "Mystery enthusiast and nature lover 🌿 Always ready for adventure!",
-    },
-    {
-      id: "5",
-      name: "Emma",
-      username: "emma_watson",
-      country: "France",
-      status: "friend",
-      initials: "E",
-      lastActive: "15 min ago",
-      bio: "Art student with a passion for creativity 🎨 Let's create beautiful mysteries!",
-    },
-    {
-      id: "6",
-      name: "Frank",
-      username: "frank_ocean",
-      country: "Germany",
-      status: "friend",
-      initials: "F",
-      lastActive: "1 hour ago",
-      bio: "Music producer and mystery solver 🎵 Life is a beautiful enigma.",
-    },
-    {
-      id: "7",
-      name: "Grace",
-      username: "grace_hopper",
-      country: "Japan",
-      status: "pending_received",
-      initials: "G",
-      lastActive: "30 min ago",
-      bio: "Tech enthusiast and coding wizard 💻 Debugging mysteries one line at a time!",
-    },
-    {
-      id: "8",
-      name: "Henry",
-      username: "henry_ford",
-      country: "Brazil",
-      status: "friend",
-      initials: "H",
-      lastActive: "5 hours ago",
-      bio: "Engineer and innovation lover ⚙️ Building the future, solving mysteries!",
-    },
-    {
-      id: "9",
-      name: "Ivy",
-      username: "ivy_league",
-      country: "Spain",
-      status: "pending_sent",
-      initials: "I",
-      lastActive: "2 days ago",
-      bio: "Academic and knowledge seeker 📖 Every mystery is a lesson waiting to be learned.",
-    },
-    {
-      id: "10",
-      name: "Jack",
-      username: "jack_frost",
-      country: "Norway",
-      status: "friend",
-      initials: "J",
-      lastActive: "Just now",
-      bio: "Winter sports enthusiast and adventurer ❄️ Chillin' and solving mysteries!",
-    },
-  ]);
-  const [searchResults, setSearchResults] = useState<Friend[]>([]);
 
-  // Calculate statistics
-  const friendsList = friends.filter((f) => f.status === "friend");
-  const receivedRequests = friends.filter(
-    (f) => f.status === "pending_received"
-  );
-  const sentRequests = friends.filter((f) => f.status === "pending_sent");
-
-  // Only show received requests in the main list
-  const pendingRequests = receivedRequests;
+  // Real data from backend
+  const [friends, setFriends] = useState<FriendProfile[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<FriendProfile[]>([]);
+  const [sentRequests, setSentRequests] = useState<FriendProfile[]>([]);
+  const [searchResults, setSearchResults] = useState<FriendProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Limit display for "see more" functionality
   const maxDisplayItems = 4;
   const displayedFriends = showAllFriends
-    ? friendsList
-    : friendsList.slice(0, maxDisplayItems);
+    ? friends
+    : friends.slice(0, maxDisplayItems);
   const displayedRequests = showAllRequests
     ? pendingRequests
     : pendingRequests.slice(0, maxDisplayItems);
 
+  // Clear search when leaving the screen
   useEffect(() => {
-    if (searchQuery.trim()) {
-      // Mock search results
-      setSearchResults([
-        {
-          id: "4",
-          name: "Diana",
-          username: "diana_prince",
-          country: "Australia",
-          status: "none",
-          initials: "D",
-        },
-        {
-          id: "5",
-          name: "Eve",
-          username: "eve_online",
-          country: "Sweden",
-          status: "none",
-          initials: "E",
-        },
-      ]);
-    } else {
+    if (!isFocused) {
+      setSearchQuery("");
       setSearchResults([]);
     }
-  }, [searchQuery]);
+  }, [isFocused]);
+
+  // Real-time listener for friend requests and friendships
+  useEffect(() => {
+    if (!user) return;
+
+    setLoading(true);
+
+    // Listen to friendships where user is involved
+    const friendshipsQuery = query(
+      collection(db, "friendships"),
+      where("userId1", "==", user.uid)
+    );
+
+    const friendshipsQuery2 = query(
+      collection(db, "friendships"),
+      where("userId2", "==", user.uid)
+    );
+
+    const unsubscribe1 = onSnapshot(friendshipsQuery, async () => {
+      // Reload all friend data when any change occurs
+      try {
+        const [friendsData, receivedData, sentData] = await Promise.all([
+          getUserFriends(user.uid),
+          getPendingFriendRequests(user.uid),
+          getSentFriendRequests(user.uid),
+        ]);
+        setFriends(friendsData);
+        setPendingRequests(receivedData);
+        setSentRequests(sentData);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error loading friends data:", error);
+        setLoading(false);
+      }
+    });
+
+    const unsubscribe2 = onSnapshot(friendshipsQuery2, async () => {
+      // Reload all friend data when any change occurs
+      try {
+        const [friendsData, receivedData, sentData] = await Promise.all([
+          getUserFriends(user.uid),
+          getPendingFriendRequests(user.uid),
+          getSentFriendRequests(user.uid),
+        ]);
+        setFriends(friendsData);
+        setPendingRequests(receivedData);
+        setSentRequests(sentData);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error loading friends data:", error);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      unsubscribe1();
+      unsubscribe2();
+    };
+  }, [user]);
+
+  // Search for users
+  useEffect(() => {
+    if (!user || !searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    const search = async () => {
+      try {
+        setSearchLoading(true);
+        const results = await searchUsersByUsername(
+          searchQuery.trim(),
+          user.uid
+        );
+        setSearchResults(results);
+      } catch (error) {
+        console.error("Error searching users:", error);
+      } finally {
+        setSearchLoading(false);
+      }
+    };
+
+    const timer = setTimeout(search, 300); // Debounce
+    return () => clearTimeout(timer);
+  }, [searchQuery, user]);
 
   useFocusEffect(
     useCallback(() => {
@@ -237,50 +212,99 @@ export const FriendsScreen = () => {
           onPress: () => {
             // Mock importing contacts
             Alert.alert("Success", "Contacts imported! Found 3 friends.");
-            setFriends([
-              ...friends,
-              {
-                id: "6",
-                name: "Frank",
-                username: "frank_ocean",
-                country: "Germany",
-                status: "friend",
-                initials: "F",
-                lastActive: "5 min ago",
-              },
-              {
-                id: "7",
-                name: "Grace",
-                username: "grace_hopper",
-                country: "Japan",
-                status: "pending_sent",
-                initials: "G",
-                lastActive: "1 hour ago",
-              },
-            ]);
+            // In real app, this would call the friend service
+            // For now, just show the alert
           },
         },
       ]
     );
   };
 
-  const handleSendRequest = (friend: Friend) => {
-    // Mock sending request
-    Alert.alert("Request Sent", `Friend request sent to ${friend.name}!`);
-    setSearchResults(searchResults.filter((f) => f.id !== friend.id));
+  const handleSendRequest = async (friend: FriendProfile) => {
+    if (!user || actionLoading) return;
+    try {
+      setActionLoading(true);
+      await sendFriendRequest(user.uid, friend.uid);
+      Alert.alert(
+        "Request Sent",
+        `Friend request sent to ${friend.username || friend.displayName}!`
+      );
+      setSearchResults(searchResults.filter((f) => f.uid !== friend.uid));
+      // Refresh sent requests
+      const sentData = await getSentFriendRequests(user.uid);
+      setSentRequests(sentData);
+    } catch (error) {
+      console.error("Error sending friend request:", error);
+      Alert.alert("Error", "Failed to send friend request. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
   };
 
-  const handleFriendPress = (friend: Friend) => {
+  const handleAcceptRequest = async (friend: FriendProfile) => {
+    if (!user || !friend.friendshipId || actionLoading) return;
+    try {
+      setActionLoading(true);
+      await acceptFriendRequest(friend.friendshipId, user.uid);
+      // Refresh all lists
+      const [friendsData, receivedData] = await Promise.all([
+        getUserFriends(user.uid),
+        getPendingFriendRequests(user.uid),
+      ]);
+      setFriends(friendsData);
+      setPendingRequests(receivedData);
+    } catch (error) {
+      console.error("Error accepting friend request:", error);
+      Alert.alert(
+        "Error",
+        "Failed to accept friend request. Please try again."
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeclineRequest = async (friend: FriendProfile) => {
+    if (!user || !friend.friendshipId || actionLoading) return;
+    try {
+      setActionLoading(true);
+      await declineFriendRequest(friend.friendshipId);
+      // Refresh pending requests
+      const receivedData = await getPendingFriendRequests(user.uid);
+      setPendingRequests(receivedData);
+    } catch (error) {
+      console.error("Error declining friend request:", error);
+      Alert.alert(
+        "Error",
+        "Failed to decline friend request. Please try again."
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleFriendPress = async (friend: FriendProfile) => {
     setSelectedFriend(friend);
     setProfileModalVisible(true);
+
+    // Load full user profile with privacy settings
+    try {
+      const fullProfile = await getUserProfile(friend.uid);
+      // @ts-ignore - privacySettings will be added to UserProfile type
+      setSelectedFriendPrivacy(fullProfile?.privacySettings || {});
+    } catch (error) {
+      console.error("Error loading friend profile:", error);
+      setSelectedFriendPrivacy({});
+    }
   };
 
   const closeProfileModal = () => {
     setProfileModalVisible(false);
     setSelectedFriend(null);
+    setSelectedFriendPrivacy(null);
   };
 
-  const getStatusText = (status: string) => {
+  const getStatusText = (status?: string) => {
     switch (status) {
       case "friend":
         return "You're friends";
@@ -288,12 +312,14 @@ export const FriendsScreen = () => {
         return "Pending request";
       case "pending_sent":
         return "Request sent";
+      case "blocked":
+        return "Blocked";
       default:
         return "Not connected";
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status?: string) => {
     switch (status) {
       case "friend":
         return colors.accentTeal;
@@ -301,71 +327,139 @@ export const FriendsScreen = () => {
         return colors.accentPurple;
       case "pending_sent":
         return colors.textSecondary;
+      case "blocked":
+        return colors.error;
       default:
         return colors.textSecondary;
     }
   };
 
-  const renderFriend = ({ item }: { item: Friend }) => (
-    <TouchableOpacity
-      style={styles.friendCard}
-      onPress={() => handleFriendPress(item)}
-    >
-      <LinearGradient
-        colors={["rgba(6, 0, 18, 0.9)", "rgba(11, 5, 32, 0.8)"]}
-        style={styles.friendCardGradient}
+  const renderFriend = ({ item }: { item: FriendProfile }) => {
+    const initials = item.displayName
+      ? item.displayName
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase()
+      : "?";
+
+    return (
+      <TouchableOpacity
+        style={styles.friendCard}
+        onPress={() => handleFriendPress(item)}
       >
-        <View style={styles.friendInfo}>
+        <LinearGradient
+          colors={["rgba(11, 5, 32, 0.9)", "rgba(6, 0, 18, 0.8)"]}
+          style={styles.friendCardGradient}
+        >
           <View style={styles.friendAvatar}>
-            <Text style={styles.friendInitials}>{item.initials}</Text>
+            {item.profilePhotoUrl ? (
+              <Image
+                source={{ uri: item.profilePhotoUrl }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <Text style={styles.friendInitials}>{initials}</Text>
+            )}
           </View>
-          <View style={styles.friendDetails}>
-            <Text style={styles.friendName}>{item.name}</Text>
-            <Text style={styles.friendUsername}>@{item.username}</Text>
-            <Text style={styles.friendStatus}>
-              {item.status === "friend"
-                ? `Last active ${item.lastActive}`
-                : item.status === "pending_sent"
-                ? "Request sent"
-                : "Friend request"}
+
+          <View style={styles.friendInfoColumn}>
+            <Text style={styles.friendName}>{item.displayName}</Text>
+            <Text style={styles.friendUsername}>
+              @{item.username || "user"}
+            </Text>
+            <Text style={styles.friendCountry}>
+              {item.country || "Unknown"}
             </Text>
           </View>
-        </View>
-        <View style={styles.friendActions}>
-          {item.status === "friend" ? (
-            <TouchableOpacity style={styles.friendActionButton}>
-              <Ionicons
-                name="person-outline"
-                size={18}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-          ) : item.status === "pending_received" ? (
-            <View style={styles.pendingActions}>
-              <TouchableOpacity style={styles.acceptIconButton}>
+
+          <View style={styles.friendActions}>
+            {item.friendshipStatus === "blocked" && (
+              <View style={styles.blockedBadge}>
+                <Ionicons name="ban" size={16} color={colors.error} />
+                <Text style={styles.blockedText}>Blocked</Text>
+              </View>
+            )}
+            {item.friendshipStatus === "pending_received" && (
+              <View style={styles.pendingActions}>
+                <TouchableOpacity
+                  style={styles.acceptIconButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleAcceptRequest(item);
+                  }}
+                  disabled={actionLoading}
+                >
+                  <Ionicons
+                    name="checkmark"
+                    size={20}
+                    color={colors.accentTeal}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.declineIconButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleDeclineRequest(item);
+                  }}
+                  disabled={actionLoading}
+                >
+                  <Ionicons name="close" size={20} color={colors.danger} />
+                </TouchableOpacity>
+              </View>
+            )}
+            {item.friendshipStatus === "friend" && (
+              <TouchableOpacity
+                style={styles.removeFriendButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  Alert.alert(
+                    "Remove Friend",
+                    `Remove ${item.displayName} from your friends?`,
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Remove",
+                        style: "destructive",
+                        onPress: async () => {
+                          if (user && item.friendshipId) {
+                            try {
+                              setActionLoading(true);
+                              await removeFriend(
+                                item.friendshipId,
+                                user.uid,
+                                item.uid
+                              );
+                              // Refresh friends list
+                              const friendsData = await getUserFriends(
+                                user.uid
+                              );
+                              setFriends(friendsData);
+                            } catch (error) {
+                              console.error("Error removing friend:", error);
+                              Alert.alert("Error", "Failed to remove friend");
+                            } finally {
+                              setActionLoading(false);
+                            }
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
                 <Ionicons
-                  name="checkmark"
-                  size={20}
-                  color={colors.accentTeal}
+                  name="person-remove-outline"
+                  size={18}
+                  color={colors.textSecondary}
                 />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.declineIconButton}>
-                <Ionicons name="close" size={20} color={colors.danger} />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.pendingButton}>
-              <Ionicons
-                name="time-outline"
-                size={18}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-          )}
-        </View>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
+            )}
+          </View>
+        </LinearGradient>
+      </TouchableOpacity>
+    );
+  };
 
   const renderStatCard = (title: string, count: number, color: string) => (
     <View style={styles.statCard}>
@@ -399,30 +493,70 @@ export const FriendsScreen = () => {
     );
   };
 
-  const renderSearchResult = ({ item }: { item: Friend }) => (
-    <TouchableOpacity style={styles.searchResultCard}>
-      <LinearGradient
-        colors={["rgba(11, 5, 32, 0.9)", "rgba(6, 0, 18, 0.8)"]}
-        style={styles.friendCardGradient}
-      >
-        <View style={styles.friendInfo}>
-          <View style={styles.friendAvatar}>
-            <Text style={styles.friendInitials}>{item.initials}</Text>
-          </View>
-          <View style={styles.friendDetails}>
-            <Text style={styles.friendName}>{item.name}</Text>
-            <Text style={styles.friendStatus}>Available to add as friend</Text>
-          </View>
-        </View>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => handleSendRequest(item)}
+  const renderSearchResult = ({ item }: { item: FriendProfile }) => {
+    const initials = item.displayName
+      ? item.displayName
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase()
+      : "?";
+
+    const canSendRequest = item.friendshipStatus === "none";
+
+    return (
+      <TouchableOpacity style={styles.searchResultCard}>
+        <LinearGradient
+          colors={["rgba(11, 5, 32, 0.9)", "rgba(6, 0, 18, 0.8)"]}
+          style={styles.friendCardGradient}
         >
-          <Ionicons name="add" size={21} color={colors.textPrimary} />
-        </TouchableOpacity>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
+          <View style={styles.friendInfo}>
+            <View style={styles.friendAvatar}>
+              {item.profilePhotoUrl ? (
+                <Image
+                  source={{ uri: item.profilePhotoUrl }}
+                  style={{ width: 40, height: 40, borderRadius: 20 }}
+                />
+              ) : (
+                <Text style={styles.friendInitials}>{initials}</Text>
+              )}
+            </View>
+            <View style={styles.friendDetails}>
+              <Text style={styles.friendName}>{item.displayName}</Text>
+              <Text style={styles.friendUsername}>
+                @{item.username || "unknown"}
+              </Text>
+              <Text style={styles.friendStatus}>
+                {item.country || "Unknown"}
+              </Text>
+            </View>
+          </View>
+          {canSendRequest && (
+            <TouchableOpacity
+              style={styles.addFriendButton}
+              onPress={() => handleSendRequest(item)}
+              disabled={actionLoading}
+            >
+              <Ionicons
+                name="person-add"
+                size={18}
+                color={colors.textPrimary}
+              />
+            </TouchableOpacity>
+          )}
+          {item.friendshipStatus === "pending_sent" && (
+            <View style={styles.pendingButton}>
+              <Ionicons
+                name="time-outline"
+                size={18}
+                color={colors.textSecondary}
+              />
+            </View>
+          )}
+        </LinearGradient>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <GradientBackground gradient="midnight">
@@ -450,10 +584,10 @@ export const FriendsScreen = () => {
 
           {/* Statistics Row */}
           <View style={styles.statsContainer}>
-            {renderStatCard("Friends", friendsList.length, colors.textPrimary)}
+            {renderStatCard("Friends", friends.length, colors.textPrimary)}
             {renderStatCard(
               "Requests",
-              receivedRequests.length,
+              pendingRequests.length,
               colors.textPrimary
             )}
             {renderStatCard("Sent", sentRequests.length, colors.textPrimary)}
@@ -471,7 +605,7 @@ export const FriendsScreen = () => {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Search Results</Text>
               {searchResults.map((item) => (
-                <View key={item.id}>{renderSearchResult({ item })}</View>
+                <View key={item.uid}>{renderSearchResult({ item })}</View>
               ))}
               {searchResults.length === 0 && (
                 <Text style={styles.emptyText}>No users found</Text>
@@ -481,19 +615,19 @@ export const FriendsScreen = () => {
             <>
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
-                  Your Friends ({friendsList.length})
+                  Your Friends ({friends.length})
                 </Text>
                 {displayedFriends.map((item) => (
-                  <View key={item.id}>{renderFriend({ item })}</View>
+                  <View key={item.uid}>{renderFriend({ item })}</View>
                 ))}
-                {friendsList.length === 0 && (
+                {friends.length === 0 && (
                   <Text style={styles.emptyText}>No friends yet</Text>
                 )}
                 {renderSeeMoreButton(
                   showAllFriends,
                   setShowAllFriends,
                   displayedFriends.length,
-                  friendsList.length
+                  friends.length
                 )}
               </View>
 
@@ -502,7 +636,7 @@ export const FriendsScreen = () => {
                   Friend Requests ({pendingRequests.length})
                 </Text>
                 {displayedRequests.map((item) => (
-                  <View key={item.id}>{renderFriend({ item })}</View>
+                  <View key={item.uid}>{renderFriend({ item })}</View>
                 ))}
                 {pendingRequests.length === 0 && (
                   <Text style={styles.emptyText}>No pending requests</Text>
@@ -539,16 +673,28 @@ export const FriendsScreen = () => {
               <>
                 <View style={styles.profileModalContent}>
                   <View style={styles.profileAvatarLarge}>
-                    <Text style={styles.profileAvatarTextLarge}>
-                      {selectedFriend.initials}
-                    </Text>
+                    {selectedFriend.profilePhotoUrl ? (
+                      <Image
+                        source={{ uri: selectedFriend.profilePhotoUrl }}
+                        style={styles.profileAvatarImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={styles.profileAvatarTextLarge}>
+                        {selectedFriend.displayName
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")
+                          .toUpperCase()}
+                      </Text>
+                    )}
                   </View>
 
                   <Text style={styles.profileNameLarge}>
-                    {selectedFriend.name}
+                    {selectedFriend.displayName}
                   </Text>
                   <Text style={styles.profileUsernameLarge}>
-                    @{selectedFriend.username}
+                    @{selectedFriend.username || "user"}
                   </Text>
 
                   <View style={styles.profileInfoCard}>
@@ -559,9 +705,26 @@ export const FriendsScreen = () => {
                         color={colors.textSecondary}
                       />
                       <Text style={styles.profileCountryText}>
-                        {selectedFriend.country}
+                        {selectedFriend.country || "Unknown"}
                       </Text>
                     </View>
+
+                    {/* Show age only if not restricted by privacy settings */}
+                    {selectedFriendPrivacy &&
+                      !selectedFriendPrivacy.hideAge && (
+                        <View style={styles.profileInfoRow}>
+                          <Ionicons
+                            name="calendar-outline"
+                            size={20}
+                            color={colors.textSecondary}
+                          />
+                          <Text style={styles.profileCountryText}>
+                            {selectedFriend.points
+                              ? `${selectedFriend.points} points`
+                              : "New user"}
+                          </Text>
+                        </View>
+                      )}
                   </View>
 
                   {selectedFriend.bio && (
@@ -584,19 +747,25 @@ export const FriendsScreen = () => {
                         styles.statusBadge,
                         {
                           backgroundColor:
-                            getStatusColor(selectedFriend.status) + "20",
+                            getStatusColor(selectedFriend.friendshipStatus) +
+                            "20",
                           borderColor:
-                            getStatusColor(selectedFriend.status) + "60",
+                            getStatusColor(selectedFriend.friendshipStatus) +
+                            "60",
                         },
                       ]}
                     >
                       <Text
                         style={[
                           styles.statusText,
-                          { color: getStatusColor(selectedFriend.status) },
+                          {
+                            color: getStatusColor(
+                              selectedFriend.friendshipStatus
+                            ),
+                          },
                         ]}
                       >
-                        {getStatusText(selectedFriend.status)}
+                        {getStatusText(selectedFriend.friendshipStatus)}
                       </Text>
                     </View>
                   </View>
@@ -647,20 +816,16 @@ export const FriendsScreen = () => {
       </Modal>
 
       {/* Report Modal */}
-      <ReportModal
-        visible={reportModalVisible}
-        onClose={() => setReportModalVisible(false)}
-        onSubmit={async (category, description) => {
-          // TODO: Implement Firebase report submission
-          console.log("Report submitted:", {
-            userId: selectedFriend?.id,
-            category,
-            description,
-          });
-        }}
-        reportType="user"
-        targetName={selectedFriend?.name}
-      />
+      {selectedFriend && user && (
+        <ReportModal
+          visible={reportModalVisible}
+          onClose={() => setReportModalVisible(false)}
+          reportType="user"
+          targetName={selectedFriend.displayName}
+          reportedUserId={selectedFriend.uid}
+          reportingUserId={user.uid}
+        />
+      )}
 
       {/* Block Confirm Modal */}
       <BlockConfirmModal
@@ -668,17 +833,15 @@ export const FriendsScreen = () => {
         onClose={() => setBlockModalVisible(false)}
         onConfirm={async () => {
           // TODO: Implement Firebase block logic
-          console.log("User blocked:", {
-            userId: selectedFriend?.id,
-          });
-          // Remove from friends list after blocking
-          if (selectedFriend) {
-            setFriends(friends.filter((f) => f.id !== selectedFriend.id));
+          if (selectedFriend && user) {
+            await blockUser(user.uid, selectedFriend.uid);
+            // Remove from friends list after blocking
+            setFriends(friends.filter((f) => f.uid !== selectedFriend.uid));
           }
           setBlockModalVisible(false);
           closeProfileModal();
         }}
-        userName={selectedFriend?.name || "User"}
+        userName={selectedFriend?.displayName || "User"}
       />
     </GradientBackground>
   );
@@ -766,7 +929,7 @@ const styles = StyleSheet.create({
   // Friend Card Styles
   friendCard: {
     borderRadius: 24,
-    marginBottom: 4,
+    marginBottom: 12,
     overflow: "hidden",
     shadowColor: "rgba(0, 0, 0, 0.4)",
     shadowOffset: { width: 0, height: 4 },
@@ -779,16 +942,16 @@ const styles = StyleSheet.create({
   },
 
   friendCardGradient: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 16,
   },
 
   searchResultCard: {
     borderRadius: 24,
-    marginBottom: 4,
+    marginBottom: 12,
     overflow: "hidden",
     shadowColor: "rgba(0, 0, 0, 0.4)",
     shadowOffset: { width: 0, height: 4 },
@@ -808,10 +971,15 @@ const styles = StyleSheet.create({
     gap: 14,
   },
 
+  friendInfoColumn: {
+    flex: 1,
+    gap: 4,
+  },
+
   friendAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.accentPurple,
     alignItems: "center",
     justifyContent: "center",
@@ -827,7 +995,7 @@ const styles = StyleSheet.create({
   friendInitials: {
     ...typography.body,
     color: colors.textPrimary,
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: "800",
   },
 
@@ -839,7 +1007,7 @@ const styles = StyleSheet.create({
   friendName: {
     ...typography.body,
     color: colors.textPrimary,
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "700",
     letterSpacing: 0.2,
     marginBottom: 2,
@@ -848,17 +1016,25 @@ const styles = StyleSheet.create({
   friendUsername: {
     ...typography.caption,
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "500",
     opacity: 0.7,
-    marginBottom: 6,
+  },
+
+  friendCountry: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "400",
+    opacity: 0.6,
+    marginTop: 2,
   },
 
   friendStatus: {
     ...typography.caption,
     color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 17,
+    fontSize: 14,
+    lineHeight: 18,
     opacity: 0.85,
   },
 
@@ -920,6 +1096,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 2,
+  },
+
+  blockedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+  },
+
+  blockedText: {
+    ...typography.caption,
+    color: colors.error,
+    fontSize: 12,
+    fontWeight: "600",
   },
 
   pendingButton: {
@@ -1083,6 +1278,13 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
     marginBottom: 8,
+    overflow: "hidden",
+  },
+
+  profileAvatarImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 60,
   },
 
   profileAvatarTextLarge: {
@@ -1237,5 +1439,77 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 14,
     fontWeight: "600",
+  },
+
+  // New renderFriend styles
+  friendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  avatarImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+  },
+
+  friendMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+
+  actionBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    minWidth: 70,
+    alignItems: "center",
+  },
+
+  acceptBtn: {
+    backgroundColor: colors.accentTeal + "20",
+    borderWidth: 1,
+    borderColor: colors.accentTeal + "60",
+  },
+
+  acceptBtnText: {
+    ...typography.body,
+    color: colors.accentTeal,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  declineBtn: {
+    backgroundColor: colors.danger + "20",
+    borderWidth: 1,
+    borderColor: colors.danger + "60",
+  },
+
+  declineBtnText: {
+    ...typography.body,
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  addFriendButton: {
+    backgroundColor: colors.accentPurple + "30",
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: colors.accentPurple + "60",
+  },
+
+  removeFriendButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

@@ -5,78 +5,55 @@ import {
   View,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useState, useEffect } from "react";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
+import { useAuth } from "../context/AuthContext";
+import {
+  getUserSubmittedReports,
+  type Report,
+  getReasonText,
+  getStatusText,
+  getStatusColor,
+} from "../services/reportService";
 
 const { width } = Dimensions.get("window");
 const isSmallScreen = width < 375;
 
-type ReportStatus = "pending" | "reviewed" | "action_taken";
-
-type Report = {
-  id: string;
-  reportedUser: string;
-  reason: string;
-  date: string;
-  status: ReportStatus;
-  description: string;
-};
-
-const statusConfig: Record<
-  ReportStatus,
-  { color: string; label: string; icon: keyof typeof Ionicons.glyphMap }
-> = {
-  pending: { color: "#F59E0B", label: "Under Review", icon: "time-outline" },
-  reviewed: {
-    color: "#06B6D4",
-    label: "Reviewed",
-    icon: "checkmark-circle-outline",
-  },
-  action_taken: {
-    color: "#10B981",
-    label: "Action Taken",
-    icon: "shield-checkmark-outline",
-  },
-};
-
-// Demo reports data
-const reports: Report[] = [
-  {
-    id: "1",
-    reportedUser: "SecretUser#4582",
-    reason: "Inappropriate Content",
-    date: "Sep 28, 2025",
-    status: "action_taken",
-    description: "User was sharing inappropriate photos in chat",
-  },
-  {
-    id: "2",
-    reportedUser: "SecretUser#7823",
-    reason: "Harassment",
-    date: "Sep 25, 2025",
-    status: "reviewed",
-    description: "Received multiple unwanted messages after asking to stop",
-  },
-  {
-    id: "3",
-    reportedUser: "SecretUser#1293",
-    reason: "Spam",
-    date: "Sep 20, 2025",
-    status: "pending",
-    description: "User sending promotional content repeatedly",
-  },
-];
-
 export const ReportHistoryScreen = () => {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { user } = useAuth();
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user) {
+      loadReports();
+    }
+  }, [user]);
+
+  const loadReports = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      const userReports = await getUserSubmittedReports(user.uid);
+      setReports(userReports);
+    } catch (error) {
+      console.error("Error loading reports:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleBack = () => {
     navigation.goBack();
@@ -84,6 +61,18 @@ export const ReportHistoryScreen = () => {
 
   const pendingReports = reports.filter((r) => r.status === "pending").length;
   const reviewedReports = reports.filter((r) => r.status !== "pending").length;
+
+  const formatDate = (timestamp: any) => {
+    if (!timestamp) return "Unknown date";
+    const date = timestamp.toDate
+      ? timestamp.toDate()
+      : new Date(timestamp.seconds * 1000);
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
 
   return (
     <GradientBackground gradient="midnight">
@@ -166,7 +155,12 @@ export const ReportHistoryScreen = () => {
         </View>
 
         {/* Reports List */}
-        {reports.length > 0 ? (
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.accentPurple} />
+            <Text style={styles.loadingText}>Loading reports...</Text>
+          </View>
+        ) : reports.length > 0 ? (
           <View style={styles.listContainer}>
             <Text style={styles.sectionTitle}>
               {reports.length} {reports.length === 1 ? "Report" : "Reports"}{" "}
@@ -174,7 +168,9 @@ export const ReportHistoryScreen = () => {
             </Text>
 
             {reports.map((report) => {
-              const config = statusConfig[report.status];
+              const statusColor = getStatusColor(report.status);
+              const statusLabel = getStatusText(report.status);
+
               return (
                 <View key={report.id} style={styles.reportCard}>
                   {/* Report Header */}
@@ -185,7 +181,7 @@ export const ReportHistoryScreen = () => {
                       </View>
                       <View style={styles.reportUserDetails}>
                         <Text style={styles.reportedUserName}>
-                          {report.reportedUser}
+                          User ID: {report.reportedUserId.substring(0, 8)}...
                         </Text>
                         <View style={styles.reportMeta}>
                           <Ionicons
@@ -194,7 +190,7 @@ export const ReportHistoryScreen = () => {
                             color={colors.textSecondary}
                           />
                           <Text style={styles.reportMetaText}>
-                            Reported on {report.date}
+                            Reported on {formatDate(report.timestamp)}
                           </Text>
                         </View>
                       </View>
@@ -205,20 +201,24 @@ export const ReportHistoryScreen = () => {
                       style={[
                         styles.statusBadge,
                         {
-                          backgroundColor: config.color + "20",
-                          borderColor: config.color + "40",
+                          backgroundColor: statusColor + "20",
+                          borderColor: statusColor + "40",
                         },
                       ]}
                     >
                       <Ionicons
-                        name={config.icon}
+                        name={
+                          report.status === "pending"
+                            ? "time-outline"
+                            : report.status === "reviewed"
+                            ? "checkmark-circle-outline"
+                            : "shield-checkmark-outline"
+                        }
                         size={14}
-                        color={config.color}
+                        color={statusColor}
                       />
-                      <Text
-                        style={[styles.statusText, { color: config.color }]}
-                      >
-                        {config.label}
+                      <Text style={[styles.statusText, { color: statusColor }]}>
+                        {statusLabel}
                       </Text>
                     </View>
                   </View>
@@ -226,16 +226,20 @@ export const ReportHistoryScreen = () => {
                   {/* Reason Badge */}
                   <View style={styles.reasonBadge}>
                     <Ionicons name="warning" size={14} color="#F59E0B" />
-                    <Text style={styles.reasonText}>{report.reason}</Text>
+                    <Text style={styles.reasonText}>
+                      {getReasonText(report.reason)}
+                    </Text>
                   </View>
 
                   {/* Description */}
-                  <Text style={styles.reportDescription}>
-                    {report.description}
-                  </Text>
+                  {report.details && (
+                    <Text style={styles.reportDescription}>
+                      {report.details}
+                    </Text>
+                  )}
 
                   {/* Action Message */}
-                  {report.status === "action_taken" && (
+                  {report.status === "reviewed" && (
                     <View style={styles.actionMessage}>
                       <Ionicons
                         name="shield-checkmark"
@@ -243,22 +247,21 @@ export const ReportHistoryScreen = () => {
                         color="#10B981"
                       />
                       <Text style={styles.actionMessageText}>
-                        Our team has taken action based on your report. Thank
-                        you for helping keep SecretBuddy safe.
+                        Our team has reviewed your report. Thank you for helping
+                        keep SecretBuddy safe.
                       </Text>
                     </View>
                   )}
 
-                  {report.status === "reviewed" && (
+                  {report.status === "dismissed" && (
                     <View style={styles.actionMessage}>
                       <Ionicons
                         name="information-circle"
                         size={16}
-                        color="#06B6D4"
+                        color="#6B7280"
                       />
                       <Text style={styles.actionMessageText}>
-                        Your report has been reviewed. We're monitoring the
-                        situation.
+                        After review, this report was dismissed.
                       </Text>
                     </View>
                   )}
@@ -685,5 +688,19 @@ const styles = StyleSheet.create({
 
   footerSpace: {
     height: 20,
+  },
+
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    gap: 16,
+  },
+
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 16,
   },
 });

@@ -6,68 +6,83 @@ import {
   TouchableOpacity,
   Dimensions,
   Alert,
+  ActivityIndicator,
+  Image,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
+import { useAuth } from "../context/AuthContext";
+import {
+  getBlockedUsers,
+  unblockUser,
+  FriendProfile,
+} from "../services/friendService";
 
 const { width } = Dimensions.get("window");
 const isSmallScreen = width < 375;
 
-type BlockedUser = {
-  id: string;
-  username: string;
-  blockedDate: string;
-  reason: string;
-};
-
-// Demo blocked users data
-const initialBlockedUsers: BlockedUser[] = [
-  {
-    id: "1",
-    username: "SecretUser#4582",
-    blockedDate: "Sep 28, 2025",
-    reason: "Inappropriate content",
-  },
-  {
-    id: "2",
-    username: "SecretUser#7823",
-    blockedDate: "Sep 15, 2025",
-    reason: "Harassment",
-  },
-];
-
 export const BlockedUsersScreen = () => {
+  const { user } = useAuth();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [blockedUsers, setBlockedUsers] =
-    useState<BlockedUser[]>(initialBlockedUsers);
+  const [blockedUsers, setBlockedUsers] = useState<FriendProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadBlockedUsers();
+  }, []);
+
+  const loadBlockedUsers = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      const users = await getBlockedUsers(user.uid);
+      setBlockedUsers(users);
+    } catch (error) {
+      console.error("Error loading blocked users:", error);
+      Alert.alert("Error", "Failed to load blocked users");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleBack = () => {
     navigation.goBack();
   };
 
-  const handleUnblock = (user: BlockedUser) => {
+  const handleUnblock = (blockedUser: FriendProfile) => {
+    if (!user) return;
+
     Alert.alert(
       "Unblock User",
-      `Are you sure you want to unblock ${user.username}? They will be able to contact you again.`,
+      `Are you sure you want to unblock ${blockedUser.displayName}? They will be able to contact you again.`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Unblock",
           style: "destructive",
-          onPress: () => {
-            setBlockedUsers((prev) => prev.filter((u) => u.id !== user.id));
-            Alert.alert(
-              "User Unblocked",
-              `${user.username} has been unblocked.`
-            );
+          onPress: async () => {
+            try {
+              await unblockUser(user.uid, blockedUser.uid);
+              setBlockedUsers((prev) =>
+                prev.filter((u) => u.uid !== blockedUser.uid)
+              );
+              Alert.alert(
+                "User Unblocked",
+                `${blockedUser.displayName} has been unblocked.`
+              );
+            } catch (error) {
+              console.error("Error unblocking user:", error);
+              Alert.alert("Error", "Failed to unblock user");
+            }
           },
         },
       ]
@@ -138,7 +153,12 @@ export const BlockedUsersScreen = () => {
         </View>
 
         {/* Blocked Users List */}
-        {blockedUsers.length > 0 ? (
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.accentPurple} />
+            <Text style={styles.loadingText}>Loading blocked users...</Text>
+          </View>
+        ) : blockedUsers.length > 0 ? (
           <View style={styles.listContainer}>
             <Text style={styles.sectionTitle}>
               {blockedUsers.length}{" "}
@@ -146,27 +166,34 @@ export const BlockedUsersScreen = () => {
             </Text>
 
             {blockedUsers.map((user) => (
-              <View key={user.id} style={styles.userCard}>
+              <View key={user.uid} style={styles.userCard}>
                 <View style={styles.userInfo}>
                   <View style={styles.userAvatar}>
-                    <Ionicons name="person" size={24} color="#EF4444" />
+                    {user.profilePhotoUrl ? (
+                      <Image
+                        source={{ uri: user.profilePhotoUrl }}
+                        style={styles.userAvatarImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Ionicons name="person" size={24} color="#EF4444" />
+                    )}
                   </View>
                   <View style={styles.userDetails}>
-                    <Text style={styles.userName}>{user.username}</Text>
-                    <View style={styles.userMeta}>
-                      <Ionicons
-                        name="calendar-outline"
-                        size={12}
-                        color={colors.textSecondary}
-                      />
-                      <Text style={styles.userMetaText}>
-                        Blocked on {user.blockedDate}
-                      </Text>
-                    </View>
-                    <View style={styles.reasonBadge}>
-                      <Ionicons name="warning" size={12} color="#F59E0B" />
-                      <Text style={styles.reasonText}>{user.reason}</Text>
-                    </View>
+                    <Text style={styles.userName}>{user.displayName}</Text>
+                    <Text style={styles.userUsername}>
+                      @{user.username || "user"}
+                    </Text>
+                    {user.country && (
+                      <View style={styles.userMeta}>
+                        <Ionicons
+                          name="location-outline"
+                          size={12}
+                          color={colors.textSecondary}
+                        />
+                        <Text style={styles.userMetaText}>{user.country}</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
 
@@ -205,6 +232,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: isSmallScreen ? 16 : 20,
     paddingTop: 20,
     paddingBottom: 100,
+  },
+
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 64,
+  },
+
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 16,
+    marginTop: 16,
   },
 
   // Header Styles
@@ -387,6 +428,12 @@ const styles = StyleSheet.create({
     marginRight: isSmallScreen ? 12 : 14,
     borderWidth: 2,
     borderColor: "rgba(239, 68, 68, 0.3)",
+    overflow: "hidden",
+  },
+
+  userAvatarImage: {
+    width: "100%",
+    height: "100%",
   },
 
   userDetails: {
@@ -398,6 +445,13 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: isSmallScreen ? 15 : 16,
     fontWeight: "600",
+    marginBottom: 4,
+  },
+
+  userUsername: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: isSmallScreen ? 12 : 13,
     marginBottom: 6,
   },
 
