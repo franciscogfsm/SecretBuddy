@@ -606,7 +606,10 @@ export const FriendsScreen = () => {
                     <TouchableOpacity
                       style={styles.reportButton}
                       onPress={() => {
-                        setReportModalVisible(true);
+                        setProfileModalVisible(false);
+                        setTimeout(() => {
+                          setReportModalVisible(true);
+                        }, 300);
                       }}
                       activeOpacity={0.7}
                     >
@@ -621,7 +624,10 @@ export const FriendsScreen = () => {
                     <TouchableOpacity
                       style={styles.blockButton}
                       onPress={() => {
-                        setBlockModalVisible(true);
+                        setProfileModalVisible(false);
+                        setTimeout(() => {
+                          setBlockModalVisible(true);
+                        }, 300);
                       }}
                       activeOpacity={0.7}
                     >
@@ -660,11 +666,10 @@ export const FriendsScreen = () => {
       <BlockConfirmModal
         visible={blockModalVisible}
         onClose={() => setBlockModalVisible(false)}
-        onConfirm={async (reason) => {
+        onConfirm={async () => {
           // TODO: Implement Firebase block logic
           console.log("User blocked:", {
             userId: selectedFriend?.id,
-            reason,
           });
           // Remove from friends list after blocking
           if (selectedFriend) {

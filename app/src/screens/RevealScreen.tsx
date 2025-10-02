@@ -16,8 +16,6 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { PrimaryButton } from "../components/PrimaryButton";
-import { ReportModal } from "../components/ReportModal";
-import { BlockConfirmModal } from "../components/BlockConfirmModal";
 import type { RootStackParamList } from "../navigation/types";
 import { useAppState } from "../store/AppStateContext";
 import { colors, typography } from "../theme";
@@ -30,8 +28,6 @@ type Props = NativeStackScreenProps<RootStackParamList, "Reveal">;
 export const RevealScreen = ({ navigation, route }: Props) => {
   const { buddy } = useAppState();
   const [decision, setDecision] = useState<"continue" | "pass" | null>(null);
-  const [reportModalVisible, setReportModalVisible] = useState(false);
-  const [blockModalVisible, setBlockModalVisible] = useState(false);
 
   // Check if we're in demo mode
   const isDemoMode = route.params?.demo === true;
@@ -59,7 +55,7 @@ export const RevealScreen = ({ navigation, route }: Props) => {
   // Interactive tap-to-reveal system
   const [tapCount, setTapCount] = useState(0);
   const [isRevealed, setIsRevealed] = useState(false);
-  const totalTapsNeeded = 5; // Number of taps needed to fully reveal
+  const totalTapsNeeded = 1; // Single tap to reveal with suspense animation
 
   // Core animations - Initialize with visible values for debugging
   const backgroundFade = useRef(new Animated.Value(0)).current;
@@ -80,6 +76,10 @@ export const RevealScreen = ({ navigation, route }: Props) => {
   const tapRingScale = useRef(new Animated.Value(0)).current;
   const buttonGlow = useRef(new Animated.Value(0)).current;
   const tapHintBounce = useRef(new Animated.Value(0)).current;
+
+  // Epic reveal animations
+  const cardFlip = useRef(new Animated.Value(0)).current; // For 3D flip effect
+  const contentReveal = useRef(new Animated.Value(0)).current; // For content fade-in
 
   const sparkleLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -273,93 +273,139 @@ export const RevealScreen = ({ navigation, route }: Props) => {
     }
   }, [animationStage, isRevealed, tapIndicatorPulse, tapHintBounce]);
 
-  // Interactive tap-to-reveal handler
+  // Interactive tap-to-reveal handler with epic unveiling animation
   const handleTapToReveal = () => {
     if (animationStage !== "waitingTap" || isRevealed) return;
 
     const newTapCount = tapCount + 1;
     setTapCount(newTapCount);
-    console.log(`Tap ${newTapCount}/${totalTapsNeeded}`);
 
-    // Haptic feedback for each tap
+    // Initial tap haptic - Medium to start the suspense
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // More dramatic animation sequence
+    // Epic suspense build-up and reveal sequence with progressive haptics
     Animated.sequence([
+      // Phase 1: Quick shrink for tension
       Animated.spring(cardScale, {
-        toValue: 0.92,
-        tension: 80,
+        toValue: 0.82,
+        tension: 140,
+        friction: 9,
+        useNativeDriver: true,
+      }),
+      // Phase 2: Longer hold for dramatic suspense
+      Animated.delay(400),
+      // Phase 3: Dramatic pulse with glow
+      Animated.parallel([
+        Animated.spring(cardScale, {
+          toValue: 1.15,
+          tension: 30,
+          friction: 4,
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowIntensity, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+      // Phase 4: Extended hold at peak for maximum suspense
+      Animated.delay(300),
+      // Phase 5: Settle with bounce
+      Animated.spring(cardScale, {
+        toValue: 1,
+        tension: 50,
         friction: 6,
         useNativeDriver: true,
       }),
-      Animated.spring(cardScale, {
-        toValue: 1.05,
-        tension: 60,
-        friction: 7,
-        useNativeDriver: true,
-      }),
-      Animated.spring(cardScale, {
-        toValue: 1,
-        tension: 100,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    ]).start(() => {
+      // After suspense animation completes, trigger the reveal!
+      if (newTapCount >= totalTapsNeeded) {
+        // Success haptic for reveal moment
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    // More dramatic ripple effect
+        setIsRevealed(true);
+        setAnimationStage("complete");
+
+        // Epic reveal with 3D flip and staggered animations
+        Animated.sequence([
+          // Phase 1: Flip the card (like revealing a mystery)
+          Animated.timing(cardFlip, {
+            toValue: 1,
+            duration: 1000,
+            easing: Easing.out(Easing.back(1.5)),
+            useNativeDriver: true,
+          }),
+        ]).start();
+
+        // Parallel effects during flip
+        Animated.parallel([
+          // Maintain intense glow
+          Animated.timing(glowIntensity, {
+            toValue: 1,
+            duration: 1200,
+            easing: Easing.out(Easing.back(1.7)),
+            useNativeDriver: true,
+          }),
+          // Fade in content with delay
+          Animated.timing(contentReveal, {
+            toValue: 1,
+            duration: 700,
+            delay: 500, // Start halfway through flip
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          // Reveal action buttons
+          Animated.timing(actionButtonsReveal, {
+            toValue: 1,
+            duration: 700,
+            delay: 600,
+            easing: Easing.out(Easing.back(1.6)),
+            useNativeDriver: true,
+          }),
+          Animated.timing(buttonGlow, {
+            toValue: 1,
+            duration: 800,
+            delay: 400,
+            easing: Easing.out(Easing.back(1.3)),
+            useNativeDriver: true,
+          }),
+        ]).start();
+
+        // Progressive haptic feedback during reveal
+        setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }, 200);
+
+        setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }, 500);
+
+        setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }, 800);
+      }
+    });
+
+    // Add suspenseful haptics during the sequence
+    setTimeout(() => {
+      // Light haptic during hold phase
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }, 450);
+
+    setTimeout(() => {
+      // Heavy haptic when it pulses big
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    }, 900);
+
+    // Dramatic ripple effect
     tapRingScale.setValue(0);
     Animated.timing(tapRingScale, {
       toValue: 1,
-      duration: 650,
-      easing: Easing.out(Easing.back(1.2)),
+      duration: 800,
+      easing: Easing.out(Easing.circle),
       useNativeDriver: true,
     }).start();
-
-    // Check if fully revealed
-    if (newTapCount >= totalTapsNeeded) {
-      setIsRevealed(true);
-      setAnimationStage("complete");
-
-      // More dramatic final reveal animation
-      Animated.parallel([
-        Animated.timing(glowIntensity, {
-          toValue: 1,
-          duration: 1200,
-          easing: Easing.out(Easing.back(1.3)),
-          useNativeDriver: true,
-        }),
-        Animated.timing(actionButtonsReveal, {
-          toValue: 1,
-          duration: 800,
-          delay: 400,
-          easing: Easing.out(Easing.back(1.5)),
-          useNativeDriver: true,
-        }),
-        Animated.timing(buttonGlow, {
-          toValue: 1,
-          duration: 1000,
-          easing: Easing.out(Easing.back(1.2)),
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Strong haptic for completion
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    } else {
-      // Progressive glow with more dramatic timing
-      Animated.timing(glowIntensity, {
-        toValue: 0.4 + (newTapCount / totalTapsNeeded) * 0.4,
-        duration: 500,
-        easing: Easing.out(Easing.back(1.1)),
-        useNativeDriver: true,
-      }).start();
-      Animated.timing(buttonGlow, {
-        toValue: Math.min(newTapCount / totalTapsNeeded, 0.8),
-        duration: 600,
-        easing: Easing.out(Easing.back(1.2)),
-        useNativeDriver: true,
-      }).start();
-    }
   };
 
   const handleDecision = (choice: "continue" | "pass") => {
@@ -517,11 +563,20 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                   {
                     opacity: cardOpacity,
                     transform: [
+                      {
+                        perspective: 1000, // Enable 3D perspective
+                      },
                       { scale: cardScale },
                       {
                         translateY: cardReveal.interpolate({
                           inputRange: [0, 1],
                           outputRange: [50, 0],
+                        }),
+                      },
+                      {
+                        rotateY: cardFlip.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ["0deg", "360deg"], // Full rotation reveal
                         }),
                       },
                     ],
@@ -573,18 +628,38 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                       ]}
                     />
 
-                    {/* Progressive reveal content */}
-                    <View style={styles.profileHeader}>
+                    {/* Epic instant reveal with animated content */}
+                    <Animated.View
+                      style={[
+                        styles.profileHeader,
+                        {
+                          opacity: contentReveal,
+                          transform: [
+                            {
+                              scale: contentReveal.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0.9, 1],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    >
                       <View style={styles.profileAvatar}>
                         <Animated.Text
                           style={[
                             styles.profileAvatarText,
                             {
-                              opacity: tapCount >= 1 ? 1 : 0.4,
+                              opacity: isRevealed ? 1 : 0.4,
+                              transform: [
+                                {
+                                  scale: isRevealed ? 1 : 0.9,
+                                },
+                              ],
                             },
                           ]}
                         >
-                          {tapCount >= 1
+                          {isRevealed
                             ? currentBuddy.codename.charAt(0).toUpperCase()
                             : "?"}
                         </Animated.Text>
@@ -594,21 +669,31 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                           style={[
                             styles.profileName,
                             {
-                              opacity: tapCount >= 2 ? 1 : 0.4,
+                              opacity: isRevealed ? 1 : 0.4,
+                              transform: [
+                                {
+                                  translateY: isRevealed ? 0 : 5,
+                                },
+                              ],
                             },
                           ]}
                         >
-                          {tapCount >= 2 ? currentBuddy.codename : "???"}
+                          {isRevealed ? currentBuddy.codename : "???"}
                         </Animated.Text>
                         <Animated.Text
                           style={[
                             styles.profileDetail,
                             {
-                              opacity: tapCount >= 3 ? 1 : 0.4,
+                              opacity: isRevealed ? 1 : 0.4,
+                              transform: [
+                                {
+                                  translateY: isRevealed ? 0 : 5,
+                                },
+                              ],
                             },
                           ]}
                         >
-                          {tapCount >= 3
+                          {isRevealed
                             ? "Age: 25 • Location: Lisbon"
                             : "Age: ?? • Location: ???"}
                         </Animated.Text>
@@ -616,16 +701,21 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                           style={[
                             styles.profileDetail,
                             {
-                              opacity: tapCount >= 4 ? 1 : 0.4,
+                              opacity: isRevealed ? 1 : 0.4,
+                              transform: [
+                                {
+                                  translateY: isRevealed ? 0 : 5,
+                                },
+                              ],
                             },
                           ]}
                         >
-                          {tapCount >= 4
+                          {isRevealed
                             ? "Interests: Photography, Travel, Music"
                             : "Interests: ???, ???, ???"}
                         </Animated.Text>
                       </View>
-                    </View>
+                    </Animated.View>
 
                     {animationStage === "waitingTap" && (
                       <View style={styles.tapTokenRow}>
@@ -723,24 +813,41 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                       ) : null}
                     </View>
 
-                    {/* Bio section - reveals last */}
+                    {/* Bio section - reveals with content animation */}
                     <Animated.View
                       style={[
                         styles.profileBio,
                         {
-                          opacity: tapCount >= 5 ? 1 : 0.4,
+                          opacity: contentReveal.interpolate({
+                            inputRange: [0, 0.5, 1],
+                            outputRange: [0.4, 0.6, 1],
+                          }),
+                          transform: [
+                            {
+                              translateY: contentReveal.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [10, 0],
+                              }),
+                            },
+                            {
+                              scale: contentReveal.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0.95, 1],
+                              }),
+                            },
+                          ],
                         },
                       ]}
                     >
                       <Text style={styles.profileBioText}>
-                        {tapCount >= 5
+                        {isRevealed
                           ? '"Love capturing moments and exploring new places. Always up for an adventure!"'
                           : '"????? ????? ??????? ??? ??????? ??? ??????. ?????? ?? ??? ?? ???????!"'}
                       </Text>
                     </Animated.View>
 
                     {/* Internal connection message */}
-                    {tapCount >= 5 && (
+                    {isRevealed && (
                       <Pressable
                         style={styles.internalMessage}
                         onPress={() => {
@@ -827,31 +934,6 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                 }
               />
             </Animated.View>
-
-            {/* Safety Actions */}
-            <View style={styles.safetyActions}>
-              <Pressable
-                style={styles.safetyActionButton}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setReportModalVisible(true);
-                }}
-              >
-                <Ionicons name="flag-outline" size={18} color={colors.danger} />
-                <Text style={styles.safetyActionText}>Report</Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.safetyActionButton}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setBlockModalVisible(true);
-                }}
-              >
-                <Ionicons name="ban-outline" size={18} color={colors.danger} />
-                <Text style={styles.safetyActionText}>Block</Text>
-              </Pressable>
-            </View>
           </>
         ) : (
           // Ghosting protection - show different messages based on participation
@@ -911,39 +993,6 @@ export const RevealScreen = ({ navigation, route }: Props) => {
       <Pressable onPress={() => navigation.goBack()} style={styles.closeButton}>
         <Ionicons name="close" size={24} color="rgba(255, 255, 255, 0.9)" />
       </Pressable>
-
-      {/* Report Modal */}
-      <ReportModal
-        visible={reportModalVisible}
-        onClose={() => setReportModalVisible(false)}
-        onSubmit={async (category, description) => {
-          // TODO: Implement Firebase report submission
-          console.log("User reported:", {
-            userId: currentBuddy?.id,
-            category,
-            description,
-          });
-        }}
-        reportType="user"
-        targetName={currentBuddy?.codename}
-      />
-
-      {/* Block Confirm Modal */}
-      <BlockConfirmModal
-        visible={blockModalVisible}
-        onClose={() => setBlockModalVisible(false)}
-        onConfirm={async (reason) => {
-          // TODO: Implement Firebase block logic
-          console.log("User blocked:", {
-            userId: currentBuddy?.id,
-            reason,
-          });
-          setBlockModalVisible(false);
-          // Navigate back after blocking
-          navigation.goBack();
-        }}
-        userName={currentBuddy?.codename || "User"}
-      />
     </View>
   );
 };
@@ -1698,32 +1747,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
     lineHeight: 20,
-  },
-
-  // Safety Actions Styles
-  safetyActions: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 20,
-    paddingHorizontal: 20,
-  },
-  safetyActionButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "rgba(255, 107, 138, 0.1)",
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 107, 138, 0.3)",
-  },
-  safetyActionText: {
-    ...typography.body,
-    color: colors.danger,
-    fontSize: 14,
-    fontWeight: "600",
   },
 });

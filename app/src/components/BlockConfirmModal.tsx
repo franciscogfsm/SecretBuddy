@@ -14,7 +14,7 @@ import { colors, typography } from "../theme";
 interface BlockConfirmModalProps {
   visible: boolean;
   onClose: () => void;
-  onConfirm: (reason?: string) => void;
+  onConfirm: () => void;
   userName: string;
 }
 
@@ -24,13 +24,12 @@ export const BlockConfirmModal = ({
   onConfirm,
   userName,
 }: BlockConfirmModalProps) => {
-  const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleConfirm = async () => {
     setIsSubmitting(true);
     try {
-      await onConfirm(reason.trim() || undefined);
+      await onConfirm();
       Alert.alert(
         "User Blocked",
         `${userName} has been blocked. They won't be able to contact you or see your profile.`,
@@ -47,7 +46,6 @@ export const BlockConfirmModal = ({
   };
 
   const handleClose = () => {
-    setReason("");
     setIsSubmitting(false);
     onClose();
   };
@@ -113,23 +111,6 @@ export const BlockConfirmModal = ({
                 Being matched with you in future pools
               </Text>
             </View>
-          </View>
-
-          {/* Optional Reason */}
-          <View style={styles.reasonContainer}>
-            <Text style={styles.reasonLabel}>Reason (Optional)</Text>
-            <TextInput
-              style={styles.reasonInput}
-              placeholder="Why are you blocking this user?"
-              placeholderTextColor="rgba(255, 255, 255, 0.3)"
-              value={reason}
-              onChangeText={setReason}
-              multiline
-              numberOfLines={3}
-              maxLength={200}
-              editable={!isSubmitting}
-              textAlignVertical="top"
-            />
           </View>
 
           {/* Note */}

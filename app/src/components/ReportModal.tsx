@@ -175,6 +175,7 @@ export const ReportModal = ({
 
           <ScrollView
             style={styles.content}
+            contentContainerStyle={styles.contentContainer}
             showsVerticalScrollIndicator={false}
           >
             {/* Subtitle */}
@@ -359,9 +360,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   content: {
-    flex: 1,
+    maxHeight: "70%",
+  },
+  contentContainer: {
     paddingHorizontal: 24,
     paddingTop: 20,
+    paddingBottom: 20,
   },
   subtitle: {
     ...typography.body,

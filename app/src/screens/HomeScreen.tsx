@@ -9,6 +9,8 @@ import {
   View,
   Dimensions,
   Modal,
+  Image,
+  Pressable,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
@@ -98,11 +100,16 @@ export const HomeScreen = () => {
   const [isPromptTime, setIsPromptTime] = useState(false);
   const [nextPromptTime, setNextPromptTime] = useState<Date | null>(null);
   const [showCameraModal, setShowCameraModal] = useState(false);
+  const [showPhotoViewer, setShowPhotoViewer] = useState(false);
 
   // Control photo state - will be connected to backend
   const [hasReceivedPhoto, setHasReceivedPhoto] = useState(true); // Will be dynamically set based on backend data
   const [hasViewedPhoto, setHasViewedPhoto] = useState(false); // Track if user viewed the received photo
   const [hasSentPhoto, setHasSentPhoto] = useState(false); // Track if user sent a photo
+
+  // Demo photo URL - in production this will come from backend
+  const receivedPhotoUrl =
+    "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800"; // Example mountain view
 
   // Ghosting warning state
   const [showGhostingWarning, setShowGhostingWarning] = useState(true);
@@ -581,7 +588,12 @@ export const HomeScreen = () => {
               <View style={styles.revealTimeButtons}>
                 <TouchableOpacity
                   style={styles.revealTimeButton}
-                  onPress={handlePairingPress}
+                  onPress={() =>
+                    navigation.navigate("Reveal", {
+                      demo: true,
+                      bothRevealed: true,
+                    })
+                  }
                 >
                   <Ionicons name="sparkles" size={20} color="#FFFFFF" />
                   <Text style={styles.revealTimeButtonText}>Tap to Reveal</Text>
@@ -748,26 +760,7 @@ export const HomeScreen = () => {
               <TouchableOpacity
                 style={styles.viewPhotoButton}
                 onPress={() => {
-                  Alert.alert(
-                    "View Photo",
-                    "Here you would see the photo from your mystery buddy!",
-                    [
-                      {
-                        text: "OK",
-                        onPress: () => {
-                          // Start smooth fade out animation
-                          Animated.timing(receivedPhotoAnim, {
-                            toValue: 0,
-                            duration: 600,
-                            useNativeDriver: true,
-                          }).start(() => {
-                            // Mark as viewed after animation completes
-                            setHasViewedPhoto(true);
-                          });
-                        },
-                      },
-                    ]
-                  );
+                  setShowPhotoViewer(true);
                 }}
               >
                 <Ionicons name="eye" size={20} color="#FFFFFF" />
@@ -844,18 +837,26 @@ export const HomeScreen = () => {
         )}
 
         {/* Ghosting Protection Info Card */}
-        {isGameModeSelected && showGhostingWarning && (
+        {isGameModeSelected && showGhostingWarning && !hasSentPhoto && (
           <View style={styles.ghostingInfoCard}>
             <TouchableOpacity
               style={styles.dismissButton}
               onPress={() => setShowGhostingWarning(false)}
               activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="close-circle" size={24} color="#F59E0B" />
+              <Ionicons
+                name="close-circle"
+                size={isSmallScreen ? 20 : 24}
+                color="#F59E0B"
+              />
             </TouchableOpacity>
             <View style={styles.ghostingInfoHeader}>
-              <Ionicons name="shield-checkmark" size={24} color="#F59E0B" />
+              <Ionicons
+                name="shield-checkmark"
+                size={isSmallScreen ? 20 : 24}
+                color="#F59E0B"
+              />
               <Text style={styles.ghostingInfoTitle}>
                 Share Photos to Unlock Your Reveal!
               </Text>
@@ -1082,6 +1083,159 @@ export const HomeScreen = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Photo Viewer Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showPhotoViewer}
+        onRequestClose={() => setShowPhotoViewer(false)}
+      >
+        <Pressable
+          style={styles.photoViewerOverlay}
+          onPress={() => {
+            setShowPhotoViewer(false);
+            // Mark as viewed and fade out the received photo card
+            Animated.timing(receivedPhotoAnim, {
+              toValue: 0,
+              duration: 600,
+              useNativeDriver: true,
+            }).start(() => {
+              setHasViewedPhoto(true);
+            });
+          }}
+        >
+          <View style={styles.photoViewerContainer}>
+            {/* Header */}
+            <View style={styles.photoViewerHeader}>
+              <View style={styles.photoViewerHeaderLeft}>
+                <View style={styles.photoViewerIconWrapper}>
+                  <Ionicons name="shield-checkmark" size={24} color="#10B981" />
+                </View>
+                <View>
+                  <Text style={styles.photoViewerTitle}>Mystery Photo</Text>
+                  <Text style={styles.photoViewerSubtitle}>
+                    From your SecretBuddy • Just now
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.photoViewerClose}
+                onPress={() => {
+                  setShowPhotoViewer(false);
+                  Animated.timing(receivedPhotoAnim, {
+                    toValue: 0,
+                    duration: 600,
+                    useNativeDriver: true,
+                  }).start(() => {
+                    setHasViewedPhoto(true);
+                  });
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="close"
+                  size={isSmallScreen ? 20 : 24}
+                  color="rgba(255, 255, 255, 0.95)"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Photo Container */}
+            <View style={styles.photoContainer}>
+              <Image
+                source={{ uri: receivedPhotoUrl }}
+                style={styles.photoImage}
+                resizeMode="cover"
+              />
+
+              {/* Photo Info Overlay */}
+              <View style={styles.photoInfoOverlay}>
+                <View style={styles.photoInfoBadge}>
+                  <Ionicons
+                    name="eye-off"
+                    size={isSmallScreen ? 14 : 16}
+                    color="#FCD34D"
+                  />
+                  <Text style={styles.photoInfoText}>
+                    Identity hidden until reveal time
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Actions */}
+            <View style={styles.photoViewerActions}>
+              <TouchableOpacity
+                style={styles.photoActionButton}
+                onPress={() => {
+                  Alert.alert(
+                    "Report Photo",
+                    "This photo will be flagged for review. Use this only for inappropriate content.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Report",
+                        style: "destructive",
+                        onPress: () => {
+                          Alert.alert(
+                            "Reported",
+                            "Photo has been flagged for review."
+                          );
+                          setShowPhotoViewer(false);
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="flag" size={20} color="#EF4444" />
+                <Text style={styles.photoActionButtonText}>Report</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.photoActionButton,
+                  styles.photoActionButtonPrimary,
+                ]}
+                onPress={() => {
+                  setShowPhotoViewer(false);
+                  Animated.timing(receivedPhotoAnim, {
+                    toValue: 0,
+                    duration: 600,
+                    useNativeDriver: true,
+                  }).start(() => {
+                    setHasViewedPhoto(true);
+                  });
+                  // Navigate to chat or show prompt to send photo back
+                  Alert.alert(
+                    "Send a Photo Back? 📸",
+                    "Want to share a photo with your mystery buddy too?",
+                    [
+                      { text: "Later", style: "cancel" },
+                      {
+                        text: "Send Photo",
+                        onPress: () => takeBackPhoto(),
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                <Text
+                  style={[styles.photoActionButtonText, { color: "#FFFFFF" }]}
+                >
+                  Got it!
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Tap anywhere to close hint */}
+            <Text style={styles.photoViewerHint}>Tap anywhere to close</Text>
+          </View>
+        </Pressable>
+      </Modal>
     </GradientBackground>
   );
 };
@@ -1114,7 +1268,7 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     paddingHorizontal: isSmallScreen ? 16 : 24,
-    paddingTop: 80,
+    paddingTop: isSmallScreen ? 100 : 120, // Increased to prevent overlap with close button
     paddingBottom: 140,
     gap: isSmallScreen ? 20 : 28,
   },
@@ -2050,35 +2204,39 @@ const styles = StyleSheet.create({
   ghostingInfoHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginBottom: 10,
-    paddingRight: 40, // Space for dismiss button
+    gap: isSmallScreen ? 8 : 10,
+    marginBottom: isSmallScreen ? 8 : 10,
+    paddingRight: isSmallScreen ? 40 : 45, // Less space needed for smaller button
   },
   ghostingInfoTitle: {
     ...typography.subtitle,
     color: "#F59E0B",
-    fontSize: isSmallScreen ? 15 : 16,
+    fontSize: isSmallScreen ? 14 : 16,
     fontWeight: "700",
     lineHeight: isSmallScreen ? 18 : 20,
+    flex: 1,
   },
   ghostingInfoText: {
     ...typography.body,
     color: colors.textSecondary,
     fontSize: isSmallScreen ? 13 : 14,
     lineHeight: isSmallScreen ? 18 : 20,
-    marginBottom: isSmallScreen ? 12 : 14,
+    marginBottom: isSmallScreen ? 10 : 14,
+    textAlign: isSmallScreen ? "center" : "left",
   },
   ghostingInfoStats: {
-    flexDirection: "row",
-    gap: isSmallScreen ? 10 : 12,
+    flexDirection: isSmallScreen ? "column" : "row",
+    gap: isSmallScreen ? 8 : 12,
+    alignItems: "stretch",
   },
   ghostingInfoStat: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: isSmallScreen ? "center" : "flex-start",
+    gap: isSmallScreen ? 4 : 6,
     backgroundColor: "rgba(245, 158, 11, 0.05)",
-    borderRadius: 8,
+    borderRadius: isSmallScreen ? 6 : 8,
     padding: isSmallScreen ? 8 : 10,
   },
   ghostingInfoStatNumber: {
@@ -2091,24 +2249,199 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // Dismiss Button Styles
+  // Dismiss Button Styles - Compact and non-overlapping
   dismissButton: {
     position: "absolute",
-    top: 10,
-    right: 10,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    top: isSmallScreen ? 6 : 8,
+    right: isSmallScreen ? 6 : 8,
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 1,
+    width: isSmallScreen ? 32 : 36,
+    height: isSmallScreen ? 32 : 36,
+    borderRadius: isSmallScreen ? 16 : 18,
+    backgroundColor: "rgba(245, 158, 11, 0.3)",
+    zIndex: 1000,
     borderWidth: 1.5,
-    borderColor: "rgba(245, 158, 11, 0.4)",
+    borderColor: "rgba(245, 158, 11, 0.8)",
     shadowColor: "#F59E0B",
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
+    elevation: 10,
+  },
+  dismissButtonContent: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dismissButtonText: {
+    display: "none", // Hide the text to make button smaller
+  },
+
+  // Photo Viewer Modal Styles - Modern & Rounded
+  photoViewerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.96)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  photoViewerContainer: {
+    width: "100%",
+    maxWidth: isSmallScreen ? "100%" : 500,
+    borderRadius: 32,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.8,
+    shadowRadius: 40,
+    elevation: 25,
+  },
+  photoViewerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: isSmallScreen ? 16 : 24,
+    paddingVertical: isSmallScreen ? 14 : 18,
+    backgroundColor: "rgba(15, 23, 42, 0.98)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(99, 102, 241, 0.2)",
+  },
+  photoViewerHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: isSmallScreen ? 10 : 14,
+    flex: 1,
+  },
+  photoViewerIconWrapper: {
+    width: isSmallScreen ? 40 : 48,
+    height: isSmallScreen ? 40 : 48,
+    borderRadius: isSmallScreen ? 20 : 24,
+    backgroundColor: "rgba(16, 185, 129, 0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "rgba(16, 185, 129, 0.4)",
+    shadowColor: "#10B981",
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowRadius: 8,
     elevation: 4,
+  },
+  photoViewerTitle: {
+    ...typography.subtitle,
+    color: "#FFFFFF",
+    fontSize: isSmallScreen ? 16 : 18,
+    fontWeight: "800",
+    marginBottom: 2,
+    letterSpacing: -0.3,
+  },
+  photoViewerSubtitle: {
+    ...typography.caption,
+    color: "rgba(255, 255, 255, 0.65)",
+    fontSize: isSmallScreen ? 12 : 13,
+    fontWeight: "500",
+  },
+  photoViewerClose: {
+    width: isSmallScreen ? 36 : 40,
+    height: isSmallScreen ? 36 : 40,
+    borderRadius: isSmallScreen ? 18 : 20,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  photoContainer: {
+    position: "relative",
+    backgroundColor: "#000000",
+    aspectRatio: 3 / 4,
+    overflow: "hidden",
+  },
+  photoImage: {
+    width: "100%",
+    height: "100%",
+  },
+  photoInfoOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: isSmallScreen ? 16 : 20,
+    paddingBottom: isSmallScreen ? 20 : 24,
+  },
+  photoInfoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: isSmallScreen ? 6 : 8,
+    backgroundColor: "rgba(245, 158, 11, 0.25)",
+    paddingVertical: isSmallScreen ? 10 : 12,
+    paddingHorizontal: isSmallScreen ? 14 : 18,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: "rgba(245, 158, 11, 0.5)",
+    alignSelf: "flex-start",
+    shadowColor: "#F59E0B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  photoInfoText: {
+    ...typography.caption,
+    color: "#FCD34D",
+    fontSize: isSmallScreen ? 12 : 13,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  photoViewerActions: {
+    flexDirection: "row",
+    gap: isSmallScreen ? 10 : 14,
+    paddingHorizontal: isSmallScreen ? 16 : 24,
+    paddingTop: isSmallScreen ? 18 : 22,
+    paddingBottom: isSmallScreen ? 20 : 24,
+    backgroundColor: "rgba(15, 23, 42, 0.98)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(99, 102, 241, 0.2)",
+  },
+  photoActionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: isSmallScreen ? 6 : 8,
+    paddingVertical: isSmallScreen ? 14 : 16,
+    paddingHorizontal: isSmallScreen ? 16 : 20,
+    borderRadius: 16,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    borderWidth: 2,
+    borderColor: "rgba(239, 68, 68, 0.4)",
+    shadowColor: "#EF4444",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  photoActionButtonPrimary: {
+    backgroundColor: "rgba(16, 185, 129, 0.95)",
+    borderColor: "rgba(16, 185, 129, 1)",
+    shadowColor: "#10B981",
+    shadowOpacity: 0.4,
+    elevation: 6,
+  },
+  photoActionButtonText: {
+    ...typography.subtitle,
+    color: "#EF4444",
+    fontSize: isSmallScreen ? 14 : 15,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  photoViewerHint: {
+    ...typography.caption,
+    color: "rgba(255, 255, 255, 0.45)",
+    fontSize: isSmallScreen ? 11 : 12,
+    textAlign: "center",
+    marginTop: isSmallScreen ? 14 : 18,
+    fontStyle: "italic",
+    letterSpacing: 0.5,
   },
 });
