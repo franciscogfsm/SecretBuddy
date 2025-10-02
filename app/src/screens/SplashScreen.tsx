@@ -18,6 +18,7 @@ import {
 import type { RootStackParamList } from "../navigation/types";
 import { colors, typography } from "../theme";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useAuth } from "../context/AuthContext";
 
 export const useEntranceHaptics = () => {
   useEffect(() => {
@@ -56,6 +57,7 @@ const { width, height } = Dimensions.get("window");
 type Props = NativeStackScreenProps<RootStackParamList, "Splash">;
 
 export const SplashScreen = ({ navigation }: Props) => {
+  const { user, initializing } = useAuth();
   const fadeAnim = useState(new Animated.Value(0))[0];
   const scaleAnim = useState(new Animated.Value(0.9))[0];
   const logoAnim = useState(new Animated.Value(0))[0];
@@ -111,16 +113,25 @@ export const SplashScreen = ({ navigation }: Props) => {
             if (i === fullText.length) {
               setShowTagline(true);
               clearInterval(interval);
-              // Navigate to auth screen after typing completes
+              // Navigate after typing completes
               setTimeout(() => {
-                navigation.replace("AuthOptions");
+                // Check if user is authenticated
+                if (!initializing) {
+                  if (user) {
+                    // User is logged in, go to MainTabs (Home)
+                    navigation.replace("MainTabs");
+                  } else {
+                    // User not logged in, go to AuthOptions
+                    navigation.replace("AuthOptions");
+                  }
+                }
               }, 800);
             }
           }, 60);
         }, 100);
       });
     });
-  }, []);
+  }, [initializing, user]);
 
   return (
     <View style={styles.container}>
