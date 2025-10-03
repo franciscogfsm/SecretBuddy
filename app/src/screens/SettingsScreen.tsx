@@ -137,14 +137,14 @@ export const SettingsScreen = () => {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
+        {/* Security Badge - Prominent and standalone */}
+        <View style={styles.securityBadgeContainer}>
+          <SecurityBadge variant="full" />
+        </View>
+
         {/* Safety & Privacy Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Safety & Privacy</Text>
-
-          {/* Security Badge */}
-          <View style={{ marginBottom: 16 }}>
-            <SecurityBadge variant="full" />
-          </View>
 
           <TouchableOpacity
             style={styles.settingItem}
@@ -199,7 +199,7 @@ export const SettingsScreen = () => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.settingItem}
+            style={[styles.settingItem, styles.settingItemLast]}
             onPress={handleSafetyGuidelines}
           >
             <View style={styles.settingLeft}>
@@ -335,7 +335,7 @@ export const SettingsScreen = () => {
             />
           </View>
 
-          <View style={styles.settingItem}>
+          <View style={[styles.settingItem, styles.settingItemLast]}>
             <View style={styles.settingLeft}>
               <View style={styles.settingIcon}>
                 <Ionicons
@@ -378,7 +378,7 @@ export const SettingsScreen = () => {
         >
           <Text style={styles.sectionTitle}>App Settings</Text>
 
-          <View style={styles.settingItem}>
+          <View style={[styles.settingItem, styles.settingItemLast]}>
             <View style={styles.settingLeft}>
               <View style={styles.settingIcon}>
                 <Ionicons
@@ -488,10 +488,7 @@ export const SettingsScreen = () => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.settingItem,
-              { borderColor: colors.accentPink + "40" },
-            ]}
+            style={[styles.settingItem, styles.settingItemLast]}
             onPress={handleSignOut}
             disabled={authLoading}
           >
@@ -528,9 +525,9 @@ export const SettingsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 100,
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 120,
   },
 
   // Header Styles
@@ -568,16 +565,23 @@ const styles = StyleSheet.create({
 
   // Section Styles
   section: {
-    marginBottom: 32,
+    marginBottom: 40,
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.04)",
   },
 
   sectionTitle: {
     ...typography.title,
     color: colors.textPrimary,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700",
-    marginBottom: 20,
-    marginLeft: 4,
+    marginBottom: 16,
+    marginTop: 12,
+    paddingHorizontal: 4,
   },
 
   // Setting Item Styles
@@ -585,13 +589,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    backgroundColor: "rgba(6, 0, 18, 0.6)",
-    borderRadius: 16,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    paddingVertical: 20,
+    paddingHorizontal: 4,
+    marginBottom: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
+  },
+
+  settingItemLast: {
+    borderBottomWidth: 0,
+    marginBottom: 0,
   },
 
   settingLeft: {
@@ -601,10 +608,10 @@ const styles = StyleSheet.create({
   },
 
   settingIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 16,
@@ -619,7 +626,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 2,
+    marginBottom: 4,
   },
 
   settingDescription: {
@@ -627,6 +634,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 18,
+    opacity: 0.8,
+  },
+
+  // Security Badge Container
+  securityBadgeContainer: {
+    marginBottom: 32,
+    paddingHorizontal: 4,
   },
 
   // Footer Space

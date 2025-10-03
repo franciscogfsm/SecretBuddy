@@ -624,94 +624,164 @@ export const HomeScreen = () => {
             </View>
           </Animated.View>
         )}
-        <Animated.View
-          style={[
-            styles.promptCardContainer,
-            {
-              transform: [{ scale: scaleAnim }, { translateY: floatAnim }],
-            },
-          ]}
-        >
-          <Animated.View
-            style={[
-              styles.promptCard,
-              {
-                shadowOpacity: glowAnim,
-              },
-            ]}
-          >
-            <View style={styles.promptHeader}>
-              <View style={styles.promptIconContainer}>
-                <Ionicons name="camera" size={32} color="#ffffff" />
+        {/* Photo Challenge Card */}
+        <View style={styles.photoChallengeCard}>
+          {/* Header with Timer */}
+          <View style={styles.photoChallengeHeader}>
+            <View style={styles.photoChallengeHeaderLeft}>
+              <View style={styles.photoChallengeIconContainer}>
+                <Ionicons name="camera" size={28} color={colors.accentPurple} />
               </View>
-              <View style={styles.promptHeaderText}>
-                <Text style={styles.promptTitle}>Photo Challenge</Text>
-                <View style={styles.promptTimer}>
-                  <Ionicons name="timer-outline" size={18} color="#6366F1" />
-                  <Text style={styles.promptTime}>
-                    {nextPromptTime
-                      ? `${Math.max(
-                          0,
-                          Math.floor(
-                            (nextPromptTime.getTime() - new Date().getTime()) /
-                              (1000 * 60)
-                          )
-                        )} minutes left`
-                      : "30 minutes remaining"}
-                  </Text>
-                </View>
+              <View>
+                <Text style={styles.photoChallengeTitle}>Send Photo</Text>
+                <Text style={styles.photoChallengeSubtitle}>
+                  To your mystery buddy
+                </Text>
               </View>
             </View>
 
-            <View style={styles.promptContent}>
-              <Text style={styles.promptText}>
-                {
-                  randomPrompts[
-                    Math.floor(Math.random() * randomPrompts.length)
-                  ]
+            {/* Countdown Timer */}
+            <View
+              style={[
+                styles.photoChallengeTimerChip,
+                nextPromptTime &&
+                (nextPromptTime.getTime() - new Date().getTime()) /
+                  (1000 * 60) <=
+                  5
+                  ? styles.photoChallengeTimerUrgent
+                  : nextPromptTime &&
+                    (nextPromptTime.getTime() - new Date().getTime()) /
+                      (1000 * 60) <=
+                      1
+                  ? styles.photoChallengeTimerCritical
+                  : null,
+              ]}
+            >
+              <Ionicons
+                name="timer-outline"
+                size={16}
+                color={
+                  nextPromptTime &&
+                  (nextPromptTime.getTime() - new Date().getTime()) /
+                    (1000 * 60) <=
+                    1
+                    ? colors.danger
+                    : nextPromptTime &&
+                      (nextPromptTime.getTime() - new Date().getTime()) /
+                        (1000 * 60) <=
+                        5
+                    ? colors.accentPink
+                    : colors.accentPurple
                 }
+              />
+              <Text
+                style={[
+                  styles.photoChallengeTimerText,
+                  {
+                    color:
+                      nextPromptTime &&
+                      (nextPromptTime.getTime() - new Date().getTime()) /
+                        (1000 * 60) <=
+                        1
+                        ? colors.danger
+                        : nextPromptTime &&
+                          (nextPromptTime.getTime() - new Date().getTime()) /
+                            (1000 * 60) <=
+                            5
+                        ? colors.accentPink
+                        : colors.accentPurple,
+                  },
+                ]}
+              >
+                {nextPromptTime
+                  ? `${Math.max(
+                      0,
+                      Math.floor(
+                        (nextPromptTime.getTime() - new Date().getTime()) /
+                          (1000 * 60)
+                      )
+                    )}:${String(
+                      Math.max(
+                        0,
+                        Math.floor(
+                          ((nextPromptTime.getTime() - new Date().getTime()) %
+                            (1000 * 60)) /
+                            1000
+                        )
+                      )
+                    ).padStart(2, "0")}`
+                  : "5:00"}
               </Text>
-
-              <View style={styles.promptActions}>
-                <TouchableOpacity
-                  style={styles.cameraButton}
-                  onPress={takeBackPhoto}
-                >
-                  <View style={styles.cameraButtonIcon}>
-                    <Ionicons
-                      name="camera"
-                      size={24}
-                      color={colors.textPrimary}
-                    />
-                  </View>
-                  <Text style={styles.cameraButtonText}>Take Photo</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.emojiButton}
-                  onPress={() =>
-                    Alert.alert("Quick React", "Send a reaction to your buddy!")
-                  }
-                >
-                  <Text style={styles.emojiButtonText}>Skip</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.promptRules}>
-                <Text style={styles.promptRuleText}>
-                  • Keep your identity anonymous
-                </Text>
-                <Text style={styles.promptRuleText}>
-                  • No selfies or personal photos allowed
-                </Text>
-                <Text style={styles.promptHintText}>
-                  Your mystery buddy will see this photo but not know it's you
-                  until reveal time
-                </Text>
-              </View>
             </View>
-          </Animated.View>
-        </Animated.View>
+          </View>
+
+          {/* Challenge Prompt */}
+          <View style={styles.photoChallengePromptContainer}>
+            <Text style={styles.photoChallengePromptLabel}>
+              TODAY'S CHALLENGE:
+            </Text>
+            <Text style={styles.photoChallengePromptText}>
+              {randomPrompts[Math.floor(Math.random() * randomPrompts.length)]}
+            </Text>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.photoChallengeActionContainer}>
+            <TouchableOpacity
+              style={styles.photoChallengePrimaryButton}
+              onPress={takeBackPhoto}
+              activeOpacity={0.8}
+            >
+              <View style={styles.photoChallengeButtonIcon}>
+                <Ionicons name="camera" size={24} color={colors.textPrimary} />
+              </View>
+              <Text style={styles.photoChallengePrimaryButtonText}>
+                Take Photo
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.photoChallengeSecondaryButton}
+              onPress={() => {
+                Alert.alert(
+                  "Photo Challenge Skipped",
+                  "You can try again later!"
+                );
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.photoChallengeSecondaryButtonText}>Skip</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Rules Footer */}
+          <View style={styles.photoChallengeRulesContainer}>
+            <View style={styles.photoChallengeRuleItem}>
+              <Ionicons
+                name="shield-checkmark"
+                size={14}
+                color={colors.accentTeal}
+              />
+              <Text style={styles.photoChallengeRuleText}>
+                Keep your identity anonymous
+              </Text>
+            </View>
+            <View style={styles.photoChallengeRuleItem}>
+              <Ionicons
+                name="person-remove"
+                size={14}
+                color={colors.accentTeal}
+              />
+              <Text style={styles.photoChallengeRuleText}>
+                No selfies or personal photos allowed
+              </Text>
+            </View>
+            <Text style={styles.photoChallengeHintText}>
+              Your mystery buddy will see this photo but not know it's you until
+              reveal time
+            </Text>
+          </View>
+        </View>
 
         {/* Received Photo from Mystery Buddy - Priority over photo challenge */}
         {(() => {
@@ -1279,43 +1349,233 @@ const styles = StyleSheet.create({
     paddingBottom: 140,
     gap: isSmallScreen ? 20 : 28,
   },
-  promptCardContainer: {
-    // Container for transform animations (native driver)
-  },
-  promptCard: {
-    borderRadius: 20,
-    backgroundColor: "rgba(15, 23, 42, 0.95)",
-    borderWidth: 1.5,
-    borderColor: "rgba(99, 102, 241, 0.5)",
+  // Photo Challenge Card (integrated in HomeScreen)
+  photoChallengeCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    marginHorizontal: 0,
+    marginVertical: 20,
     padding: 24,
-    shadowColor: "#6366F1",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: colors.accentPurple,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
     elevation: 12,
   },
 
+  photoChallengeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
+  },
+
+  photoChallengeHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+
+  photoChallengeIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: colors.accentPurple + "20",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 16,
+  },
+
+  photoChallengeTitle: {
+    ...typography.title,
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+
+  photoChallengeSubtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+
+  photoChallengeTimerChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: colors.accentPurple + "20",
+    borderColor: colors.accentPurple + "40",
+    gap: 6,
+  },
+
+  photoChallengeTimerUrgent: {
+    backgroundColor: colors.accentPink + "20",
+    borderColor: colors.accentPink + "40",
+  },
+
+  photoChallengeTimerCritical: {
+    backgroundColor: colors.danger + "20",
+    borderColor: colors.danger + "40",
+  },
+
+  photoChallengeTimerText: {
+    ...typography.subtitle,
+    fontSize: 16,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+
+  photoChallengePromptContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+
+  photoChallengePromptLabel: {
+    ...typography.caption,
+    color: colors.accentPurple,
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+
+  photoChallengePromptText: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 18,
+    lineHeight: 26,
+    textAlign: "center",
+  },
+
+  photoChallengeActionContainer: {
+    gap: 12,
+    marginBottom: 24,
+  },
+
+  photoChallengePrimaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.accentPurple,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    gap: 12,
+    shadowColor: colors.accentPurple,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+
+  photoChallengeButtonIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  photoChallengePrimaryButtonText: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+
+  photoChallengeSecondaryButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+
+  photoChallengeSecondaryButtonText: {
+    ...typography.subtitle,
+    color: colors.textSecondary,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
+  photoChallengeRulesContainer: {
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
+  },
+
+  photoChallengeRuleItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    gap: 8,
+  },
+
+  photoChallengeRuleText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 13,
+    flex: 1,
+  },
+
+  photoChallengeHintText: {
+    ...typography.caption,
+    color: colors.accentTeal,
+    fontSize: 12,
+    fontStyle: "italic",
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 16,
+  },
+
   promptHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 16,
+    justifyContent: "space-between",
+    marginBottom: 20,
   },
   promptTitle: {
     ...typography.subtitle,
-    color: "#FFFFFF",
+    color: colors.textPrimary,
     fontSize: 20,
     fontWeight: "700",
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  promptSubtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 13,
   },
   promptText: {
     ...typography.body,
-    color: "#F0F0F0",
-    fontSize: 16,
+    color: colors.textPrimary,
+    fontSize: 17,
     fontWeight: "500",
-    marginBottom: 20,
-    lineHeight: 24,
+    lineHeight: 26,
     textAlign: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
   },
   promptTime: {
     ...typography.caption,
@@ -1328,21 +1588,15 @@ const styles = StyleSheet.create({
   promptIconContainer: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: "#6366F1",
+    borderRadius: 16,
+    backgroundColor: colors.accentPink + "20",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 16,
-    shadowColor: "#6366F1",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
   },
 
   promptHeaderText: {
     flex: 1,
-    gap: 8,
+    marginLeft: 16,
   },
 
   promptTimer: {
@@ -1350,15 +1604,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  promptTimerChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.accentPurple + "20",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.accentPurple + "40",
+    gap: 6,
+  },
+
+  promptTimerUrgent: {
+    backgroundColor: colors.danger + "20",
+    borderColor: colors.danger + "40",
+  },
+
+  promptTimeText: {
+    ...typography.subtitle,
+    color: colors.accentPurple,
+    fontSize: 14,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+
   promptContent: {
-    gap: 20,
-    marginTop: 16,
+    gap: 24,
   },
 
   promptActions: {
     flexDirection: "row",
     gap: 12,
-    marginTop: 8,
   },
 
   promptActionButton: {
@@ -1690,33 +1967,37 @@ const styles = StyleSheet.create({
 
   // Camera Button Styles
   cameraButton: {
-    backgroundColor: "#6366F1",
+    backgroundColor: colors.accentPink,
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 24,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
+    gap: 12,
     flex: 1,
-    shadowColor: "#6366F1",
+    shadowColor: colors.accentPink,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
   cameraButtonIcon: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 20,
-    padding: 6,
+    borderRadius: 8,
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
   },
   cameraButtonText: {
-    color: "#FFFFFF",
+    ...typography.subtitle,
+    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: "700",
   },
   emojiButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 20,
@@ -1724,36 +2005,40 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minWidth: 100,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   emojiButtonText: {
-    color: colors.textPrimary,
+    ...typography.subtitle,
+    color: colors.textSecondary,
     fontSize: 14,
     fontWeight: "600",
   },
 
   // New Prompt Rules Styles
   promptRules: {
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
-    borderRadius: 12,
-    padding: 16,
-    gap: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: "#6366F1",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 16,
+    padding: 20,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    marginTop: 4,
   },
   promptRuleText: {
     ...typography.caption,
-    color: "#E0E0E0",
+    color: colors.textSecondary,
     fontSize: 13,
     fontWeight: "500",
+    lineHeight: 18,
   },
   promptHintText: {
     ...typography.caption,
-    color: "#A0A0A0",
+    color: colors.accentTeal,
     fontSize: 12,
     fontStyle: "italic",
-    marginTop: 4,
+    marginTop: 8,
     lineHeight: 16,
+    textAlign: "center",
   },
 
   // No Selfies Warning Styles
