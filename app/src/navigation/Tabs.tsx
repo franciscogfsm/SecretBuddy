@@ -20,6 +20,7 @@ import { TopHeader } from "../components/TopHeader";
 import { colors } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import * as chatService from "../services/chatService";
+import * as photoService from "../services/photoService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -162,7 +163,8 @@ const getTabIconName = (
 
 type AnimatedTabBarProps = BottomTabBarProps & {
   bottomOffset: number;
-  unreadMessagesCount: number; // Add unread count
+  unreadMessagesCount: number;
+  unviewedPhotosCount: number; // Add photo count
 };
 
 const AnimatedTabBar = ({
@@ -171,6 +173,7 @@ const AnimatedTabBar = ({
   navigation,
   bottomOffset,
   unreadMessagesCount,
+  unviewedPhotosCount,
 }: AnimatedTabBarProps) => {
   const [containerWidth, setContainerWidth] = useState(0);
   const indicatorPosition = useRef(new Animated.Value(state.index)).current;
@@ -252,7 +255,13 @@ const AnimatedTabBar = ({
             descriptors={descriptors}
             isFocused={state.index === index}
             tabWidth={tabWidth}
-            unreadCount={route.name === "Matches" ? unreadMessagesCount : 0}
+            unreadCount={
+              route.name === "Matches"
+                ? unreadMessagesCount
+                : route.name === "Home"
+                ? unviewedPhotosCount
+                : 0
+            }
           />
         ))}
       </View>
@@ -394,8 +403,9 @@ const AnimatedTabBarItem = ({
             size={24}
             color={isFocused ? colors.accentPurple : colors.textSecondary}
           />
-          {/* Notification badge for Matches tab */}
-          {route.name === "Matches" && unreadCount > 0 && (
+          {/* Notification badge for Matches and Home tabs */}
+          {((route.name === "Matches" && unreadCount > 0) ||
+            (route.name === "Home" && unreadCount > 0)) && (
             <View style={styles.notificationDot} />
           )}
         </Animated.View>
@@ -409,6 +419,7 @@ export const HomeTabs = () => {
   const bottomOffset = 0;
   const { user } = useAuth();
   const [hasNewMessages, setHasNewMessages] = useState(false);
+  const [unviewedPhotosCount, setUnviewedPhotosCount] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Listen for when Matches screen becomes focused to refresh badge
@@ -465,6 +476,30 @@ export const HomeTabs = () => {
     };
   }, [user, refreshKey]); // Add refreshKey to dependencies
 
+  // Check for unviewed photos
+  useEffect(() => {
+    if (!user) {
+      setUnviewedPhotosCount(0);
+      return;
+    }
+
+    const checkForUnviewedPhotos = async () => {
+      try {
+        const photos = await photoService.getUnviewedPhotos(user.uid);
+        setUnviewedPhotosCount(photos.length);
+      } catch (error) {
+        console.error("Error checking for unviewed photos:", error);
+      }
+    };
+
+    checkForUnviewedPhotos();
+
+    // Poll for new photos every 30 seconds
+    const interval = setInterval(checkForUnviewedPhotos, 30000);
+
+    return () => clearInterval(interval);
+  }, [user]);
+
   return (
     <View style={{ flex: 1 }}>
       <TopHeader />
@@ -479,6 +514,7 @@ export const HomeTabs = () => {
             {...props}
             bottomOffset={bottomOffset}
             unreadMessagesCount={hasNewMessages ? 1 : 0}
+            unviewedPhotosCount={unviewedPhotosCount}
           />
         )}
       >

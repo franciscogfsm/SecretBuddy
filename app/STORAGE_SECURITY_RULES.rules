@@ -68,6 +68,30 @@ service firebase.storage {
     }
     
     // ============================================
+    // PHOTO CHALLENGES
+    // ============================================
+    // Format: photos/{senderId}/{receiverId}_{timestamp}.jpg
+    match /photos/{senderId}/{fileName} {
+      // Read: Only sender and receiver can view
+      // fileName format: receiverId_timestamp.jpg
+      allow read: if isSignedIn() && (
+        isOwner(senderId) || 
+        fileName.matches('^' + request.auth.uid + '_.*\\.(jpg|jpeg|png|gif|webp)$')
+      );
+      
+      // Write: Only sender can upload to their own folder, must be image under 5MB
+      allow write: if isOwner(senderId)
+        && isImage()
+        && isUnder5MB();
+      
+      // Delete: Sender OR receiver (receiver's UID must be at start of fileName)
+      allow delete: if isSignedIn() && (
+        isOwner(senderId) ||
+        fileName.matches('^' + request.auth.uid + '_.*\\.(jpg|jpeg|png|gif|webp)$')
+      );
+    }
+    
+    // ============================================
     // CHAT PHOTOS (Future feature)
     // ============================================
     match /chat_photos/{conversationId}/{messageId}/{fileName} {

@@ -49,7 +49,7 @@ export interface Conversation {
 const MESSAGES_COLLECTION = "messages";
 const CONVERSATIONS_COLLECTION = "conversations";
 const MAX_MESSAGE_LENGTH = 500; // Character limit per message
-const MESSAGES_PER_BATCH = 50; // Load 50 messages at a time
+const MESSAGES_PER_BATCH = 10; // Load only 10 messages initially for faster loading
 
 /**
  * Get midnight of the current day (for expiration)
@@ -200,17 +200,25 @@ export const sendMessage = async (
 /**
  * Get messages for a conversation (with real-time updates)
  * 🔐 Messages are automatically decrypted when received
- * Simplified query to avoid composite index requirement
+ * Optimized for super fast loading - only loads recent messages
  */
 export const subscribeToMessages = (
   conversationId: string,
   onMessagesUpdate: (messages: ChatMessage[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  messageLimit: number = MESSAGES_PER_BATCH // Allow custom limit
 ) => {
   try {
     const messagesRef = collection(db, MESSAGES_COLLECTION);
-    // Simple query - only filter by conversationId, sort in memory
-    const q = query(messagesRef, where("conversationId", "==", conversationId));
+
+    // Optimized query: filter by conversation, order by timestamp DESC, limit results
+    // This uses Firebase's server-side limit for maximum performance
+    const q = query(
+      messagesRef,
+      where("conversationId", "==", conversationId),
+      orderBy("timestamp", "desc"),
+      limit(messageLimit)
+    );
 
     const unsubscribe = onSnapshot(
       q,
@@ -243,17 +251,10 @@ export const subscribeToMessages = (
           } as ChatMessage);
         }
 
-        // Sort by timestamp in memory (oldest first)
-        messages.sort((a, b) => {
-          const aTime = a.timestamp?.toMillis?.() || 0;
-          const bTime = b.timestamp?.toMillis?.() || 0;
-          return aTime - bTime;
-        });
+        // Reverse since we queried DESC (newest first) but want to display oldest first
+        messages.reverse();
 
-        // Limit to most recent messages
-        const limitedMessages = messages.slice(-MESSAGES_PER_BATCH);
-
-        onMessagesUpdate(limitedMessages);
+        onMessagesUpdate(messages);
       },
       (error) => {
         console.error("❌ Error in message subscription:", error);

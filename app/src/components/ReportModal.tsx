@@ -25,6 +25,7 @@ interface ReportModalProps {
   targetName?: string;
   reportedUserId: string; // User being reported
   reportingUserId: string; // User making the report
+  photoUrl?: string; // Photo URL for photo reports
 }
 
 const reportCategories: {
@@ -78,6 +79,7 @@ export const ReportModal = ({
   targetName,
   reportedUserId,
   reportingUserId,
+  photoUrl,
 }: ReportModalProps) => {
   const [selectedCategory, setSelectedCategory] =
     useState<ReportCategory | null>(null);
@@ -104,7 +106,9 @@ export const ReportModal = ({
         reportingUserId,
         reportedUserId,
         selectedCategory,
-        description.trim()
+        description.trim(),
+        photoUrl, // Pass photo URL
+        reportType // Pass report type
       );
 
       if (result.success) {

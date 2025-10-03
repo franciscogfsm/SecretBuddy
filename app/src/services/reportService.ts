@@ -34,6 +34,8 @@ export interface Report {
   status: "pending" | "reviewed" | "dismissed";
   reviewedAt?: any;
   reviewedBy?: string;
+  photoUrl?: string; // For photo reports
+  reportType?: "user" | "photo" | "message"; // Type of report
 }
 
 export interface UserReportSummary {
@@ -49,14 +51,16 @@ const USER_REPORTS_COLLECTION = "userReports";
 const AUTO_BAN_THRESHOLD = 5; // Ban after 5 unique reports
 
 /**
- * Report a user
+ * Report a user or content (photo/message)
  * Prevents duplicate reports from the same user
  */
 export const reportUser = async (
   reportingUserId: string,
   reportedUserId: string,
   reason: ReportReason,
-  details?: string
+  details?: string,
+  photoUrl?: string,
+  reportType?: "user" | "photo" | "message"
 ): Promise<{ success: boolean; message: string; reportId?: string }> => {
   try {
     // 1. Check if user has already reported this person
@@ -65,7 +69,8 @@ export const reportUser = async (
       reportedUserId
     );
 
-    if (existingReport) {
+    if (existingReport && !photoUrl) {
+      // Allow multiple photo reports, but not duplicate user reports
       return {
         success: false,
         message: "You have already reported this user",
@@ -83,9 +88,13 @@ export const reportUser = async (
       details,
       timestamp: serverTimestamp(),
       status: "pending",
+      ...(photoUrl && { photoUrl }), // Add photo URL if provided
+      ...(reportType && { reportType }), // Add report type if provided
     };
 
     await setDoc(newReportRef, reportData);
+
+    console.log(`✅ ${reportType || "User"} report created:`, newReportRef.id);
 
     // 3. Update or create userReports summary
     const userReportRef = doc(db, USER_REPORTS_COLLECTION, reportedUserId);

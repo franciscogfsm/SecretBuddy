@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Alert,
   Animated,
@@ -41,6 +41,9 @@ export const ChatScreen = () => {
   const { user } = useAuth();
 
   const [messages, setMessages] = useState<MessageType[]>([]);
+  const [allMessages, setAllMessages] = useState<MessageType[]>([]); // Store all messages
+  const [displayedMessageCount, setDisplayedMessageCount] = useState(10); // Start with only 10 for faster loading
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [conversationExpired, setConversationExpired] = useState(false);
@@ -51,6 +54,9 @@ export const ChatScreen = () => {
   const [partnerProfileData, setPartnerProfileData] = useState<any>(null);
 
   const flatListRef = useRef<FlatList<MessageType>>(null);
+  const isUserScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const shouldAutoScrollRef = useRef(true);
   const insets = useSafeAreaInsets();
   const tabBarHeight = 0;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -77,7 +83,12 @@ export const ChatScreen = () => {
       });
     }, 3000);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Initialize conversation if it doesn't exist (for test/new chats)
@@ -158,15 +169,26 @@ export const ChatScreen = () => {
         }));
 
         setMessages((prevMessages) => {
-          // Keep only optimistic messages (temp_* IDs) that are still sending or failed
-          const pendingOptimistic = prevMessages.filter(
-            (msg) =>
-              msg.id.startsWith("temp_") &&
-              (msg.status === "sending" || msg.status === "failed")
+          // Check if there are new messages from Firebase
+          const hasNewMessage = uiMessages.length > prevMessages.length;
+
+          // Sort by timestamp to ensure correct order
+          uiMessages.sort(
+            (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
           );
 
-          // Merge Firebase messages with pending optimistic ones
-          return [...uiMessages, ...pendingOptimistic];
+          // Store ALL messages for pagination
+          setAllMessages(uiMessages);
+
+          // Display only the most recent messages based on displayedMessageCount
+          const recentMessages = uiMessages.slice(-displayedMessageCount);
+
+          // Enable auto-scroll for ANY new message (yours or theirs)
+          if (hasNewMessage) {
+            shouldAutoScrollRef.current = true;
+          }
+
+          return recentMessages;
         });
 
         setLoading(false);
@@ -191,6 +213,31 @@ export const ChatScreen = () => {
     return () => unsubscribe();
   }, [actualConversationId, user]);
 
+  // Auto-scroll to bottom when new messages arrive or when sending
+  useEffect(() => {
+    if (messages.length === 0) return;
+
+    // Always scroll if we should auto-scroll
+    if (shouldAutoScrollRef.current) {
+      // Multiple aggressive scroll attempts for instant feedback
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToEnd({ animated: false }); // Instant, no animation
+      });
+
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 50);
+
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 150);
+
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 300);
+    }
+  }, [messages]); // Depend on messages array, not just length
+
   // Check if conversation is expired or ended
   useEffect(() => {
     const checkConversationStatus = async () => {
@@ -213,8 +260,8 @@ export const ChatScreen = () => {
     };
     checkConversationStatus();
 
-    // Check every minute
-    const interval = setInterval(checkConversationStatus, 60000);
+    // Check every 5 minutes instead of every minute to reduce API calls
+    const interval = setInterval(checkConversationStatus, 300000);
     return () => clearInterval(interval);
   }, [actualConversationId, user]);
 
@@ -224,10 +271,19 @@ export const ChatScreen = () => {
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
       () => {
         setKeyboardVisible(true);
-        // Auto-scroll to show latest message when keyboard opens
+        shouldAutoScrollRef.current = true;
+        isUserScrollingRef.current = false;
+
+        // Multiple scroll attempts when keyboard opens
+        requestAnimationFrame(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        });
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 300);
       }
     );
     const hideSub = Keyboard.addListener(
@@ -321,6 +377,31 @@ export const ChatScreen = () => {
 
   const statusLabel = `Active • ${getTimeUntilMidnight()}`;
 
+  // Load older messages when scrolling up
+  const handleLoadOlderMessages = useCallback(() => {
+    if (loadingOlder || displayedMessageCount >= allMessages.length) {
+      return; // Already loading or all messages displayed
+    }
+
+    setLoadingOlder(true);
+
+    // Load 10 more messages at a time for faster incremental loading
+    setTimeout(() => {
+      setDisplayedMessageCount((prev) =>
+        Math.min(prev + 10, allMessages.length)
+      );
+      setLoadingOlder(false);
+    }, 200); // Reduced delay for faster loading
+  }, [loadingOlder, displayedMessageCount, allMessages.length]);
+
+  // Update displayed messages when count changes
+  useEffect(() => {
+    if (allMessages.length > 0) {
+      const recentMessages = allMessages.slice(-displayedMessageCount);
+      setMessages(recentMessages);
+    }
+  }, [displayedMessageCount, allMessages]);
+
   // Only scroll to bottom when user sends a new message
   const handleSendMessage = async (text: string) => {
     if (
@@ -332,51 +413,37 @@ export const ChatScreen = () => {
     )
       return;
 
-    // Create optimistic message ID
-    const optimisticId = `temp_${Date.now()}`;
-
-    // Add message immediately to UI (optimistic update)
-    const optimisticMessage: MessageType = {
-      id: optimisticId,
-      text,
-      timestamp: new Date(),
-      isFromUser: true,
-      status: "sending",
-    };
-
-    setMessages((prev) => [...prev, optimisticMessage]);
-
-    // Scroll to bottom immediately
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+    // Enable auto-scroll for when message appears
+    shouldAutoScrollRef.current = true;
+    isUserScrollingRef.current = false;
 
     setSending(true);
 
     try {
-      // Send message in background
+      // Send message directly - Firebase listener will add it to UI instantly
       await chatService.sendMessage(actualConversationId, user.uid, text);
 
-      // Remove the optimistic message - Firebase will provide the real one
-      setMessages((prev) => prev.filter((msg) => msg.id !== optimisticId));
+      // Multiple scroll attempts to ensure message is visible
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      });
+
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 300);
     } catch (error: any) {
       console.error("Error sending message:", error);
 
-      // Update status to failed
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === optimisticId
-            ? { ...msg, status: "failed", error: error.message }
-            : msg
-        )
-      );
-
-      // Show offline/error message
+      // Show error message
       Alert.alert(
         "Message Failed",
         error.message?.includes("offline") || error.message?.includes("network")
-          ? "You appear to be offline. The message will be retried when you're back online."
-          : "Could not send message. Tap the retry button to try again.",
+          ? "You appear to be offline. Please check your connection and try again."
+          : "Could not send message. Please try again.",
         [{ text: "OK" }]
       );
     } finally {
@@ -384,51 +451,35 @@ export const ChatScreen = () => {
     }
   };
 
-  // Retry sending a failed message
-  const handleRetryMessage = async (messageId: string) => {
-    const failedMessage = messages.find((msg) => msg.id === messageId);
-    if (!failedMessage || !user || !actualConversationId) return;
+  // Retry sending a failed message (simplified - no optimistic updates)
+  const handleRetryMessage = useCallback(
+    async (messageId: string) => {
+      const failedMessage = messages.find((msg) => msg.id === messageId);
+      if (!failedMessage || !user || !actualConversationId) return;
 
-    // Update status to sending
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId ? { ...msg, status: "sending" } : msg
-      )
-    );
+      try {
+        await chatService.sendMessage(
+          actualConversationId,
+          user.uid,
+          failedMessage.text || ""
+        );
+        // Firebase listener will add the message automatically
+      } catch (error: any) {
+        console.error("Error retrying message:", error);
+        Alert.alert(
+          "Retry Failed",
+          "Could not send message. Please check your connection and try again.",
+          [{ text: "OK" }]
+        );
+      }
+    },
+    [messages, user, actualConversationId]
+  );
 
-    try {
-      await chatService.sendMessage(
-        actualConversationId,
-        user.uid,
-        failedMessage.text || ""
-      );
-
-      // Remove the optimistic message - Firebase will provide the real one
-      setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
-    } catch (error: any) {
-      console.error("Error retrying message:", error);
-
-      // Update status back to failed
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId
-            ? { ...msg, status: "failed", error: error.message }
-            : msg
-        )
-      );
-
-      Alert.alert(
-        "Retry Failed",
-        "Still unable to send message. Please check your connection.",
-        [{ text: "OK" }]
-      );
-    }
-  };
-
-  const handleReportPhoto = (messageId: string) => {
+  const handleReportPhoto = useCallback((messageId: string) => {
     setReportingMessageId(messageId);
     setReportModalVisible(true);
-  };
+  }, []);
 
   const handleEndConversation = async () => {
     Alert.alert(
@@ -470,12 +521,15 @@ export const ChatScreen = () => {
     setProfileModalVisible(true);
   };
 
-  const renderMessage = ({ item }: { item: MessageType }) => (
-    <ChatMessage
-      message={item}
-      onReportPhoto={handleReportPhoto}
-      onRetry={handleRetryMessage}
-    />
+  const renderMessage = useCallback(
+    ({ item }: { item: MessageType }) => (
+      <ChatMessage
+        message={item}
+        onReportPhoto={handleReportPhoto}
+        onRetry={handleRetryMessage}
+      />
+    ),
+    [handleReportPhoto, handleRetryMessage]
   );
 
   return (
@@ -589,12 +643,71 @@ export const ChatScreen = () => {
                     data={messages}
                     keyExtractor={(item) => item.id}
                     renderItem={renderMessage}
+                    ListHeaderComponent={
+                      loadingOlder &&
+                      displayedMessageCount < allMessages.length ? (
+                        <View style={styles.loadingOlderContainer}>
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.accentPurple}
+                          />
+                          <Text style={styles.loadingOlderText}>
+                            Loading older messages...
+                          </Text>
+                        </View>
+                      ) : null
+                    }
                     contentContainerStyle={[
                       styles.messagesContainer,
                       { paddingBottom: listBottomPadding },
                     ]}
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
+                    removeClippedSubviews={true}
+                    maxToRenderPerBatch={10}
+                    updateCellsBatchingPeriod={50}
+                    initialNumToRender={15}
+                    windowSize={10}
+                    maintainVisibleContentPosition={{
+                      minIndexForVisible: 0,
+                    }}
+                    onScrollBeginDrag={() => {
+                      isUserScrollingRef.current = true;
+                      if (scrollTimeoutRef.current) {
+                        clearTimeout(scrollTimeoutRef.current);
+                      }
+                    }}
+                    onScroll={(event) => {
+                      // Load older messages when scrolled near top
+                      const { contentOffset } = event.nativeEvent;
+                      if (contentOffset.y < 100 && !loadingOlder) {
+                        handleLoadOlderMessages();
+                      }
+                    }}
+                    scrollEventThrottle={400}
+                    onMomentumScrollEnd={(event) => {
+                      const { layoutMeasurement, contentOffset, contentSize } =
+                        event.nativeEvent;
+                      const isAtBottom =
+                        layoutMeasurement.height + contentOffset.y >=
+                        contentSize.height - 50;
+                      shouldAutoScrollRef.current = isAtBottom;
+
+                      scrollTimeoutRef.current = setTimeout(() => {
+                        isUserScrollingRef.current = false;
+                      }, 300);
+                    }}
+                    onContentSizeChange={() => {
+                      // Auto-scroll when content size changes (new messages)
+                      if (
+                        shouldAutoScrollRef.current &&
+                        !isUserScrollingRef.current
+                      ) {
+                        setTimeout(() => {
+                          flatListRef.current?.scrollToEnd({ animated: true });
+                        }, 100);
+                      }
+                    }}
                     ListEmptyComponent={
                       <View style={styles.emptyMessagesContainer}>
                         {showEncryptionNotice && (
@@ -949,6 +1062,18 @@ const styles = StyleSheet.create({
   loadingText: {
     ...typography.body,
     color: colors.textSecondary,
+  },
+  loadingOlderContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+  },
+  loadingOlderText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   modalOverlay: {
     flex: 1,

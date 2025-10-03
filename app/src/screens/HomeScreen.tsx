@@ -12,6 +12,7 @@ import {
   Image,
   Pressable,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -21,12 +22,15 @@ import { useIsFocused, useFocusEffect } from "@react-navigation/native";
 import { CountryDropdown } from "../components/CountryDropdown";
 import { GradientBackground } from "../components/GradientBackground";
 import { MysteryCard } from "../components/MysteryCard";
+import { PhotoViewModal } from "../components/PhotoViewModal";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { TopHeader } from "../components/TopHeader";
 import { useAppState } from "../store/AppStateContext";
 import { useUserProfile } from "../hooks/useUserProfile";
+import { useAuth } from "../context/AuthContext";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
+import * as photoService from "../services/photoService";
 
 type PairingStatus =
   | "waiting"
@@ -39,6 +43,7 @@ type PairingStatus =
 export const HomeScreen = () => {
   const { prompt, buddy, profile, pairing, setProfile, setPairing } =
     useAppState();
+  const { user } = useAuth();
 
   // Pre-load user profile immediately when entering HomeScreen
   // This ensures profile data is ready when user navigates to ProfileScreen
@@ -110,6 +115,11 @@ export const HomeScreen = () => {
   const [showPhotoViewer, setShowPhotoViewer] = useState(false);
 
   // Control photo state - will be connected to backend
+  const [receivedPhotos, setReceivedPhotos] = useState<
+    photoService.PhotoChallenge[]
+  >([]);
+  const [selectedPhoto, setSelectedPhoto] =
+    useState<photoService.PhotoChallenge | null>(null);
   const [hasReceivedPhoto, setHasReceivedPhoto] = useState(true); // Will be dynamically set based on backend data
   const [hasViewedPhoto, setHasViewedPhoto] = useState(false); // Track if user viewed the received photo
   const [hasSentPhoto, setHasSentPhoto] = useState(false); // Track if user sent a photo
@@ -120,6 +130,16 @@ export const HomeScreen = () => {
 
   // Ghosting warning state
   const [showGhostingWarning, setShowGhostingWarning] = useState(true);
+
+  // Current photo prompt (stable - doesn't change on every render)
+  const [currentPromptIndex] = useState(() => Math.floor(Math.random() * 8));
+
+  // Skip tracking - only once per day
+  const [hasSkippedToday, setHasSkippedToday] = useState(false);
+  const [lastSkipDate, setLastSkipDate] = useState<string | null>(null);
+
+  // Countdown timer state
+  const [timeRemaining, setTimeRemaining] = useState(300); // 5 minutes in seconds
 
   // Random photo prompts that appear throughout the day
   const randomPrompts = [
@@ -161,23 +181,6 @@ export const HomeScreen = () => {
       }, 200);
     } catch (error) {
       Alert.alert("Error", "Failed to open camera. Please try again.");
-    }
-  };
-
-  const oldTakeBackPhoto = async () => {
-    try {
-      // Show appealing reminder before opening camera
-      Alert.alert(
-        "� Ready to Share?",
-        "🎭 Keep it mysterious!\n\n✅ Use BACK camera only\n❌ No selfies please\n\n🔮 Your mystery buddy can't wait to see what you're up to!",
-        [
-          { text: "Not now", style: "cancel" },
-          { text: "Let's do this! 🚀", onPress: openCamera },
-        ]
-      );
-    } catch (error) {
-      Alert.alert("Error", "Failed to take photo. Please try again.");
-      console.error("Camera error:", error);
     }
   };
 
@@ -226,13 +229,58 @@ export const HomeScreen = () => {
         return;
       }
 
-      if (!result.canceled) {
-        setHasSentPhoto(true); // Mark photo as sent
-        Alert.alert(
-          "Photo Sent!",
-          "Your photo has been shared with your mystery buddy. Photos are encrypted and automatically deleted after the reveal window."
-        );
-        // Here you would upload the photo and handle the submission
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const photoUri = result.assets[0].uri;
+
+        try {
+          console.log("📤 Starting photo upload...");
+
+          // TESTING: Always use friend's UID for photo challenges
+          // This overrides any buddy pairing to test photo sharing
+          const buddyId = "u4FhcyXndsRiAjTK2VcC0dUhU643";
+
+          console.log("🔍 Buddy state:", buddy);
+          console.log("🎯 Sending photo to buddyId:", buddyId);
+          if (!buddyId || !user) {
+            Alert.alert(
+              "Error",
+              "No buddy found. Please pair with someone first."
+            );
+            return;
+          }
+
+          // Upload photo to Firebase Storage
+          const photoUrl = await photoService.uploadPhoto(
+            photoUri,
+            user.uid,
+            buddyId
+          );
+
+          // Send photo challenge with current prompt
+          const currentPrompt = randomPrompts[currentPromptIndex];
+          await photoService.sendPhotoChallenge(
+            user.uid,
+            buddyId,
+            photoUrl,
+            currentPrompt
+          );
+
+          setHasSentPhoto(true); // Mark photo as sent
+          console.log("✅ Photo challenge sent successfully");
+
+          Alert.alert(
+            "Photo Sent! 📸",
+            "Your photo has been shared with your mystery buddy. They'll get a notification to view it!",
+            [{ text: "Awesome!" }]
+          );
+        } catch (error) {
+          console.error("❌ Error sending photo:", error);
+          Alert.alert(
+            "Upload Failed",
+            "Could not send photo. Please check your connection and try again.",
+            [{ text: "OK" }]
+          );
+        }
       }
     } catch (error) {
       Alert.alert(
@@ -240,6 +288,120 @@ export const HomeScreen = () => {
         "Unable to access camera. Please check your permissions and try again."
       );
     }
+  };
+
+  // Load received photos when screen loads
+  useEffect(() => {
+    const loadReceivedPhotos = async () => {
+      if (!user) return;
+
+      try {
+        console.log(`🔍 Checking for photos for user: ${user.uid}`);
+        const photos = await photoService.getUnviewedPhotos(user.uid);
+        console.log(`📸 Loaded ${photos.length} unviewed photos`);
+
+        if (photos.length > 0) {
+          console.log(
+            "� Photos received:",
+            photos.map((p) => ({
+              id: p.id,
+              senderId: p.senderId,
+              receiverId: p.receiverId,
+              viewed: p.viewed,
+            }))
+          );
+        }
+
+        // Filter out photos older than 4 hours (receiver window)
+        const now = Date.now();
+        const FOUR_HOURS = 4 * 60 * 60 * 1000; // 4 hours in milliseconds
+        const recentPhotos = photos.filter((photo) => {
+          if (photo.timestamp) {
+            const photoTime = photo.timestamp.toMillis
+              ? photo.timestamp.toMillis()
+              : photo.timestamp;
+            const age = now - photoTime;
+            return age < FOUR_HOURS; // Photos expire after 4 hours
+          }
+          return true; // Keep if no timestamp
+        });
+
+        if (recentPhotos.length !== photos.length) {
+          console.log(
+            `⏱️ Filtered ${
+              photos.length - recentPhotos.length
+            } expired photos (older than 4 hours) - ${
+              recentPhotos.length
+            } remaining`
+          );
+        }
+
+        setReceivedPhotos(recentPhotos);
+        setHasReceivedPhoto(recentPhotos.length > 0);
+      } catch (error) {
+        console.error("Error loading received photos:", error);
+      }
+    };
+
+    loadReceivedPhotos();
+
+    // Poll for new photos every 30 seconds
+    const interval = setInterval(loadReceivedPhotos, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  // Handlers for photo viewing
+  const handleViewPhoto = async (photoId: string) => {
+    try {
+      // Mark as viewed
+      await photoService.markPhotoAsViewed(photoId);
+
+      // Delete the photo immediately
+      await photoService.deletePhotoChallenge(photoId);
+
+      console.log("✅ Photo viewed and deleted:", photoId);
+
+      setHasViewedPhoto(true);
+
+      // Reload photos to update the list (will show remaining photos if any)
+      if (user) {
+        const photos = await photoService.getUnviewedPhotos(user.uid);
+
+        // Filter for 4-hour window
+        const now = Date.now();
+        const FOUR_HOURS = 4 * 60 * 60 * 1000;
+        const recentPhotos = photos.filter((photo) => {
+          if (photo.timestamp) {
+            const photoTime = photo.timestamp.toMillis
+              ? photo.timestamp.toMillis()
+              : photo.timestamp;
+            const age = now - photoTime;
+            return age < FOUR_HOURS;
+          }
+          return true;
+        });
+
+        setReceivedPhotos(recentPhotos);
+        setHasReceivedPhoto(recentPhotos.length > 0);
+
+        // Close modal if no more photos
+        if (recentPhotos.length === 0) {
+          handleClosePhotoModal();
+        }
+      }
+    } catch (error) {
+      console.error("Error marking photo as viewed:", error);
+    }
+  };
+
+  const handleOpenPhotoModal = (photo: photoService.PhotoChallenge) => {
+    setSelectedPhoto(photo);
+    setShowPhotoViewer(true);
+  };
+
+  const handleClosePhotoModal = () => {
+    setShowPhotoViewer(false);
+    setSelectedPhoto(null);
   };
 
   useEffect(() => {
@@ -317,10 +479,11 @@ export const HomeScreen = () => {
     checkDailyWindow();
     checkPromptTime();
 
+    // Check every 5 minutes instead of every minute to reduce re-renders
     const interval = setInterval(() => {
       checkDailyWindow();
       checkPromptTime();
-    }, 60000); // Check every minute
+    }, 300000); // Check every 5 minutes (300000ms)
 
     return () => clearInterval(interval);
   }, [pairing, profile?.mode]);
@@ -369,33 +532,33 @@ export const HomeScreen = () => {
   // Add floating animation for prompt box
   useEffect(() => {
     if (isPromptTime) {
-      // Floating animation
+      // Floating animation - slower and less frequent
       Animated.loop(
         Animated.sequence([
           Animated.timing(floatAnim, {
-            toValue: -8,
-            duration: 3000,
+            toValue: -6,
+            duration: 4000,
             useNativeDriver: true,
           }),
           Animated.timing(floatAnim, {
             toValue: 0,
-            duration: 3000,
+            duration: 4000,
             useNativeDriver: true,
           }),
         ])
       ).start();
 
-      // Glow animation
+      // Glow animation - slower
       Animated.loop(
         Animated.sequence([
           Animated.timing(glowAnim, {
             toValue: 1,
-            duration: 2000,
+            duration: 3000,
             useNativeDriver: false,
           }),
           Animated.timing(glowAnim, {
             toValue: 0.7,
-            duration: 2000,
+            duration: 3000,
             useNativeDriver: false,
           }),
         ])
@@ -405,6 +568,39 @@ export const HomeScreen = () => {
       glowAnim.setValue(0.7);
     }
   }, [isPromptTime, floatAnim, glowAnim]);
+
+  // Load skip status on mount
+  useEffect(() => {
+    const loadSkipStatus = async () => {
+      try {
+        const skipDate = await AsyncStorage.getItem("lastSkipDate");
+        if (skipDate) {
+          const today = new Date().toDateString();
+          setLastSkipDate(skipDate);
+          setHasSkippedToday(skipDate === today);
+        }
+      } catch (error) {
+        console.error("Error loading skip status:", error);
+      }
+    };
+    loadSkipStatus();
+  }, []);
+
+  // Countdown timer for photo challenge - always runs
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeRemaining((prev) => {
+        if (prev <= 1) {
+          // Timer expired - hide the card
+          setHasSentPhoto(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []); // Empty dependency array - runs once on mount
 
   // Auto-scroll to top when tab is tapped again
   useFocusEffect(
@@ -563,6 +759,107 @@ export const HomeScreen = () => {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {/* Received Photo from Mystery Buddy - TOP PRIORITY */}
+        {hasReceivedPhoto && receivedPhotos.length > 0 && (
+          <Animated.View
+            style={[
+              styles.receivedPhotoCard,
+              {
+                opacity: receivedPhotoAnim,
+                transform: [
+                  {
+                    scale: receivedPhotoAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.8, 1],
+                    }),
+                  },
+                  {
+                    translateY: receivedPhotoAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [20, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <View style={styles.receivedPhotoHeader}>
+              <View style={styles.receivedPhotoIcon}>
+                <Ionicons name="images" size={24} color="#F97316" />
+              </View>
+              <View style={styles.receivedPhotoHeaderText}>
+                <Text style={styles.receivedPhotoTitle}>
+                  📸 Photo Received!
+                </Text>
+                <Text style={styles.receivedPhotoSubtitle}>
+                  Your mystery buddy shared something!
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.receivedPhotoContent}>
+              <View style={styles.photoPlaceholder}>
+                <Ionicons name="image" size={64} color="#6B7280" />
+                <Text style={styles.photoPlaceholderText}>
+                  Tap below to reveal mystery photo
+                </Text>
+                {/* Show remaining time */}
+                {receivedPhotos.length > 0 && receivedPhotos[0].timestamp && (
+                  <Text style={styles.photoTimeRemaining}>
+                    {(() => {
+                      const photoTime = receivedPhotos[0].timestamp.toMillis
+                        ? receivedPhotos[0].timestamp.toMillis()
+                        : receivedPhotos[0].timestamp;
+                      const FOUR_HOURS = 4 * 60 * 60 * 1000;
+                      const elapsed = Date.now() - photoTime;
+                      const remaining = FOUR_HOURS - elapsed;
+
+                      if (remaining <= 0) return "Expired";
+
+                      const hours = Math.floor(remaining / (60 * 60 * 1000));
+                      const minutes = Math.floor(
+                        (remaining % (60 * 60 * 1000)) / (60 * 1000)
+                      );
+
+                      if (hours > 0) {
+                        return `${hours}h ${minutes}m remaining`;
+                      }
+                      return `${minutes}m remaining`;
+                    })()}
+                  </Text>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={styles.viewPhotoButton}
+                onPress={() => {
+                  if (receivedPhotos.length > 0) {
+                    handleOpenPhotoModal(receivedPhotos[0]);
+                  }
+                }}
+              >
+                <Ionicons name="eye" size={20} color="#FFFFFF" />
+                <Text style={styles.viewPhotoButtonText}>Tap to View</Text>
+                {receivedPhotos.length > 1 && (
+                  <View style={styles.photoBadge}>
+                    <Text style={styles.photoBadgeText}>
+                      {receivedPhotos.length}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.receivedPhotoInfo}>
+                <Text style={styles.receivedPhotoInfoText}>
+                  📸 {receivedPhotos.length}{" "}
+                  {receivedPhotos.length === 1 ? "photo" : "photos"} waiting •
+                  ⏱️ 4 hours to view
+                </Text>
+              </View>
+            </View>
+          </Animated.View>
+        )}
+
         {/* Reveal Time Card - Show for testing */}
         {isGameModeSelected && (
           <Animated.View
@@ -624,15 +921,47 @@ export const HomeScreen = () => {
             </View>
           </Animated.View>
         )}
-        {/* Photo Challenge Card */}
-        <View style={styles.photoChallengeCard}>
-          {/* Header with Timer */}
-          <View style={styles.photoChallengeHeader}>
+
+        {/* Photo Challenge Card - Enhanced & Engaging - Hide after sending */}
+        {!hasSentPhoto && (
+          <Animated.View
+            style={[
+              styles.photoChallengeCard,
+              {
+                transform: [{ scale: scaleAnim }],
+              },
+            ]}
+          >
+            {/* Glowing gradient border effect */}
+            <View style={styles.photoChallengeGlowBorder} />
+
+            {/* Header with Icon and Title */}
             <View style={styles.photoChallengeHeaderLeft}>
-              <View style={styles.photoChallengeIconContainer}>
-                <Ionicons name="camera" size={28} color={colors.accentPurple} />
-              </View>
-              <View>
+              <Animated.View
+                style={[
+                  styles.photoChallengeIconContainer,
+                  {
+                    transform: [
+                      {
+                        rotate: pulseAnim.interpolate({
+                          inputRange: [0.95, 1.05],
+                          outputRange: ["-3deg", "3deg"],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <Ionicons name="camera" size={32} color={colors.accentPurple} />
+                <View style={styles.iconSparkle}>
+                  <Ionicons
+                    name="sparkles"
+                    size={14}
+                    color={colors.accentPink}
+                  />
+                </View>
+              </Animated.View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.photoChallengeTitle}>Send Photo</Text>
                 <Text style={styles.photoChallengeSubtitle}>
                   To your mystery buddy
@@ -644,15 +973,9 @@ export const HomeScreen = () => {
             <View
               style={[
                 styles.photoChallengeTimerChip,
-                nextPromptTime &&
-                (nextPromptTime.getTime() - new Date().getTime()) /
-                  (1000 * 60) <=
-                  5
+                timeRemaining <= 180
                   ? styles.photoChallengeTimerUrgent
-                  : nextPromptTime &&
-                    (nextPromptTime.getTime() - new Date().getTime()) /
-                      (1000 * 60) <=
-                      1
+                  : timeRemaining <= 60
                   ? styles.photoChallengeTimerCritical
                   : null,
               ]}
@@ -661,15 +984,9 @@ export const HomeScreen = () => {
                 name="timer-outline"
                 size={16}
                 color={
-                  nextPromptTime &&
-                  (nextPromptTime.getTime() - new Date().getTime()) /
-                    (1000 * 60) <=
-                    1
+                  timeRemaining <= 60
                     ? colors.danger
-                    : nextPromptTime &&
-                      (nextPromptTime.getTime() - new Date().getTime()) /
-                        (1000 * 60) <=
-                        5
+                    : timeRemaining <= 180
                     ? colors.accentPink
                     : colors.accentPurple
                 }
@@ -679,175 +996,145 @@ export const HomeScreen = () => {
                   styles.photoChallengeTimerText,
                   {
                     color:
-                      nextPromptTime &&
-                      (nextPromptTime.getTime() - new Date().getTime()) /
-                        (1000 * 60) <=
-                        1
+                      timeRemaining <= 60
                         ? colors.danger
-                        : nextPromptTime &&
-                          (nextPromptTime.getTime() - new Date().getTime()) /
-                            (1000 * 60) <=
-                            5
+                        : timeRemaining <= 180
                         ? colors.accentPink
                         : colors.accentPurple,
                   },
                 ]}
               >
-                {nextPromptTime
-                  ? `${Math.max(
-                      0,
-                      Math.floor(
-                        (nextPromptTime.getTime() - new Date().getTime()) /
-                          (1000 * 60)
-                      )
-                    )}:${String(
-                      Math.max(
-                        0,
-                        Math.floor(
-                          ((nextPromptTime.getTime() - new Date().getTime()) %
-                            (1000 * 60)) /
-                            1000
-                        )
-                      )
-                    ).padStart(2, "0")}`
-                  : "5:00"}
+                {Math.floor(timeRemaining / 60)}:
+                {String(timeRemaining % 60).padStart(2, "0")}
               </Text>
             </View>
-          </View>
 
-          {/* Challenge Prompt */}
-          <View style={styles.photoChallengePromptContainer}>
-            <Text style={styles.photoChallengePromptLabel}>
-              TODAY'S CHALLENGE:
-            </Text>
-            <Text style={styles.photoChallengePromptText}>
-              {randomPrompts[Math.floor(Math.random() * randomPrompts.length)]}
-            </Text>
-          </View>
-
-          {/* Action Buttons */}
-          <View style={styles.photoChallengeActionContainer}>
-            <TouchableOpacity
-              style={styles.photoChallengePrimaryButton}
-              onPress={takeBackPhoto}
-              activeOpacity={0.8}
-            >
-              <View style={styles.photoChallengeButtonIcon}>
-                <Ionicons name="camera" size={24} color={colors.textPrimary} />
-              </View>
-              <Text style={styles.photoChallengePrimaryButtonText}>
-                Take Photo
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.photoChallengeSecondaryButton}
-              onPress={() => {
-                Alert.alert(
-                  "Photo Challenge Skipped",
-                  "You can try again later!"
-                );
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.photoChallengeSecondaryButtonText}>Skip</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Rules Footer */}
-          <View style={styles.photoChallengeRulesContainer}>
-            <View style={styles.photoChallengeRuleItem}>
-              <Ionicons
-                name="shield-checkmark"
-                size={14}
-                color={colors.accentTeal}
-              />
-              <Text style={styles.photoChallengeRuleText}>
-                Keep your identity anonymous
-              </Text>
-            </View>
-            <View style={styles.photoChallengeRuleItem}>
-              <Ionicons
-                name="person-remove"
-                size={14}
-                color={colors.accentTeal}
-              />
-              <Text style={styles.photoChallengeRuleText}>
-                No selfies or personal photos allowed
-              </Text>
-            </View>
-            <Text style={styles.photoChallengeHintText}>
-              Your mystery buddy will see this photo but not know it's you until
-              reveal time
-            </Text>
-          </View>
-        </View>
-
-        {/* Received Photo from Mystery Buddy - Priority over photo challenge */}
-        {(() => {
-          const now = new Date();
-          const currentHour = now.getHours();
-          // Show received photo during active hours when user has received one
-          const isActiveTime = currentHour >= 12 && currentHour < 21;
-          //Change for seeing the card ->
-          return isActiveTime && hasReceivedPhoto && !hasViewedPhoto;
-        })() && (
-          <Animated.View
-            style={[
-              styles.receivedPhotoCard,
-              {
-                opacity: receivedPhotoAnim,
-                transform: [
-                  {
-                    scale: receivedPhotoAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.8, 1],
-                    }),
-                  },
-                  {
-                    translateY: receivedPhotoAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [20, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <View style={styles.receivedPhotoHeader}>
-              <View style={styles.receivedPhotoIcon}>
-                <Ionicons name="images" size={24} color="#F97316" />
-              </View>
-              <View style={styles.receivedPhotoHeaderText}>
-                <Text style={styles.receivedPhotoTitle}>Photo Received</Text>
-                <Text style={styles.receivedPhotoSubtitle}>
-                  Your mystery buddy shared something!
+            {/* Challenge Prompt - More exciting */}
+            <View style={styles.photoChallengePromptContainer}>
+              <View style={styles.promptLabelRow}>
+                <Text style={styles.photoChallengePromptLabel}>
+                  TODAY'S CHALLENGE:
                 </Text>
               </View>
-            </View>
-
-            <View style={styles.receivedPhotoContent}>
-              <View style={styles.photoPlaceholder}>
-                <Ionicons name="image" size={64} color="#6B7280" />
-                <Text style={styles.photoPlaceholderText}>
-                  Tap to view received photo
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.viewPhotoButton}
-                onPress={() => {
-                  setShowPhotoViewer(true);
-                }}
+              <Animated.Text
+                style={[styles.photoChallengePromptText, { opacity: glowAnim }]}
               >
-                <Ionicons name="eye" size={20} color="#FFFFFF" />
-                <Text style={styles.viewPhotoButtonText}>View Photo</Text>
+                {randomPrompts[currentPromptIndex]}
+              </Animated.Text>
+              <View style={styles.promptAccentLine} />
+            </View>
+
+            {/* Action Buttons - More exciting */}
+            <View style={styles.photoChallengeActionContainer}>
+              <TouchableOpacity
+                style={styles.photoChallengePrimaryButton}
+                onPress={takeBackPhoto}
+                activeOpacity={0.8}
+              >
+                <Animated.View
+                  style={[
+                    styles.photoChallengeButtonIcon,
+                    { transform: [{ scale: pulseAnim }] },
+                  ]}
+                >
+                  <Ionicons
+                    name="camera"
+                    size={26}
+                    color={colors.textPrimary}
+                  />
+                </Animated.View>
+                <Text style={styles.photoChallengePrimaryButtonText}>
+                  Take Photo
+                </Text>
+                <Ionicons
+                  name="arrow-forward"
+                  size={20}
+                  color={colors.textPrimary}
+                />
               </TouchableOpacity>
 
-              <View style={styles.receivedPhotoInfo}>
-                <Text style={styles.receivedPhotoInfoText}>
-                  ⏰ Received 5 minutes ago • 👤 Identity hidden until reveal
-                  time
+              <TouchableOpacity
+                style={styles.photoChallengeSecondaryButton}
+                onPress={async () => {
+                  const today = new Date().toDateString();
+
+                  if (hasSkippedToday && lastSkipDate === today) {
+                    Alert.alert(
+                      "Skip Limit Reached",
+                      "You can only skip once per day. Try again tomorrow!",
+                      [{ text: "OK", style: "cancel" }]
+                    );
+                    return;
+                  }
+
+                  Alert.alert(
+                    "Skip Challenge",
+                    "You'll get 5 points instead of 10. Continue?",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Skip",
+                        style: "destructive",
+                        onPress: async () => {
+                          try {
+                            await AsyncStorage.setItem("lastSkipDate", today);
+                            setLastSkipDate(today);
+                            setHasSkippedToday(true);
+                            Alert.alert(
+                              "Challenge Skipped",
+                              "You earned 5 points. Come back tomorrow for the next challenge!"
+                            );
+                          } catch (error) {
+                            console.error("Error saving skip status:", error);
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.photoChallengeSecondaryButtonText}>
+                  Skip for now
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Rules Footer - More visual */}
+            <View style={styles.photoChallengeRulesContainer}>
+              <View style={styles.photoChallengeRuleItem}>
+                <View style={styles.ruleIconContainer}>
+                  <Ionicons
+                    name="shield-checkmark"
+                    size={16}
+                    color={colors.accentTeal}
+                  />
+                </View>
+                <Text style={styles.photoChallengeRuleText}>
+                  Keep your identity anonymous
+                </Text>
+              </View>
+              <View style={styles.photoChallengeRuleItem}>
+                <View style={styles.ruleIconContainer}>
+                  <Ionicons
+                    name="person-remove"
+                    size={16}
+                    color={colors.accentTeal}
+                  />
+                </View>
+                <Text style={styles.photoChallengeRuleText}>
+                  No selfies or personal photos allowed
+                </Text>
+              </View>
+              <View style={styles.photoChallengeHintBox}>
+                <Ionicons
+                  name="information-circle"
+                  size={16}
+                  color={colors.accentTeal}
+                />
+                <Text style={styles.photoChallengeHintText}>
+                  Your mystery buddy will see this photo but not know it's you
+                  until reveal time
                 </Text>
               </View>
             </View>
@@ -1083,6 +1370,15 @@ export const HomeScreen = () => {
         </View>
       </ScrollView>
 
+      {/* Photo View Modal - Show received photos */}
+      <PhotoViewModal
+        visible={showPhotoViewer}
+        photo={selectedPhoto}
+        onClose={handleClosePhotoModal}
+        onView={handleViewPhoto}
+        currentUserId={user?.uid || ""}
+      />
+
       {/* Simple Camera Reminder Modal */}
       <Modal
         animationType="fade"
@@ -1161,158 +1457,14 @@ export const HomeScreen = () => {
         </View>
       </Modal>
 
-      {/* Photo Viewer Modal */}
-      <Modal
-        animationType="fade"
-        transparent={true}
+      {/* Photo Viewer Modal - Real photos from backend */}
+      <PhotoViewModal
         visible={showPhotoViewer}
-        onRequestClose={() => setShowPhotoViewer(false)}
-      >
-        <Pressable
-          style={styles.photoViewerOverlay}
-          onPress={() => {
-            setShowPhotoViewer(false);
-            // Mark as viewed and fade out the received photo card
-            Animated.timing(receivedPhotoAnim, {
-              toValue: 0,
-              duration: 600,
-              useNativeDriver: true,
-            }).start(() => {
-              setHasViewedPhoto(true);
-            });
-          }}
-        >
-          <View style={styles.photoViewerContainer}>
-            {/* Header */}
-            <View style={styles.photoViewerHeader}>
-              <View style={styles.photoViewerHeaderLeft}>
-                <View style={styles.photoViewerIconWrapper}>
-                  <Ionicons name="shield-checkmark" size={24} color="#10B981" />
-                </View>
-                <View>
-                  <Text style={styles.photoViewerTitle}>Mystery Photo</Text>
-                  <Text style={styles.photoViewerSubtitle}>
-                    From your SecretBuddy • Just now
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={styles.photoViewerClose}
-                onPress={() => {
-                  setShowPhotoViewer(false);
-                  Animated.timing(receivedPhotoAnim, {
-                    toValue: 0,
-                    duration: 600,
-                    useNativeDriver: true,
-                  }).start(() => {
-                    setHasViewedPhoto(true);
-                  });
-                }}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="close"
-                  size={isSmallScreen ? 20 : 24}
-                  color="rgba(255, 255, 255, 0.95)"
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Photo Container */}
-            <View style={styles.photoContainer}>
-              <Image
-                source={{ uri: receivedPhotoUrl }}
-                style={styles.photoImage}
-                resizeMode="cover"
-              />
-
-              {/* Photo Info Overlay */}
-              <View style={styles.photoInfoOverlay}>
-                <View style={styles.photoInfoBadge}>
-                  <Ionicons
-                    name="eye-off"
-                    size={isSmallScreen ? 14 : 16}
-                    color="#FCD34D"
-                  />
-                  <Text style={styles.photoInfoText}>
-                    Identity hidden until reveal time
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Actions */}
-            <View style={styles.photoViewerActions}>
-              <TouchableOpacity
-                style={styles.photoActionButton}
-                onPress={() => {
-                  Alert.alert(
-                    "Report Photo",
-                    "This photo will be flagged for review. Use this only for inappropriate content.",
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      {
-                        text: "Report",
-                        style: "destructive",
-                        onPress: () => {
-                          Alert.alert(
-                            "Reported",
-                            "Photo has been flagged for review."
-                          );
-                          setShowPhotoViewer(false);
-                        },
-                      },
-                    ]
-                  );
-                }}
-              >
-                <Ionicons name="flag" size={20} color="#EF4444" />
-                <Text style={styles.photoActionButtonText}>Report</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.photoActionButton,
-                  styles.photoActionButtonPrimary,
-                ]}
-                onPress={() => {
-                  setShowPhotoViewer(false);
-                  Animated.timing(receivedPhotoAnim, {
-                    toValue: 0,
-                    duration: 600,
-                    useNativeDriver: true,
-                  }).start(() => {
-                    setHasViewedPhoto(true);
-                  });
-                  // Navigate to chat or show prompt to send photo back
-                  Alert.alert(
-                    "Send a Photo Back? 📸",
-                    "Want to share a photo with your mystery buddy too?",
-                    [
-                      { text: "Later", style: "cancel" },
-                      {
-                        text: "Send Photo",
-                        onPress: () => takeBackPhoto(),
-                      },
-                    ]
-                  );
-                }}
-              >
-                <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                <Text
-                  style={[styles.photoActionButtonText, { color: "#FFFFFF" }]}
-                >
-                  Got it!
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Tap anywhere to close hint */}
-            <Text style={styles.photoViewerHint}>Tap anywhere to close</Text>
-          </View>
-        </Pressable>
-      </Modal>
+        photo={selectedPhoto}
+        onClose={handleClosePhotoModal}
+        onView={handleViewPhoto}
+        currentUserId={user?.uid || ""}
+      />
     </GradientBackground>
   );
 };
@@ -1353,16 +1505,30 @@ const styles = StyleSheet.create({
   photoChallengeCard: {
     backgroundColor: colors.surface,
     borderRadius: 24,
-    marginHorizontal: 0,
-    marginVertical: 20,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    marginHorizontal: 8,
+    marginVertical: 12,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: colors.accentPurple + "30",
     shadowColor: colors.accentPurple,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 15,
+    position: "relative",
+    overflow: "visible",
+  },
+
+  photoChallengeGlowBorder: {
+    position: "absolute",
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: colors.accentPurple + "50",
+    opacity: 0.5,
   },
 
   photoChallengeHeader: {
@@ -1375,17 +1541,29 @@ const styles = StyleSheet.create({
   photoChallengeHeaderLeft: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
+    marginBottom: 20,
   },
 
   photoChallengeIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     backgroundColor: colors.accentPurple + "20",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 16,
+    borderWidth: 2,
+    borderColor: colors.accentPurple + "40",
+    position: "relative",
+  },
+
+  iconSparkle: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    padding: 2,
   },
 
   photoChallengeTitle: {
@@ -1405,13 +1583,15 @@ const styles = StyleSheet.create({
   photoChallengeTimerChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
+    alignSelf: "flex-start",
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    borderWidth: 1,
+    borderWidth: 1.5,
     backgroundColor: colors.accentPurple + "20",
-    borderColor: colors.accentPurple + "40",
+    borderColor: colors.accentPurple + "50",
     gap: 6,
+    marginBottom: 24,
   },
 
   photoChallengeTimerUrgent: {
@@ -1426,7 +1606,7 @@ const styles = StyleSheet.create({
 
   photoChallengeTimerText: {
     ...typography.subtitle,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
   },
@@ -1435,19 +1615,26 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.04)",
     borderRadius: 20,
     padding: 20,
-    marginBottom: 24,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: colors.accentPurple + "20",
+  },
+
+  promptLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 14,
   },
 
   photoChallengePromptLabel: {
     ...typography.caption,
     color: colors.accentPurple,
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 8,
+    letterSpacing: 1.5,
   },
 
   photoChallengePromptText: {
@@ -1456,11 +1643,21 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 26,
     textAlign: "center",
+    fontWeight: "600",
+  },
+
+  promptAccentLine: {
+    height: 3,
+    width: 60,
+    backgroundColor: colors.accentPink,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 16,
   },
 
   photoChallengeActionContainer: {
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 20,
   },
 
   photoChallengePrimaryButton: {
@@ -1517,7 +1714,7 @@ const styles = StyleSheet.create({
   },
 
   photoChallengeRulesContainer: {
-    paddingTop: 20,
+    paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: "rgba(255, 255, 255, 0.06)",
   },
@@ -1525,8 +1722,17 @@ const styles = StyleSheet.create({
   photoChallengeRuleItem: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
-    gap: 8,
+    marginBottom: 12,
+    gap: 10,
+  },
+
+  ruleIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: colors.accentTeal + "20",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   photoChallengeRuleText: {
@@ -1534,6 +1740,19 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
     flex: 1,
+    lineHeight: 18,
+  },
+
+  photoChallengeHintBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: colors.accentTeal + "15",
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: colors.accentTeal + "30",
   },
 
   photoChallengeHintText: {
@@ -1541,9 +1760,8 @@ const styles = StyleSheet.create({
     color: colors.accentTeal,
     fontSize: 12,
     fontStyle: "italic",
-    textAlign: "center",
-    marginTop: 8,
-    lineHeight: 16,
+    lineHeight: 17,
+    flex: 1,
   },
 
   promptHeader: {
@@ -2308,6 +2526,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
+  photoTimeRemaining: {
+    ...typography.caption,
+    color: "#F97316",
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 6,
+    textAlign: "center",
+  },
   viewPhotoButton: {
     backgroundColor: "#F97316",
     borderRadius: 12,
@@ -2322,12 +2548,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 6,
+    position: "relative",
   },
   viewPhotoButtonText: {
     ...typography.subtitle,
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
+  },
+  photoBadge: {
+    position: "absolute",
+    top: -8,
+    right: -8,
+    backgroundColor: colors.accentPink,
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  photoBadgeText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    fontWeight: "700",
+    fontSize: 12,
   },
   receivedPhotoInfo: {
     backgroundColor: "rgba(17, 24, 39, 0.4)",
