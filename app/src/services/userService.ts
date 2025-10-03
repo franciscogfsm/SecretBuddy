@@ -107,6 +107,12 @@ export const getUserProfile = async (
   uid: string
 ): Promise<UserProfile | null> => {
   try {
+    // Validate UID
+    if (!uid || !uid.trim()) {
+      console.error("❌ Invalid UID provided to getUserProfile:", uid);
+      return null;
+    }
+
     const userRef = doc(db, USERS_COLLECTION, uid);
     const userSnap = await getDoc(userRef);
 

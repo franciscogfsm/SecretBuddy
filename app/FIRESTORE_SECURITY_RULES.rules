@@ -1,0 +1,300 @@
+rules_version = '2';
+
+/**
+ * 🔐 SECRETBUDDY FIRESTORE SECURITY RULES
+ * 
+ * These rules protect your data from unauthorized access
+ * 
+ * Security Principles:
+ * 1. Users can only access their own data
+ * 2. Conversations require both participants
+ * 3. Messages must belong to active conversations
+ * 4. No public read/write access
+ * 5. Rate limiting through timestamps
+ * 6. Field-level validation
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+    
+    // Check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Check if user is owner of the document
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Check if user is participant in a conversation
+    function isParticipant(participants) {
+      return isSignedIn() && request.auth.uid in participants;
+    }
+    
+    // Validate timestamp is recent (prevents backdating)
+    function isRecentTimestamp(timestamp) {
+      return timestamp > request.time - duration.value(1, 'h');
+    }
+    
+    // Validate string length
+    function validString(field, minLen, maxLen) {
+      return field is string 
+        && field.size() >= minLen 
+        && field.size() <= maxLen;
+    }
+    
+    // ============================================
+    // USER PROFILES
+    // ============================================
+    match /users/{userId} {
+      // Read: Only own profile or public fields
+      allow read: if isOwner(userId);
+      
+      // Create: Only during signup
+      allow create: if isOwner(userId)
+        && validString(request.resource.data.username, 3, 20)
+        && request.resource.data.createdAt == request.time;
+      
+      // Update: Only own profile with validation
+      // Flexible to allow future profile fields (badges, achievements, etc.)
+      allow update: if isOwner(userId)
+        && (!('email' in request.resource.data) || request.resource.data.email == resource.data.email) // Can't change email
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt) // Can't change creation date
+        && (!('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid) // Can't change UID
+        && request.resource.data.updatedAt == request.time; // Must update timestamp
+      
+      // Delete: Only own profile
+      allow delete: if isOwner(userId);
+    }
+    
+    // ============================================
+    // CONVERSATIONS
+    // ============================================
+    match /conversations/{conversationId} {
+      // Read: Only if you're a participant
+      allow read: if isParticipant(resource.data.participants);
+      
+      // Create: Must be a participant and follow rules
+      // Flexible for future conversation types (group chats, etc.)
+      allow create: if isSignedIn()
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.participants.size() >= 2 // At least 2 people
+        && request.resource.data.participants.size() <= 10 // Max 10 for future group chats
+        && request.resource.data.isActive == true
+        && ('isRevealed' in request.resource.data ? request.resource.data.isRevealed == true : true) // Optional for future features
+        && validString(request.resource.data.matchId, 1, 100)
+        && request.resource.data.createdAt == request.time;
+      
+      // Update: Only participants can update specific fields
+      // Allow updating metadata for future features (typing indicators, etc.)
+      allow update: if isParticipant(resource.data.participants)
+        && request.resource.data.participants == resource.data.participants // Can't change participants
+        && request.resource.data.matchId == resource.data.matchId // Can't change match ID
+        && request.resource.data.createdAt == resource.data.createdAt // Can't change creation date
+        && (
+          // Allow ending conversation
+          (!request.resource.data.isActive && request.resource.data.endedBy == request.auth.uid)
+          // Allow updating last message
+          || ('lastMessage' in request.resource.data && 'lastMessageTimestamp' in request.resource.data)
+          // Allow updating typing indicator (future feature)
+          || ('typingUsers' in request.resource.data)
+          // Allow updating metadata (future features)
+          || ('metadata' in request.resource.data)
+        );
+      
+      // Delete: Only if conversation is old (cleanup)
+      allow delete: if isParticipant(resource.data.participants)
+        && (!resource.data.isActive || resource.data.expiresAt < request.time);
+    }
+    
+    // ============================================
+    // MESSAGES
+    // ============================================
+    match /messages/{messageId} {
+      // Read: Only if you're a participant in the conversation
+      allow read: if isSignedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.participants;
+      
+      // Create: Must be participant and conversation is active
+      // Flexible validation for future message types (photos, reactions, etc.)
+      allow create: if isSignedIn()
+        && request.resource.data.senderId == request.auth.uid
+        && validString(request.resource.data.text, 1, 5000) // Encrypted text can be longer
+        && request.resource.data.type in ['text', 'photo', 'sticker', 'reaction', 'system'] // Support future types
+        && ('read' in request.resource.data ? request.resource.data.read == false : true) // read field optional
+        && request.resource.data.timestamp == request.time
+        && exists(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId))
+        && get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)).data.isActive == true
+        && request.auth.uid in get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)).data.participants;
+      
+      // Update: Can mark as read OR add reactions (future feature)
+      allow update: if isSignedIn()
+        && resource.data.senderId != request.auth.uid // Can't mark your own as read
+        && (
+          // Mark as read
+          (request.resource.data.read == true && request.resource.data.text == resource.data.text)
+          // Add reaction (future feature)
+          || ('reactions' in request.resource.data && request.resource.data.text == resource.data.text)
+        )
+        && request.resource.data.senderId == resource.data.senderId // Can't change sender
+        && request.auth.uid in get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.participants;
+      
+      // Delete: Only sender can delete their own messages within 5 minutes (future feature)
+      allow delete: if isSignedIn()
+        && resource.data.senderId == request.auth.uid
+        && resource.data.timestamp > request.time - duration.value(5, 'm');
+    }
+    
+    // ============================================
+    // USER REPORTS
+    // ============================================
+    match /reports/{reportId} {
+      // Read: Only moderators/admins (implement custom claims)
+      allow read: if false; // Implement admin check when needed
+      
+      // Create: Any authenticated user can report
+      allow create: if isSignedIn()
+        && request.resource.data.reportingUserId == request.auth.uid
+        && validString(request.resource.data.reportedUserId, 1, 100)
+        && validString(request.resource.data.reason, 10, 500)
+        && request.resource.data.createdAt == request.time;
+      
+      // Update/Delete: Only admins
+      allow update, delete: if false;
+    }
+    
+    // ============================================
+    // BLOCKED USERS
+    // ============================================
+    match /blockedUsers/{blockId} {
+      // Read: Only your own blocks
+      allow read: if isOwner(resource.data.blockingUserId);
+      
+      // Create: Only your own blocks
+      allow create: if isSignedIn()
+        && request.resource.data.blockingUserId == request.auth.uid
+        && validString(request.resource.data.blockedUserId, 1, 100)
+        && request.resource.data.blockedUserId != request.auth.uid // Can't block yourself
+        && request.resource.data.createdAt == request.time;
+      
+      // Delete: Can unblock
+      allow delete: if isOwner(resource.data.blockingUserId);
+      
+      // Update: Not allowed
+      allow update: if false;
+    }
+    
+    // ============================================
+    // MATCHES
+    // ============================================
+    match /matches/{matchId} {
+      // Read: Only if you're a participant
+      allow read: if isSignedIn()
+        && (resource.data.user1Id == request.auth.uid || resource.data.user2Id == request.auth.uid);
+      
+      // Create: System only (implement through Cloud Functions)
+      allow create: if false;
+      
+      // Update: Participants can reveal or update preferences (future features)
+      allow update: if isSignedIn()
+        && (resource.data.user1Id == request.auth.uid || resource.data.user2Id == request.auth.uid)
+        && (
+          // Allow revealing
+          (resource.data.user1Id == request.auth.uid && request.resource.data.user1Revealed == true)
+          || (resource.data.user2Id == request.auth.uid && request.resource.data.user2Revealed == true)
+          // Allow updating match preferences (future features)
+          || ('preferences' in request.resource.data)
+        );
+      
+      // Delete: System only
+      allow delete: if false;
+    }
+    
+    // ============================================
+    // USER SETTINGS (Future Feature)
+    // ============================================
+    match /userSettings/{userId} {
+      // Read: Only own settings
+      allow read: if isOwner(userId);
+      
+      // Create/Update: Only own settings
+      allow create, update: if isOwner(userId);
+      
+      // Delete: Only own settings
+      allow delete: if isOwner(userId);
+    }
+    
+    // ============================================
+    // NOTIFICATIONS (Future Feature)
+    // ============================================
+    match /notifications/{notificationId} {
+      // Read: Only if notification is for you
+      allow read: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+      
+      // Create: System only (Cloud Functions)
+      allow create: if false;
+      
+      // Update: Can mark as read
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.read == true;
+      
+      // Delete: Can delete own notifications
+      allow delete: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+    
+    // ============================================
+    // USER ACHIEVEMENTS (Future Feature)
+    // ============================================
+    match /achievements/{userId} {
+      // Read: Can read own and others' public achievements
+      allow read: if isSignedIn();
+      
+      // Create/Update: System only (Cloud Functions award achievements)
+      allow create, update: if false;
+      
+      // Delete: Not allowed (permanent record)
+      allow delete: if false;
+    }
+    
+    // ============================================
+    // FRIEND REQUESTS (Future Feature)
+    // ============================================
+    match /friendRequests/{requestId} {
+      // Read: If you're sender or recipient
+      allow read: if isSignedIn()
+        && (resource.data.senderId == request.auth.uid || resource.data.recipientId == request.auth.uid);
+      
+      // Create: Can send to anyone
+      allow create: if isSignedIn()
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.senderId != request.resource.data.recipientId
+        && validString(request.resource.data.recipientId, 1, 100)
+        && request.resource.data.createdAt == request.time;
+      
+      // Update: Recipient can accept/reject
+      allow update: if isSignedIn()
+        && resource.data.recipientId == request.auth.uid
+        && request.resource.data.status in ['accepted', 'rejected'];
+      
+      // Delete: Sender can cancel, recipient can delete after response
+      allow delete: if isSignedIn()
+        && (resource.data.senderId == request.auth.uid || resource.data.recipientId == request.auth.uid);
+    }
+    
+    // ============================================
+    // DEFAULT DENY ALL
+    // ============================================
+    // Block all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

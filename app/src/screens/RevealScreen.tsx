@@ -19,6 +19,8 @@ import { PrimaryButton } from "../components/PrimaryButton";
 import type { RootStackParamList } from "../navigation/types";
 import { useAppState } from "../store/AppStateContext";
 import { colors, typography } from "../theme";
+import { useAuth } from "../context/AuthContext";
+import * as chatService from "../services/chatService";
 
 const { width, height } = Dimensions.get("window");
 const TAP_PROGRESS_WIDTH = 76;
@@ -27,6 +29,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Reveal">;
 
 export const RevealScreen = ({ navigation, route }: Props) => {
   const { buddy } = useAppState();
+  const { user } = useAuth();
   const [decision, setDecision] = useState<"continue" | "pass" | null>(null);
 
   // Check if we're in demo mode
@@ -408,15 +411,43 @@ export const RevealScreen = ({ navigation, route }: Props) => {
     }).start();
   };
 
-  const handleDecision = (choice: "continue" | "pass") => {
+  const handleDecision = async (choice: "continue" | "pass") => {
     setDecision(choice);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-    if (choice === "continue" && currentBuddy) {
-      // Navigate directly to chat with the buddy
-      setTimeout(() => {
-        navigation.navigate("Chat", { isTimed: false });
-      }, 300);
+    if (choice === "continue" && currentBuddy && user) {
+      try {
+        // Create conversation when user chooses to continue chatting
+        // Use buddy.id (real user ID) when integrated, for now use demo ID
+        const partnerId = isDemoMode ? "demo-partner-id" : currentBuddy.id;
+        const matchId = isDemoMode
+          ? "demo-match-id"
+          : `match-${user.uid}-${partnerId}`;
+
+        // Create the conversation in Firestore
+        const conversationId = await chatService.createConversation(
+          user.uid,
+          partnerId,
+          matchId
+        );
+
+        console.log("✅ Conversation created:", conversationId);
+
+        // Navigate to chat with the conversation ID
+        setTimeout(() => {
+          navigation.navigate("Chat", {
+            conversationId,
+            matchedUserId: partnerId,
+            matchedUserName: currentBuddy.codename || "Anonymous",
+          });
+        }, 300);
+      } catch (error) {
+        console.error("❌ Error creating conversation:", error);
+        Alert.alert("Error", "Failed to start chat. Please try again.", [
+          { text: "OK" },
+        ]);
+        setDecision(null);
+      }
     } else {
       // Pass - show confirmation and go back
       setTimeout(() => {

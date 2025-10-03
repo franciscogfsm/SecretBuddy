@@ -16,17 +16,23 @@ export type MessageType = {
   text?: string;
   timestamp: Date;
   isFromUser: boolean;
-  status?: "sending" | "sent" | "delivered" | "read";
+  status?: "sending" | "sent" | "delivered" | "read" | "failed";
   photoUrl?: string;
   photoPrompt?: string;
+  error?: string; // Error message if sending failed
 };
 
 type ChatMessageProps = {
   message: MessageType;
   onReportPhoto?: (messageId: string) => void;
+  onRetry?: (messageId: string) => void; // Retry sending failed message
 };
 
-export const ChatMessage = ({ message, onReportPhoto }: ChatMessageProps) => {
+export const ChatMessage = ({
+  message,
+  onReportPhoto,
+  onRetry,
+}: ChatMessageProps) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(
     new Animated.Value(message.isFromUser ? 20 : -20)
@@ -78,6 +84,17 @@ export const ChatMessage = ({ message, onReportPhoto }: ChatMessageProps) => {
       case "read":
         return (
           <Ionicons name="checkmark-done" size={12} color={colors.accentTeal} />
+        );
+      case "failed":
+        return (
+          <TouchableOpacity
+            onPress={() => onRetry?.(message.id)}
+            style={styles.retryButton}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="alert-circle" size={14} color={colors.danger} />
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
         );
       default:
         return null;
@@ -213,6 +230,23 @@ const styles = StyleSheet.create({
   },
   statusContainer: {
     marginLeft: 6,
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 68, 97, 0.15)",
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  retryText: {
+    ...typography.caption,
+    color: colors.danger,
+    fontSize: 11,
+    fontWeight: "600",
   },
   photoBubble: {
     padding: 0,

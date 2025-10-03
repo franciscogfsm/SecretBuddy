@@ -18,6 +18,9 @@ import { ProfileScreen } from "../screens/ProfileScreen";
 import { FriendsScreen } from "../screens/FriendsScreen";
 import { TopHeader } from "../components/TopHeader";
 import { colors } from "../theme";
+import { useAuth } from "../context/AuthContext";
+import * as chatService from "../services/chatService";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -159,6 +162,7 @@ const getTabIconName = (
 
 type AnimatedTabBarProps = BottomTabBarProps & {
   bottomOffset: number;
+  unreadMessagesCount: number; // Add unread count
 };
 
 const AnimatedTabBar = ({
@@ -166,6 +170,7 @@ const AnimatedTabBar = ({
   descriptors,
   navigation,
   bottomOffset,
+  unreadMessagesCount,
 }: AnimatedTabBarProps) => {
   const [containerWidth, setContainerWidth] = useState(0);
   const indicatorPosition = useRef(new Animated.Value(state.index)).current;
@@ -247,6 +252,7 @@ const AnimatedTabBar = ({
             descriptors={descriptors}
             isFocused={state.index === index}
             tabWidth={tabWidth}
+            unreadCount={route.name === "Matches" ? unreadMessagesCount : 0}
           />
         ))}
       </View>
@@ -260,6 +266,7 @@ type AnimatedTabBarItemProps = {
   descriptors: AnimatedTabBarProps["descriptors"];
   isFocused: boolean;
   tabWidth: number;
+  unreadCount?: number; // Add unread count
 };
 
 const AnimatedTabBarItem = ({
@@ -268,6 +275,7 @@ const AnimatedTabBarItem = ({
   descriptors,
   isFocused,
   tabWidth,
+  unreadCount = 0, // Default to 0
 }: AnimatedTabBarItemProps) => {
   const focusProgress = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
   const pressScale = useRef(new Animated.Value(1)).current;
@@ -386,6 +394,10 @@ const AnimatedTabBarItem = ({
             size={24}
             color={isFocused ? colors.accentPurple : colors.textSecondary}
           />
+          {/* Notification badge for Matches tab */}
+          {route.name === "Matches" && unreadCount > 0 && (
+            <View style={styles.notificationDot} />
+          )}
         </Animated.View>
       </Animated.View>
     </Pressable>
@@ -395,6 +407,63 @@ const AnimatedTabBarItem = ({
 export const HomeTabs = () => {
   const insets = useSafeAreaInsets();
   const bottomOffset = 0;
+  const { user } = useAuth();
+  const [hasNewMessages, setHasNewMessages] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Listen for when Matches screen becomes focused to refresh badge
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Refresh every 2 seconds to check for timestamp updates
+      setRefreshKey((prev) => prev + 1);
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Simple badge: show red dot if any conversation has NEW messages (since last view)
+  useEffect(() => {
+    if (!user) {
+      setHasNewMessages(false);
+      return;
+    }
+
+    const checkForNewMessages = async () => {
+      try {
+        // Get last viewed time (refreshed periodically)
+        const lastViewedStr = await AsyncStorage.getItem(
+          `last_viewed_matches_${user.uid}`
+        );
+        const lastViewed = lastViewedStr ? parseInt(lastViewedStr) : 0;
+
+        const unsubscribe = chatService.subscribeToUserConversations(
+          user.uid,
+          async (conversations) => {
+            // Show badge if there are any messages newer than last view
+            const hasNewActivity = conversations.some((conv) => {
+              if (conv.lastMessageTimestamp && conv.isActive) {
+                const messageTime = conv.lastMessageTimestamp.toMillis();
+                return messageTime > lastViewed;
+              }
+              return false;
+            });
+            setHasNewMessages(hasNewActivity);
+          }
+        );
+
+        return unsubscribe;
+      } catch (error) {
+        console.error("Error checking for new messages:", error);
+        return () => {};
+      }
+    };
+
+    const unsubscribePromise = checkForNewMessages();
+
+    return () => {
+      unsubscribePromise.then((unsubscribe) => unsubscribe());
+    };
+  }, [user, refreshKey]); // Add refreshKey to dependencies
 
   return (
     <View style={{ flex: 1 }}>
@@ -406,7 +475,11 @@ export const HomeTabs = () => {
           tabBarHideOnKeyboard: true,
         }}
         tabBar={(props) => (
-          <AnimatedTabBar {...props} bottomOffset={bottomOffset} />
+          <AnimatedTabBar
+            {...props}
+            bottomOffset={bottomOffset}
+            unreadMessagesCount={hasNewMessages ? 1 : 0}
+          />
         )}
       >
         <Tab.Screen name="Home">
@@ -542,5 +615,48 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: 28,
     backgroundColor: colors.accentPurple,
+  },
+  encryptionBadge: {
+    position: "absolute",
+    top: -2,
+    right: -8,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "rgba(46, 230, 169, 0.2)",
+    borderWidth: 1.5,
+    borderColor: colors.accentTeal,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notificationBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "rgba(255, 68, 97, 0.2)",
+    borderWidth: 2,
+    borderColor: colors.danger,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notificationDot: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.danger,
+    shadowColor: colors.danger,
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.9,
+    shadowRadius: 6,
+    elevation: 8,
   },
 });

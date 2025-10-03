@@ -8,7 +8,12 @@ export type RootStackParamList = {
   BlockedUsers: undefined;
   ReportHistory: undefined;
   Reveal: { demo?: boolean; bothRevealed?: boolean };
-  Chat: { isTimed: boolean };
+  Chat: {
+    conversationId?: string;
+    matchedUserId?: string;
+    matchedUserName?: string;
+    isTimed?: boolean; // For backward compatibility
+  };
   Friends: undefined;
 };
 

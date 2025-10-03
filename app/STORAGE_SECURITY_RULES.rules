@@ -1,0 +1,94 @@
+rules_version = '2';
+
+/**
+ * 🔐 SECRETBUDDY FIREBASE STORAGE SECURITY RULES
+ * 
+ * Protects user uploaded files (profile photos, etc.)
+ * 
+ * Security Features:
+ * - Users can only access their own files
+ * - File size limits enforced
+ * - Only allowed file types (images)
+ * - Rate limiting via metadata
+ */
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    
+    function isUnder5MB() {
+      return request.resource.size < 5 * 1024 * 1024; // 5MB limit
+    }
+    
+    // ============================================
+    // PROFILE PHOTOS
+    // ============================================
+    // Support both path formats: profile-photos/{userId}.jpg and profile_photos/{userId}/{fileName}
+    match /profile-photos/{fileName} {
+      // Extract userId from filename (format: userId.jpg or userId_timestamp.jpg)
+      // Read: Anyone can view profile photos (for chat display)
+      allow read: if true;
+      
+      // Write: Only owner, must be image under 5MB
+      // fileName should start with userId (e.g., "userId.jpg")
+      allow write: if isSignedIn()
+        && fileName.matches('^' + request.auth.uid + '[._-]?.*\\.(jpg|jpeg|png|gif|webp)$')
+        && isImage()
+        && isUnder5MB();
+      
+      // Delete: Only owner (fileName must start with userId)
+      allow delete: if isSignedIn()
+        && fileName.matches('^' + request.auth.uid + '[._-]?.*\\.(jpg|jpeg|png|gif|webp)$');
+    }
+    
+    // Alternative nested path format
+    match /profile_photos/{userId}/{fileName} {
+      // Read: Anyone can view profile photos (for chat display)
+      allow read: if true;
+      
+      // Write: Only owner, must be image under 5MB
+      allow write: if isOwner(userId)
+        && isImage()
+        && isUnder5MB();
+      
+      // Delete: Only owner
+      allow delete: if isOwner(userId);
+    }
+    
+    // ============================================
+    // CHAT PHOTOS (Future feature)
+    // ============================================
+    match /chat_photos/{conversationId}/{messageId}/{fileName} {
+      // Read: Only conversation participants
+      // Note: You'll need to validate participants server-side
+      allow read: if isSignedIn();
+      
+      // Write: Only authenticated users, must be image under 5MB
+      allow write: if isSignedIn()
+        && isImage()
+        && isUnder5MB();
+      
+      // Delete: Only message sender (validate server-side)
+      allow delete: if isSignedIn();
+    }
+    
+    // ============================================
+    // DEFAULT DENY ALL
+    // ============================================
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

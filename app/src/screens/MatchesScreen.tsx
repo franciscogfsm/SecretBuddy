@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   FlatList,
   Pressable,
@@ -6,15 +6,22 @@ import {
   Text,
   View,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useNavigation, useIsFocused } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { GradientBackground } from "../components/GradientBackground";
 import { TopHeader } from "../components/TopHeader";
 import { colors, typography } from "../theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "../context/AuthContext";
+import * as chatService from "../services/chatService";
+import { getUserProfile } from "../services/userService";
+import * as encryptionService from "../services/encryptionService";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { Conversation } from "../services/chatService";
 
 const { width } = Dimensions.get("window");
 const isSmallScreen = width < 375;
@@ -26,118 +33,126 @@ type ChatItem = {
   timestamp: Date;
   expired: boolean;
   avatarInitial: string;
+  conversationId: string;
+  partnerId: string;
+  isActive: boolean;
 };
-
-const dummyChats: ChatItem[] = [
-  {
-    id: "1",
-    name: "Neon Fox",
-    lastMessage: "Sounds perfect! We should plan a sunset walk sometime ✨",
-    timestamp: new Date(Date.now() - 1000 * 60 * 10),
-    expired: false,
-    avatarInitial: "N",
-  },
-  {
-    id: "2",
-    name: "Blue Whale",
-    lastMessage: "That sounds like a great idea! �",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
-    expired: true,
-    avatarInitial: "B",
-  },
-  {
-    id: "3",
-    name: "Green Gecko",
-    lastMessage: "Haha, it was such a beautiful evening!",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24),
-    expired: true,
-    avatarInitial: "G",
-  },
-  {
-    id: "4",
-    name: "Red Panda",
-    lastMessage: "Thanks! That sunset video was amazing 🌅",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
-    expired: true,
-    avatarInitial: "R",
-  },
-  {
-    id: "5",
-    name: "Yellow Yak",
-    lastMessage: "Hey! I loved your response to today's prompt 😊",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3),
-    expired: true,
-    avatarInitial: "Y",
-  },
-  {
-    id: "6",
-    name: "Purple Parrot",
-    lastMessage: "From my balcony! The view is incredible at that time",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 4),
-    expired: true,
-    avatarInitial: "P",
-  },
-  {
-    id: "7",
-    name: "Orange Owl",
-    lastMessage:
-      "Haha, it was such a beautiful evening! Where did you capture that?",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5),
-    expired: true,
-    avatarInitial: "O",
-  },
-  {
-    id: "8",
-    name: "Pink Flamingo",
-    lastMessage: "Thanks! That sunset video was amazing 🌅",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 6),
-    expired: true,
-    avatarInitial: "F",
-  },
-  {
-    id: "9",
-    name: "Silver Swan",
-    lastMessage: "Sounds perfect! We should plan a sunset walk sometime ✨",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7),
-    expired: true,
-    avatarInitial: "S",
-  },
-  {
-    id: "10",
-    name: "Gold Goose",
-    lastMessage: "That sounds like a great idea! 🌟",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 8),
-    expired: true,
-    avatarInitial: "G",
-  },
-];
 
 export const MatchesScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const [chats, setChats] = useState<ChatItem[]>(dummyChats);
+  const { user } = useAuth();
+  const [chats, setChats] = useState<ChatItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const flatListRef = useRef<FlatList>(null);
+  const isFocused = useIsFocused();
 
-  // Scroll to top whenever screen comes into focus
-  useFocusEffect(() => {
-    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-  });
+  // Clear notification badge when screen is focused
+  useEffect(() => {
+    if (isFocused && user) {
+      AsyncStorage.setItem(
+        `last_viewed_matches_${user.uid}`,
+        Date.now().toString()
+      ).catch(console.error);
+    }
+  }, [isFocused, user]);
 
-  // Filter out the last 7 expired chats
-  const visibleChats = chats
-    .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-    .filter((chat, index) => !(chat.expired && index < 7));
+  // Subscribe to conversations in real-time
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    console.log("📡 Setting up real-time conversation listener...");
+
+    const unsubscribe = chatService.subscribeToUserConversations(
+      user.uid,
+      async (conversations) => {
+        console.log(`🔄 Conversations updated: ${conversations.length} found`);
+
+        // Convert to ChatItem format
+        const chatItems: ChatItem[] = await Promise.all(
+          conversations.map(async (conv) => {
+            // Get partner ID
+            const partnerId =
+              conv.participants.find((id) => id !== user.uid) || "";
+
+            // Load partner profile - only if partnerId is valid
+            let partnerName = "Anonymous";
+            if (partnerId && partnerId.trim()) {
+              try {
+                const profile = await getUserProfile(partnerId);
+                if (profile) {
+                  partnerName = profile.username || "Anonymous";
+                }
+              } catch (error) {
+                console.error("Error loading partner profile:", error);
+              }
+            }
+
+            const expired = chatService.isConversationExpired(conv);
+
+            // Decrypt last message preview (if it exists and is encrypted)
+            let lastMessageText = "No messages yet";
+            if (conv.lastMessage) {
+              try {
+                // Try to decrypt the last message
+                lastMessageText = await encryptionService.decryptMessage(
+                  conv.lastMessage,
+                  conv.id!
+                );
+              } catch (error) {
+                // If decryption fails, show a placeholder (don't show encrypted text)
+                console.warn("Failed to decrypt last message preview:", error);
+                lastMessageText = "🔒 New message";
+              }
+            }
+
+            return {
+              id: conv.id!,
+              name: partnerName,
+              lastMessage: lastMessageText,
+              timestamp:
+                conv.lastMessageTimestamp?.toDate() ||
+                conv.createdAt?.toDate() ||
+                new Date(),
+              expired,
+              avatarInitial: partnerName[0]?.toUpperCase() || "?",
+              conversationId: conv.id!,
+              partnerId,
+              isActive: conv.isActive,
+            };
+          })
+        );
+
+        setChats(chatItems);
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      console.log("🔌 Unsubscribing from conversation listener");
+      unsubscribe();
+    };
+  }, [user]);
+
+  // Filter and sort chats
+  const visibleChats = chats.sort(
+    (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
+  );
 
   const handleChatPress = (chat: ChatItem) => {
-    // Only the first non-expired chat is timed
-    const isTimed =
-      !chat.expired && visibleChats.findIndex((c) => c.id === chat.id) === 0;
-    (navigation as any).navigate("Chat", { isTimed });
+    // Navigate to chat with real data
+    (navigation as any).navigate("Chat", {
+      conversationId: chat.conversationId,
+      matchedUserId: chat.partnerId,
+      matchedUserName: chat.name,
+    });
   };
 
   const renderChatItem = ({ item }: { item: ChatItem }) => {
-    const isRevealed =
-      !item.expired && visibleChats.findIndex((c) => c.id === item.id) === 0;
+    const isRevealed = !item.expired && item.isActive;
 
     return (
       <Pressable
@@ -252,14 +267,34 @@ export const MatchesScreen = () => {
             </LinearGradient>
           </View>
 
-          <FlatList
-            ref={flatListRef}
-            data={visibleChats}
-            keyExtractor={(item) => item.id}
-            renderItem={renderChatItem}
-            contentContainerStyle={styles.listContainer}
-            showsVerticalScrollIndicator={false}
-          />
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.accentPurple} />
+              <Text style={styles.loadingText}>Loading conversations...</Text>
+            </View>
+          ) : visibleChats.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons
+                name="chatbubbles-outline"
+                size={64}
+                color={colors.textSecondary}
+              />
+              <Text style={styles.emptyTitle}>No active chats</Text>
+              <Text style={styles.emptyText}>
+                When you reveal identities with your matches, chats will appear
+                here!
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              ref={flatListRef}
+              data={visibleChats}
+              keyExtractor={(item) => item.id}
+              renderItem={renderChatItem}
+              contentContainerStyle={styles.listContainer}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
         </View>
       </GradientBackground>
     </View>
@@ -485,5 +520,34 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8,
     shadowRadius: 4,
     elevation: 4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 60,
+    gap: 16,
+  },
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 60,
+    gap: 16,
+  },
+  emptyTitle: {
+    ...typography.title,
+    color: colors.textPrimary,
+    fontSize: 20,
+  },
+  emptyText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: "center",
+    paddingHorizontal: 40,
   },
 });

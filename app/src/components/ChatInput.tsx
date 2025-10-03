@@ -33,7 +33,7 @@ export const ChatInput = ({
     if (message.trim() && !disabled) {
       onSendMessage(message.trim());
       setMessage("");
-      Keyboard.dismiss();
+      // Don't dismiss keyboard - keep it open for continuous chatting
     }
   };
 

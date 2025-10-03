@@ -570,16 +570,36 @@ export const FriendsScreen = () => {
         <View style={styles.container}>
           <View style={styles.header}>
             <Text style={styles.title}>Friends</Text>
-            <TouchableOpacity
-              style={styles.inviteButton}
-              onPress={handleImportContacts}
-            >
-              <Ionicons
-                name="person-add-outline"
-                size={24}
-                color={colors.textPrimary}
-              />
-            </TouchableOpacity>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity
+                style={styles.testChatButton}
+                onPress={() => {
+                  // Quick test button to chat with specific friend
+                  navigation.navigate("Chat", {
+                    conversationId: "test_conv_" + Date.now(),
+                    matchedUserId: "u4FhcyXndsRiAjTK2VcC0dUhU643",
+                    matchedUserName: "Test Friend",
+                  });
+                }}
+              >
+                <Ionicons
+                  name="chatbubble-ellipses"
+                  size={20}
+                  color={colors.accentTeal}
+                />
+                <Text style={styles.testChatText}>Test</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.inviteButton}
+                onPress={handleImportContacts}
+              >
+                <Ionicons
+                  name="person-add-outline"
+                  size={24}
+                  color={colors.textPrimary}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Statistics Row */}
@@ -893,6 +913,36 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 12,
     elevation: 8,
+  },
+
+  headerButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  testChatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: "rgba(46, 230, 169, 0.12)",
+    borderWidth: 1.5,
+    borderColor: "rgba(46, 230, 169, 0.4)",
+    shadowColor: "rgba(46, 230, 169, 0.5)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+
+  testChatText: {
+    ...typography.body,
+    color: colors.accentTeal,
+    fontSize: 14,
+    fontWeight: "700",
   },
 
   searchInput: {

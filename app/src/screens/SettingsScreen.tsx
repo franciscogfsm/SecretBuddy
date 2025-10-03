@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useState, useEffect, useRef } from "react";
 
 import { GradientBackground } from "../components/GradientBackground";
+import { SecurityBadge } from "../components/SecurityBadge";
 import { useAppState } from "../store/AppStateContext";
 import { useAuth } from "../context/AuthContext";
 import { useUserProfile } from "../hooks/useUserProfile";
@@ -139,6 +140,11 @@ export const SettingsScreen = () => {
         {/* Safety & Privacy Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Safety & Privacy</Text>
+
+          {/* Security Badge */}
+          <View style={{ marginBottom: 16 }}>
+            <SecurityBadge variant="full" />
+          </View>
 
           <TouchableOpacity
             style={styles.settingItem}
@@ -532,7 +538,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 20,
     backgroundColor: "rgba(6, 0, 18, 0.95)",
