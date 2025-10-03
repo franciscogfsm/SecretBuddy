@@ -103,11 +103,11 @@ export const PhotoViewModal: React.FC<PhotoViewModalProps> = ({
                   <Text style={styles.loadingText}>Loading...</Text>
                 </View>
               ) : (
-                // Show photo directly - full screen
+                // Show photo at original size - no cropping
                 <Image
                   source={{ uri: photo.photoUrl }}
                   style={styles.photo}
-                  resizeMode="cover"
+                  resizeMode="contain"
                 />
               )}
             </View>

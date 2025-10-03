@@ -138,7 +138,11 @@ export const HomeScreen = () => {
   const [hasSkippedToday, setHasSkippedToday] = useState(false);
   const [lastSkipDate, setLastSkipDate] = useState<string | null>(null);
 
-  // Countdown timer state
+  // Photo challenge timestamp - track when the challenge was created
+  const [photoChallengeCreatedAt, setPhotoChallengeCreatedAt] = useState<
+    number | null
+  >(null);
+  // Countdown timer state - calculated based on actual timestamp
   const [timeRemaining, setTimeRemaining] = useState(300); // 5 minutes in seconds
 
   // Random photo prompts that appear throughout the day
@@ -266,6 +270,15 @@ export const HomeScreen = () => {
           );
 
           setHasSentPhoto(true); // Mark photo as sent
+
+          // Clear the stored timestamp when photo is sent
+          try {
+            await AsyncStorage.removeItem("photoChallengeCreatedAt");
+            console.log("⏰ Photo challenge timer cleared after sending");
+          } catch (error) {
+            console.error("Error clearing photo challenge timestamp:", error);
+          }
+
           console.log("✅ Photo challenge sent successfully");
 
           Alert.alert(
@@ -569,38 +582,91 @@ export const HomeScreen = () => {
     }
   }, [isPromptTime, floatAnim, glowAnim]);
 
-  // Load skip status on mount
+  // Load skip status and photo challenge timestamp on mount
   useEffect(() => {
-    const loadSkipStatus = async () => {
+    const loadStoredData = async () => {
       try {
+        // Load skip status
         const skipDate = await AsyncStorage.getItem("lastSkipDate");
         if (skipDate) {
           const today = new Date().toDateString();
           setLastSkipDate(skipDate);
           setHasSkippedToday(skipDate === today);
         }
+
+        // Load photo challenge timestamp
+        const storedTimestamp = await AsyncStorage.getItem(
+          "photoChallengeCreatedAt"
+        );
+        if (storedTimestamp) {
+          const timestamp = parseInt(storedTimestamp, 10);
+          const now = Date.now();
+          const elapsed = Math.floor((now - timestamp) / 1000); // seconds elapsed
+          const FIVE_MINUTES = 300; // 5 minutes in seconds
+
+          if (elapsed >= FIVE_MINUTES) {
+            // Timer already expired - hide card immediately
+            setHasSentPhoto(true);
+            setTimeRemaining(0);
+            // Clear the stored timestamp
+            await AsyncStorage.removeItem("photoChallengeCreatedAt");
+          } else {
+            // Timer still active - calculate remaining time
+            const remaining = FIVE_MINUTES - elapsed;
+            setTimeRemaining(remaining);
+            setPhotoChallengeCreatedAt(timestamp);
+          }
+        }
       } catch (error) {
-        console.error("Error loading skip status:", error);
+        console.error("Error loading stored data:", error);
       }
     };
-    loadSkipStatus();
+    loadStoredData();
   }, []);
 
-  // Countdown timer for photo challenge - always runs
+  // Initialize photo challenge timestamp on first render if not set
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          // Timer expired - hide the card
-          setHasSentPhoto(true);
-          return 0;
+    const initializeTimer = async () => {
+      if (photoChallengeCreatedAt === null && !hasSentPhoto) {
+        const now = Date.now();
+        setPhotoChallengeCreatedAt(now);
+        try {
+          await AsyncStorage.setItem("photoChallengeCreatedAt", now.toString());
+          console.log(
+            "⏰ Photo challenge timer initialized:",
+            new Date(now).toISOString()
+          );
+        } catch (error) {
+          console.error("Error saving photo challenge timestamp:", error);
         }
-        return prev - 1;
-      });
+      }
+    };
+    initializeTimer();
+  }, [photoChallengeCreatedAt, hasSentPhoto]);
+
+  // Countdown timer for photo challenge - based on actual timestamp
+  useEffect(() => {
+    if (!photoChallengeCreatedAt || hasSentPhoto) return;
+
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const elapsed = Math.floor((now - photoChallengeCreatedAt) / 1000);
+      const FIVE_MINUTES = 300;
+      const remaining = FIVE_MINUTES - elapsed;
+
+      if (remaining <= 0) {
+        // Timer expired - hide the card and cleanup
+        setHasSentPhoto(true);
+        setTimeRemaining(0);
+        AsyncStorage.removeItem("photoChallengeCreatedAt").catch(console.error);
+        clearInterval(timer);
+      } else {
+        setTimeRemaining(remaining);
+      }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []); // Empty dependency array - runs once on mount
+  }, [photoChallengeCreatedAt, hasSentPhoto]);
 
   // Auto-scroll to top when tab is tapped again
   useFocusEffect(
@@ -1080,6 +1146,16 @@ export const HomeScreen = () => {
                             await AsyncStorage.setItem("lastSkipDate", today);
                             setLastSkipDate(today);
                             setHasSkippedToday(true);
+                            setHasSentPhoto(true); // Hide the card
+
+                            // Clear the stored timestamp when skipping
+                            await AsyncStorage.removeItem(
+                              "photoChallengeCreatedAt"
+                            );
+                            console.log(
+                              "⏰ Photo challenge timer cleared after skipping"
+                            );
+
                             Alert.alert(
                               "Challenge Skipped",
                               "You earned 5 points. Come back tomorrow for the next challenge!"
