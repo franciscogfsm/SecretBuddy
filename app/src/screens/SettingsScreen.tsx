@@ -107,9 +107,10 @@ export const SettingsScreen = () => {
           try {
             await signOut();
             setProfile(null);
-            requestAnimationFrame(() =>
-              navigation.reset({ index: 0, routes: [{ name: "Onboarding" }] })
-            );
+            requestAnimationFrame(() => {
+              const rootNav = (navigation as any).getParent?.() ?? navigation;
+              rootNav.reset({ index: 0, routes: [{ name: "Onboarding" }] });
+            });
           } catch (error) {
             Alert.alert(
               "Couldn't log out",
@@ -442,12 +443,14 @@ export const SettingsScreen = () => {
                         setProfile(null);
 
                         // Navigate to onboarding
-                        requestAnimationFrame(() =>
-                          navigation.reset({
+                        requestAnimationFrame(() => {
+                          const rootNav =
+                            (navigation as any).getParent?.() ?? navigation;
+                          rootNav.reset({
                             index: 0,
                             routes: [{ name: "Onboarding" }],
-                          })
-                        );
+                          });
+                        });
 
                         Alert.alert(
                           "Account Deleted",

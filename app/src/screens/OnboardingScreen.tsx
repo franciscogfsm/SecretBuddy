@@ -101,6 +101,9 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const isCompactLayout = height < 760;
+  // Slightly larger top padding and reduced sizing for Android devices
+  const topPadding = insets.top + (Platform.OS === "android" ? 36 : 20);
+  const topPaddingCompact = insets.top + (Platform.OS === "android" ? 28 : 12);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -526,7 +529,14 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{ flex: 1 }}
         >
-          <View style={styles.backButtonContainer}>
+          <View
+            style={[
+              styles.backButtonContainer,
+              // Use safe area top inset so the button doesn't overlap on
+              // bezel-less Android devices (e.g. Samsung S20 Ultra)
+              { top: insets.top + 12 },
+            ]}
+          >
             <TouchableOpacity
               style={styles.backButton}
               onPress={() => navigation.navigate("AuthOptions")}
@@ -542,9 +552,10 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
           <ScrollView
             style={[
               styles.content,
-              { paddingTop: insets.top + 20, paddingBottom: 24 },
+              { paddingTop: topPadding, paddingBottom: 24 },
               isCompactLayout && styles.contentCompact,
-              isCompactLayout && { paddingTop: insets.top + 12 },
+              isCompactLayout && { paddingTop: topPaddingCompact },
+              Platform.OS === "android" && styles.contentAndroid,
             ]}
             bounces={true}
             showsVerticalScrollIndicator={false}
@@ -561,6 +572,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                 style={[
                   styles.heroSubtitle,
                   isCompactLayout && styles.heroSubtitleCompact,
+                  Platform.OS === "android" && styles.subtitleAndroid,
                 ]}
               >
                 Share moods anonymously daily.
@@ -601,7 +613,11 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
 
             {isSignup && signupStage === 1 ? (
               <View
-                style={[styles.card, isCompactLayout && styles.cardCompact]}
+                style={[
+                  styles.card,
+                  isCompactLayout && styles.cardCompact,
+                  Platform.OS === "android" && styles.cardAndroid,
+                ]}
               >
                 <InputField
                   label="Name"
@@ -668,6 +684,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                   styles.accountCard,
                   isCompactLayout && styles.cardCompact,
                   isCompactLayout && styles.accountCardCompact,
+                  Platform.OS === "android" && styles.cardAndroid,
                 ]}
               >
                 <View style={styles.cardHeader}>
@@ -1350,5 +1367,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 48,
     paddingTop: 40, // Increased padding to move text higher
+  },
+  // Android-specific compact adjustments
+  contentAndroid: {
+    paddingHorizontal: 18,
+  },
+  titleAndroid: {
+    fontSize: 28,
+  },
+  subtitleAndroid: {
+    fontSize: 14,
+  },
+  cardAndroid: {
+    padding: 16,
   },
 });

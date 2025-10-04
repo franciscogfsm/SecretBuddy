@@ -25,6 +25,14 @@ import * as poolService from "./poolService";
 const PHOTOS_COLLECTION = "photoChallenge";
 const PAIRS_COLLECTION = "pairs";
 
+// ⚡ Cache for unviewed photos (reduces Firestore reads)
+let unviewedPhotosCache: {
+  photos: PhotoChallenge[];
+  cachedAt: number;
+  userId: string;
+} | null = null;
+const PHOTOS_CACHE_DURATION = 30 * 1000; // 30 seconds (photos update frequently)
+
 export interface PhotoChallenge {
   id: string;
   senderId: string;
@@ -166,18 +174,37 @@ export const sendPhotoChallenge = async (
 
 /**
  * Get unviewed photos for a user (received from buddies)
+ * ⚡ OPTIMIZED: Caches results for 30 seconds and limits query to 50 photos
  */
 export const getUnviewedPhotos = async (
-  userId: string
+  userId: string,
+  bypassCache: boolean = false
 ): Promise<PhotoChallenge[]> => {
   try {
+    // ⚡ Check cache first (if same user and less than 30 seconds old)
+    if (
+      !bypassCache &&
+      unviewedPhotosCache &&
+      unviewedPhotosCache.userId === userId
+    ) {
+      const cacheAge = Date.now() - unviewedPhotosCache.cachedAt;
+      if (cacheAge < PHOTOS_CACHE_DURATION) {
+        console.log(
+          `✅ Using cached unviewed photos (age: ${Math.round(
+            cacheAge / 1000
+          )}s)`
+        );
+        return unviewedPhotosCache.photos;
+      }
+    }
+
     const photosRef = collection(db, PHOTOS_COLLECTION);
-    // Temporarily removed orderBy to avoid index requirement
-    // TODO: Create Firebase index for better performance
+    // ⚡ Limit to 50 photos to reduce read costs (users rarely have >50 unviewed)
     const q = query(
       photosRef,
       where("receiverId", "==", userId),
-      where("viewed", "==", false)
+      where("viewed", "==", false),
+      limit(50) // ⚡ Prevent unbounded queries
     );
 
     const snapshot = await getDocs(q);
@@ -197,7 +224,11 @@ export const getUnviewedPhotos = async (
       return bTime - aTime; // Descending order (newest first)
     });
 
-    console.log(`📸 Found ${photos.length} unviewed photos for user ${userId}`);
+    // Production: avoid noisy demo logs for unviewed photo checks
+
+    // Update cache
+    unviewedPhotosCache = { photos, cachedAt: Date.now(), userId };
+
     return photos;
   } catch (error) {
     console.error("❌ Error getting unviewed photos:", error);
@@ -277,6 +308,7 @@ export const getAllUserPhotos = async (
 
 /**
  * Mark a photo as viewed
+ * ⚡ Invalidates cache to force refresh on next load
  */
 export const markPhotoAsViewed = async (photoId: string): Promise<void> => {
   try {
@@ -285,6 +317,10 @@ export const markPhotoAsViewed = async (photoId: string): Promise<void> => {
       viewed: true,
       viewedAt: serverTimestamp(),
     });
+
+    // ⚡ Invalidate cache so next getUnviewedPhotos() fetches fresh data
+    unviewedPhotosCache = null;
+
     console.log("✅ Photo marked as viewed:", photoId);
   } catch (error) {
     console.error("❌ Error marking photo as viewed:", error);

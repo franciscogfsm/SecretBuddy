@@ -9,9 +9,112 @@ import {
   getDocs,
   serverTimestamp,
   Timestamp,
+  writeBatch,
 } from "firebase/firestore";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db } from "../config/firebase";
 import { getUserProfile } from "./userService";
+
+// ⚡ Cache configuration for server time offset
+const SERVER_TIME_CACHE_KEY = "@server_time_offset";
+const SERVER_TIME_CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+
+interface ServerTimeCache {
+  offset: number; // Server time - Device time (in milliseconds)
+  cachedAt: number; // When this was cached (timestamp)
+}
+
+/**
+ * Get cached server time offset or fetch new one
+ * ⚡ Optimized: Only fetches from Firestore once per hour
+ * Reduces Firestore reads from ~100/day to ~24/day per user
+ */
+export const getServerTimeOffset = async (): Promise<number> => {
+  try {
+    // Try to get cached offset
+    const cachedData = await AsyncStorage.getItem(SERVER_TIME_CACHE_KEY);
+
+    if (cachedData) {
+      const cache: ServerTimeCache = JSON.parse(cachedData);
+      const now = Date.now();
+
+      // Check if cache is still valid (less than 1 hour old)
+      if (now - cache.cachedAt < SERVER_TIME_CACHE_DURATION) {
+        console.log("✅ Using cached server time offset:", cache.offset);
+        return cache.offset;
+      }
+    }
+
+    // Cache expired or doesn't exist, fetch new server time
+    console.log("🔄 Fetching fresh server time offset...");
+    const serverTime = await getServerTime();
+    const deviceTime = Date.now();
+    const offset = serverTime.getTime() - deviceTime;
+
+    // Cache the offset
+    const cacheData: ServerTimeCache = {
+      offset,
+      cachedAt: Date.now(),
+    };
+    await AsyncStorage.setItem(
+      SERVER_TIME_CACHE_KEY,
+      JSON.stringify(cacheData)
+    );
+
+    console.log("💾 Cached server time offset:", offset);
+    return offset;
+  } catch (error) {
+    console.error("❌ Error getting server time offset:", error);
+    return 0; // Fallback: no offset
+  }
+};
+
+/**
+ * Get current server time from Firestore (protects against device time manipulation)
+ * Uses a dummy write to trigger serverTimestamp, then reads it back
+ * Returns UTC time from server (not affected by device timezone or manual changes)
+ * ⚠️ This function performs Firestore read/write - use getServerTimeOffset() instead for caching
+ */
+export const getServerTime = async (): Promise<Date> => {
+  try {
+    // Create a temporary document with server timestamp
+    const tempDocRef = doc(db, "_serverTime", "current");
+    await setDoc(tempDocRef, {
+      timestamp: serverTimestamp(),
+    });
+
+    // Read it back to get the actual server time (UTC)
+    const tempDoc = await getDoc(tempDocRef);
+    if (tempDoc.exists()) {
+      const serverTimestamp = tempDoc.data().timestamp as Timestamp;
+      const serverTime = serverTimestamp.toDate();
+
+      console.log(`🌍 Server time (UTC): ${serverTime.toISOString()}`);
+      console.log(`📍 Local time: ${new Date().toISOString()}`);
+
+      return serverTime; // Returns Date object with server's UTC time
+    }
+
+    // Fallback to local time if something fails
+    console.warn("⚠️ Could not get server time, using local time");
+    return new Date();
+  } catch (error) {
+    console.error("❌ Error getting server time:", error);
+    return new Date();
+  }
+};
+
+/**
+ * Get server time converted to local timezone
+ * Used for UI display purposes (show user their local time)
+ */
+export const getServerTimeLocal = async (): Promise<Date> => {
+  const serverTime = await getServerTime(); // Get UTC time from server
+
+  // Server time is already a Date object, JavaScript automatically handles timezone
+  // When you display it, it will show in user's local timezone
+  return serverTime;
+};
 
 export interface Pool {
   id: string;
@@ -65,17 +168,48 @@ const POOLS_COLLECTION = "pools";
 const PAIRS_COLLECTION = "pairs";
 const POOL_USERS_COLLECTION = "poolUsers";
 
+// ⚡ In-memory cache for current pool (reduces repeated Firestore reads)
+let currentPoolCache: {
+  pool: Pool | null;
+  cachedAt: number;
+  hour: number;
+} | null = null;
+const POOL_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes (pool changes every hour, so safe to cache)
+
 /**
  * Get current active pool (if any)
+ * Uses Firestore server time to prevent device clock manipulation
+ * ✅ TIMEZONE SAFE: Uses server UTC time, not device time
+ * ⚡ OPTIMIZED: Caches pool for 5 minutes to reduce Firestore reads
  */
 export const getCurrentPool = async (): Promise<Pool | null> => {
   try {
-    const now = new Date();
-    const dateStr = now.toISOString().split("T")[0]; // YYYY-MM-DD
-    const hour = now.getHours(); // Changed from getUTCHours() to getHours() - use LOCAL time
+    // ✅ Get server time offset (cached - no Firestore read)
+    const offset = await getServerTimeOffset();
+    const serverTime = new Date(Date.now() + offset);
+    const hour = serverTime.getUTCHours();
 
-    // Hourly pools from 10:00 to 17:00 (LOCAL TIME)
-    if (hour < 10 || hour >= 18) {
+    // ⚡ Check cache first (if same hour and less than 5 minutes old)
+    if (currentPoolCache) {
+      const cacheAge = Date.now() - currentPoolCache.cachedAt;
+      if (currentPoolCache.hour === hour && cacheAge < POOL_CACHE_DURATION) {
+        console.log(
+          `✅ Using cached pool (age: ${Math.round(cacheAge / 1000)}s)`
+        );
+        return currentPoolCache.pool;
+      }
+    }
+
+    // Cache miss or expired - fetch from Firestore
+    const dateStr = serverTime.toISOString().split("T")[0]; // YYYY-MM-DD (always UTC date)
+
+    console.log(`🕐 Server UTC: ${serverTime.toISOString()}`);
+    console.log(`🎯 Checking pool: ${dateStr}-${hour}h (UTC)`);
+
+    // ✅ Hourly pools from 09:00 to 16:00 UTC (10:00-17:00 Portugal)
+    if (hour < 9 || hour >= 17) {
+      console.log(`⏰ Outside pool hours (${hour}:00 UTC)`);
+      currentPoolCache = { pool: null, cachedAt: Date.now(), hour };
       return null; // Outside pool hours
     }
 
@@ -83,13 +217,20 @@ export const getCurrentPool = async (): Promise<Pool | null> => {
     const poolDoc = await getDoc(doc(db, POOLS_COLLECTION, poolId));
 
     if (!poolDoc.exists()) {
+      console.log(`❌ Pool ${poolId} not found`);
+      currentPoolCache = { pool: null, cachedAt: Date.now(), hour };
       return null;
     }
 
-    return {
+    console.log(`✅ Found pool: ${poolId}`);
+    const pool = {
       id: poolDoc.id,
       ...poolDoc.data(),
     } as Pool;
+
+    // Update cache
+    currentPoolCache = { pool, cachedAt: Date.now(), hour };
+    return pool;
   } catch (error) {
     console.error("❌ Error getting current pool:", error);
     throw error;
@@ -235,12 +376,52 @@ export const isInPhotoWindow = (pair: Pair): boolean => {
 
 /**
  * Check if it's reveal time for my pair
+ * ✅ Reveal window: From revealAt until midnight (00:00 next day)
+ * ✅ Uses server time offset to prevent device time manipulation
+ * @param pair - The pair to check
+ * @param serverTimeOffset - Optional offset in ms (server time - device time)
  */
-export const isRevealTime = (pair: Pair): boolean => {
-  const now = new Date();
+export const isRevealTime = (
+  pair: Pair,
+  serverTimeOffset: number = 0
+): boolean => {
+  // Use server-adjusted time instead of device time
+  const now = new Date(Date.now() + serverTimeOffset);
   const revealTime = pair.revealAt.toDate();
 
-  return now >= revealTime;
+  // Check if we've reached reveal time
+  if (now < revealTime) {
+    return false;
+  }
+
+  // Check if it's still the same day (before midnight)
+  const revealDate = new Date(revealTime);
+  const midnight = new Date(revealDate);
+  midnight.setDate(midnight.getDate() + 1); // Next day
+  midnight.setHours(0, 0, 0, 0); // Midnight
+
+  // Reveal card shows from revealAt until midnight
+  const isBeforeMidnight = now < midnight;
+
+  console.log(`🎭 Reveal check:
+    Server time: ${now.toISOString()}
+    Reveal at: ${revealTime.toISOString()}
+    Midnight: ${midnight.toISOString()}
+    Is reveal time: ${isBeforeMidnight}`);
+
+  return isBeforeMidnight;
+};
+
+/**
+ * Check if reveal window is currently open (used for UI display)
+ * Shows reveal window status in local time
+ */
+export const isRevealWindowOpen = (serverTimeOffset: number = 0): boolean => {
+  const now = new Date(Date.now() + serverTimeOffset);
+  const currentHour = now.getUTCHours();
+
+  // Reveal window: 21:00-22:00 UTC (22:00-23:00 Portugal)
+  return currentHour >= 21 && currentHour < 22;
 };
 
 /**

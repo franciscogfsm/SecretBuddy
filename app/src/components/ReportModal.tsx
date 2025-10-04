@@ -156,6 +156,8 @@ export const ReportModal = ({
       transparent
       animationType="fade"
       onRequestClose={handleClose}
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
     >
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
@@ -317,6 +319,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    zIndex: 999999, // Ensure it appears above other modals
+    elevation: 999999, // For Android
   },
   modalContainer: {
     backgroundColor: "rgba(11, 7, 32, 0.98)",

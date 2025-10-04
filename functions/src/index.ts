@@ -285,12 +285,12 @@ export const dailyCleanup = functions
 
 /**
  * Create daily hourly pools at midnight (00:00 UTC)
- * Creates 8 hourly pools: 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00
+ * ✅ UPDATED: Creates 8 hourly pools: 09:00-16:00 UTC (10:00-17:00 Portugal)
  * Each pool:
- * - Opens at the hour (e.g., 10:00)
- * - Closes and pairs at the next hour (e.g., 11:00)
- * - Users get 2 photo notifications between join time and 21:00
- * - Reveal is always between 21:00-22:00
+ * - Opens at the hour (e.g., 09:00 UTC = 10:00 Portugal)
+ * - Closes and pairs at the next hour (e.g., 10:00 UTC = 11:00 Portugal)
+ * - Users get 2 photo notifications between join time and 21:00 UTC (22:00 Portugal)
+ * - Reveal is always between 21:00-21:59 UTC (22:00-22:59 Portugal)
  */
 export const createDailyPools = functions
   .runWith({ timeoutSeconds: 60, memory: "256MB" })
@@ -305,13 +305,14 @@ export const createDailyPools = functions
 
     console.log(`📅 Creating hourly pools for ${dateStr}`);
 
-    // Create 8 hourly pools: 10h, 11h, 12h, 13h, 14h, 15h, 16h, 17h
-    const poolHours = [10, 11, 12, 13, 14, 15, 16, 17];
+    // ✅ Create 8 hourly pools: 9h-16h UTC (10h-17h Portugal)
+    const poolHours = [9, 10, 11, 12, 13, 14, 15, 16];
     const batch = db.batch();
 
     // Random reveal time between 21:00-22:00 (same for all pools)
+    // ✅ FIX: Reveal only 21:00-21:59 (not 22:xx)
     const revealHour = 21;
-    const revealMin = Math.floor(Math.random() * 60);
+    const revealMin = Math.floor(Math.random() * 60); // 0-59 minutes
     const revealAt = new Date(now);
     revealAt.setHours(revealHour, revealMin, 0, 0);
 
@@ -334,6 +335,7 @@ export const createDailyPools = functions
 
       // Calculate 2 photo times evenly spaced between hour and 21:00
       // Only if there's time (hour < 21)
+      // ✅ FIX: Last photo must be max 20:45 (not later)
       const photoTimes: Date[] = [];
       if (hour < 21) {
         const hoursAvailable = 21 - hour;
@@ -349,16 +351,29 @@ export const createDailyPools = functions
           photo1.setHours(photo1Hour, photo1Min, 0, 0);
           photoTimes.push(photo1);
 
-          // Second photo: hour + spacing + spacing/2
-          const photo2Hour = hour + Math.floor(spacing * 1.5);
-          const photo2Min = Math.floor(Math.random() * 60);
+          // Second photo: hour + spacing + spacing/2 (but max 20:45)
+          let photo2Hour = hour + Math.floor(spacing * 1.5);
+          let photo2Min = Math.floor(Math.random() * 60);
+
+          // ✅ Enforce max 20:45
+          if (photo2Hour > 20 || (photo2Hour === 20 && photo2Min > 45)) {
+            photo2Hour = 20;
+            photo2Min = Math.min(45, Math.floor(Math.random() * 46)); // 0-45
+          }
+
           const photo2 = new Date(now);
           photo2.setHours(photo2Hour, photo2Min, 0, 0);
           photoTimes.push(photo2);
         } else if (hoursAvailable === 1) {
-          // Only 1 hour left, send 1 photo at random time
-          const photoHour = hour;
-          const photoMin = Math.floor(Math.random() * 60);
+          // Only 1 hour left, send 1 photo at random time (but max 20:45)
+          let photoHour = hour;
+          let photoMin = Math.floor(Math.random() * 60);
+
+          // ✅ Enforce max 20:45 if hour is 20
+          if (photoHour === 20) {
+            photoMin = Math.min(45, Math.floor(Math.random() * 46)); // 0-45
+          }
+
           const photo = new Date(now);
           photo.setHours(photoHour, photoMin, 0, 0);
           photoTimes.push(photo);
@@ -400,11 +415,22 @@ export const createDailyPools = functions
 
 /**
  * Close and pair hourly pools
- * Creates 8 functions, one for each hour (11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00, 18:00)
- * Each function pairs users from the previous hour's pool
+ * ✅ UPDATED: Functions run at the END of each pool's window
+ * Pool 9h UTC (10h PT): Opens 09:00, closes 10:00 → Function runs at 10:00
+ * Pool 10h UTC (11h PT): Opens 10:00, closes 11:00 → Function runs at 11:00
+ * etc.
  */
 
-// 11:00 - Pair users from 10h pool
+// 10:00 UTC - Pair users from 9h pool (09:00-10:00 UTC = 10:00-11:00 Portugal)
+export const closePool9h = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("0 10 * * *")
+  .timeZone("UTC")
+  .onRun(async () => {
+    return await closeHourlyPool(9);
+  });
+
+// 11:00 UTC - Pair users from 10h pool (10:00-11:00 UTC = 11:00-12:00 Portugal)
 export const closePool10h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
   .pubsub.schedule("0 11 * * *")
@@ -413,7 +439,7 @@ export const closePool10h = functions
     return await closeHourlyPool(10);
   });
 
-// 12:00 - Pair users from 11h pool
+// 12:00 UTC - Pair users from 11h pool (11:00-12:00 UTC = 12:00-13:00 Portugal)
 export const closePool11h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
   .pubsub.schedule("0 12 * * *")
@@ -422,7 +448,7 @@ export const closePool11h = functions
     return await closeHourlyPool(11);
   });
 
-// 13:00 - Pair users from 12h pool
+// 13:00 UTC - Pair users from 12h pool (12:00-13:00 UTC = 13:00-14:00 Portugal)
 export const closePool12h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
   .pubsub.schedule("0 13 * * *")
@@ -431,7 +457,7 @@ export const closePool12h = functions
     return await closeHourlyPool(12);
   });
 
-// 14:00 - Pair users from 13h pool
+// 14:00 UTC - Pair users from 13h pool (13:00-14:00 UTC = 14:00-15:00 Portugal)
 export const closePool13h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
   .pubsub.schedule("0 14 * * *")
@@ -440,7 +466,7 @@ export const closePool13h = functions
     return await closeHourlyPool(13);
   });
 
-// 15:00 - Pair users from 14h pool
+// 15:00 UTC - Pair users from 14h pool (14:00-15:00 UTC = 15:00-16:00 Portugal)
 export const closePool14h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
   .pubsub.schedule("0 15 * * *")
@@ -449,7 +475,7 @@ export const closePool14h = functions
     return await closeHourlyPool(14);
   });
 
-// 16:00 - Pair users from 15h pool
+// 16:00 UTC - Pair users from 15h pool (15:00-16:00 UTC = 16:00-17:00 Portugal)
 export const closePool15h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
   .pubsub.schedule("0 16 * * *")
@@ -458,22 +484,13 @@ export const closePool15h = functions
     return await closeHourlyPool(15);
   });
 
-// 17:00 - Pair users from 16h pool
+// 17:00 UTC - Pair users from 16h pool (16:00-17:00 UTC = 17:00-18:00 Portugal)
 export const closePool16h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
   .pubsub.schedule("0 17 * * *")
   .timeZone("UTC")
   .onRun(async () => {
     return await closeHourlyPool(16);
-  });
-
-// 18:00 - Pair users from 17h pool
-export const closePool17h = functions
-  .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 18 * * *")
-  .timeZone("UTC")
-  .onRun(async () => {
-    return await closeHourlyPool(17);
   });
 
 /**
@@ -514,28 +531,93 @@ async function closeHourlyPool(hour: number): Promise<any> {
     return { success: true, pairs: 0 };
   }
 
-  // Match users
-  const pairs = await matchUsers(poolId, poolUsersSnapshot.docs, db);
+  // Match users and get unpaired users
+  const { pairsCreated, unpairedUserIds } = await matchUsers(
+    poolId,
+    poolUsersSnapshot.docs,
+    db
+  );
 
   await db.collection("pools").doc(poolId).update({
     status: "closed",
-    pairsCount: pairs,
+    pairsCount: pairsCreated,
   });
 
-  console.log(`✅ Pool ${poolId} closed. Created ${pairs} pairs`);
+  console.log(`✅ Pool ${poolId} closed. Created ${pairsCreated} pairs`);
 
-  return { success: true, pairs };
+  // ROLLOVER: Move unpaired users to next pool (if exists and open)
+  if (unpairedUserIds.length > 0) {
+    const nextHour = hour + 1;
+
+    // Only rollover if next hour is within valid pool range (9-16)
+    if (nextHour <= 16) {
+      const nextPoolId = `${dateStr}-${nextHour}h`;
+      const nextPoolDoc = await db.collection("pools").doc(nextPoolId).get();
+
+      if (nextPoolDoc.exists && nextPoolDoc.data()?.status === "open") {
+        console.log(
+          `🔄 Rolling over ${unpairedUserIds.length} unpaired users to next pool: ${nextPoolId}`
+        );
+
+        const batch = db.batch();
+        for (const userId of unpairedUserIds) {
+          // Get original user data from poolUsers to preserve priority/country
+          const originalPoolUserDoc = await db
+            .collection("poolUsers")
+            .doc(`${poolId}-${userId}`)
+            .get();
+
+          const userData = originalPoolUserDoc.data();
+
+          // Add user to next pool
+          const nextPoolUserRef = db
+            .collection("poolUsers")
+            .doc(`${nextPoolId}-${userId}`);
+
+          batch.set(nextPoolUserRef, {
+            poolId: nextPoolId,
+            userId,
+            joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+            priority: userData?.priority || "world",
+            country: userData?.country,
+            rolledOver: true, // Flag to track this was a rollover
+            originalPoolId: poolId,
+          });
+        }
+
+        await batch.commit();
+        console.log(
+          `✅ Rolled over ${unpairedUserIds.length} users to ${nextPoolId}`
+        );
+      } else {
+        console.log(
+          `⚠️ Cannot rollover: Next pool ${nextPoolId} doesn't exist or is not open`
+        );
+      }
+    } else {
+      console.log(
+        `⚠️ Cannot rollover: No more pools today (hour ${nextHour} > 16)`
+      );
+    }
+  }
+
+  return {
+    success: true,
+    pairs: pairsCreated,
+    rolledOver: unpairedUserIds.length,
+  };
 }
 
 /**
  * Match users in a pool
  * Priority: Friends > Same Country > Random
+ * Returns: { pairsCreated, unpairedUserIds }
  */
 async function matchUsers(
   poolId: string,
   userDocs: admin.firestore.QueryDocumentSnapshot[],
   db: admin.firestore.Firestore
-): Promise<number> {
+): Promise<{ pairsCreated: number; unpairedUserIds: string[] }> {
   const poolDoc = await db.collection("pools").doc(poolId).get();
   const poolData = poolDoc.data();
 
@@ -634,14 +716,17 @@ async function matchUsers(
     );
   }
 
-  // If odd number, last user stays unpaired
+  // Collect unpaired user IDs (odd number case)
+  const unpairedUserIds: string[] = [];
   if (unmatched.length % 2 === 1) {
+    const unpairedUserId = unmatched[unmatched.length - 1].id;
+    unpairedUserIds.push(unpairedUserId);
     console.log(
-      `⚠️ User ${unmatched[unmatched.length - 1].id} left unpaired (odd count)`
+      `⚠️ User ${unpairedUserId} left unpaired (odd count) - will rollover to next pool`
     );
   }
 
-  return pairsCreated;
+  return { pairsCreated, unpairedUserIds };
 }
 
 /**
@@ -775,12 +860,13 @@ export const manualCreatePairs = functions
         }
       }
 
-      const pairs = await matchUsers(poolId, poolUsersSnapshot.docs, db);
+      const result = await matchUsers(poolId, poolUsersSnapshot.docs, db);
 
       res.status(200).json({
         success: true,
-        message: `Created ${pairs} pairs`,
-        pairs,
+        message: `Created ${result.pairsCreated} pairs`,
+        pairs: result.pairsCreated,
+        unpaired: result.unpairedUserIds.length,
         mode: allUsers ? "all-users" : "pool-only",
       });
     } catch (error: any) {
@@ -825,7 +911,7 @@ async function sendPhotoNotificationToPool(
 
     if (userIds.size === 0) return 0;
 
-    console.log(`📸 Sending to ${userIds.size} users in ${poolId}`);
+    // Sending photo prompts to users in pool (no debug log to avoid noise)
 
     // Random photo prompts (matches app prompts)
     const prompts = [
@@ -934,7 +1020,7 @@ async function sendPhotoNotificationToPool(
 /**
  * Check and send photo notifications every minute
  * OPTIMIZED: Only runs if there are photo times scheduled for current minute
- * Uses indexed query instead of fetching all pools
+ * ✅ UPDATED: Works with new hourly pool system (10h-17h pools)
  */
 export const checkPhotoNotifications = functions
   .runWith({ timeoutSeconds: 60, memory: "256MB" })
@@ -949,8 +1035,8 @@ export const checkPhotoNotifications = functions
     const currentHour = now.getHours();
     const currentMin = now.getMinutes();
 
-    // Early exit: Photo times only happen between 13:00-22:00 UTC
-    if (currentHour < 13 || currentHour >= 22) {
+    // Early exit: Photo times only happen between 09:00-21:00 UTC (10:00-22:00 Portugal)
+    if (currentHour < 9 || currentHour >= 21) {
       // Silent exit - no logs to save costs
       return { success: true, skipped: "outside_photo_hours" };
     }
@@ -959,22 +1045,18 @@ export const checkPhotoNotifications = functions
       `⏰ Checking photo notifications at ${currentHour}:${currentMin}`
     );
 
-    // OPTIMIZATION: Use batch get for both pools in one call
-    const poolRefs = [
-      db.collection("pools").doc(`morning-${dateStr}`),
-      db.collection("pools").doc(`afternoon-${dateStr}`),
-    ];
+    // ✅ Get all 8 hourly pools for today (9h-16h UTC = 10h-17h Portugal)
+    const poolHours = [9, 10, 11, 12, 13, 14, 15, 16];
+    const poolRefs = poolHours.map((hour) =>
+      db.collection("pools").doc(`${dateStr}-${hour}h`)
+    );
 
-    const [morningPoolDoc, afternoonPoolDoc] = await db.getAll(...poolRefs);
-
-    const poolsToCheck = [
-      { doc: morningPoolDoc, name: "morning" },
-      { doc: afternoonPoolDoc, name: "afternoon" },
-    ];
+    // OPTIMIZATION: Batch get all pools in one call (max 10 docs)
+    const poolDocs = await db.getAll(...poolRefs);
 
     let notificationsSent = 0;
 
-    for (const { doc, name } of poolsToCheck) {
+    for (const doc of poolDocs) {
       if (!doc.exists) continue;
 
       const poolData = doc.data();
@@ -988,7 +1070,7 @@ export const checkPhotoNotifications = functions
 
         // Match current time (within 1-minute window)
         if (photoHour === currentHour && photoMin === currentMin) {
-          console.log(`📸 ${name} pool photo time matched! Sending...`);
+          // Matched a scheduled photo time for pool - send notifications
           const sent = await sendPhotoNotificationToPool(doc.id, db);
           notificationsSent += sent;
         }
@@ -1231,7 +1313,7 @@ export const manualCreatePools = functions
 
       console.log(`📅 Creating hourly pools for ${dateStr}`);
 
-      const poolHours = [10, 11, 12, 13, 14, 15, 16, 17];
+      const poolHours = [9, 10, 11, 12, 13, 14, 15, 16];
       const batch = db.batch();
 
       const revealHour = 21;
@@ -1331,9 +1413,9 @@ export const manualClosePool = functions
 
       const { hour } = req.body;
 
-      if (!hour || hour < 10 || hour > 17) {
+      if (!hour || hour < 9 || hour > 16) {
         res.status(400).json({
-          error: "Invalid hour. Must be between 10 and 17.",
+          error: "Invalid hour. Must be between 9 and 16.",
         });
         return;
       }

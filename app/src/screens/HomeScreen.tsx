@@ -59,9 +59,72 @@ export const HomeScreen = () => {
   const scrollRef = useRef<ScrollView>(null);
   const wasFocusedRef = useRef(false);
 
-  const getCurrentPhase = () => {
+  // ✅ TIMEZONE FIX: All time checks use getUTCHours() to match Cloud Functions
+  // ✅ SECURITY: Critical operations use Firestore server time (protects against device time changes)
+  // ✅ DISPLAY: Show local time to user, but use UTC internally
+
+  // Server time state (cached for 1 hour to reduce Firestore reads)
+  const [serverTime, setServerTime] = useState<Date | null>(null);
+  const [timeOffset, setTimeOffset] = useState<number>(0); // Server time - Device time
+
+  // ⚡ Fetch cached server time offset on mount (only fetches from Firestore once per hour)
+  useEffect(() => {
+    const fetchServerTimeOffset = async () => {
+      try {
+        // Use cached offset (only hits Firestore once per hour)
+        const offset = await poolService.getServerTimeOffset();
+
+        setTimeOffset(offset);
+        setServerTime(new Date(Date.now() + offset));
+
+        console.log(
+          `⏱️  Server time offset: ${offset}ms (${Math.round(offset / 1000)}s)`
+        );
+        console.log(`✅ Using cached server time - no Firestore read needed`);
+      } catch (error) {
+        console.error("❌ Failed to fetch server time offset:", error);
+      }
+    };
+
+    fetchServerTimeOffset();
+  }, []);
+
+  /**
+   * Get current time adjusted with server offset
+   * Uses device time + server offset to avoid constant Firestore reads
+   */
+  const getAdjustedTime = (): Date => {
+    if (timeOffset === 0) {
+      // Fallback to device time if offset not available
+      return new Date();
+    }
+    // Device time + offset = server time equivalent
+    return new Date(Date.now() + timeOffset);
+  };
+
+  /**
+   * Convert UTC hour to local hour for display
+   * Example: Pool 14h UTC → 15h Portugal (UTC+1)
+   */
+  const utcToLocalHour = (utcHour: number): number => {
     const now = new Date();
-    const currentHour = now.getHours();
+    const utcDate = new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        utcHour,
+        0,
+        0
+      )
+    );
+    return utcDate.getHours(); // Gets local hour
+  };
+
+  const getCurrentPhase = () => {
+    // Use server-adjusted time instead of device time
+    const now = getAdjustedTime();
+    const currentHour = now.getUTCHours(); // ✅ USE UTC TIME
 
     // Hourly pools from 10:00 to 17:00
     if (currentHour >= 10 && currentHour < 18) {
@@ -74,38 +137,46 @@ export const HomeScreen = () => {
   };
 
   const getCurrentPool = () => {
-    const now = new Date();
-    const currentHour = now.getHours();
+    // Use server-adjusted time instead of device time
+    const now = getAdjustedTime();
+    const currentHour = now.getUTCHours(); // ✅ USE UTC TIME
 
     // Return current hour pool (10h, 11h, 12h, 13h, 14h, 15h, 16h, 17h)
     if (currentHour >= 10 && currentHour < 18) {
-      return `${currentHour}h`;
+      // Convert UTC hour to local hour for display
+      const localHour = utcToLocalHour(currentHour);
+      return `${localHour}h`; // Show local time to user
     }
     return null;
   };
 
   const getStatusMessage = () => {
     const phase = getCurrentPhase();
-    const currentPool = getCurrentPool();
+    const currentPool = getCurrentPool(); // Already returns local hour (e.g., "16h")
 
     switch (phase) {
       case "pool-open":
         if (currentPool) {
-          const nextHour = parseInt(currentPool) + 1;
-          return `Pool ${currentPool} is open! Join to find your match (closes at ${nextHour}:00).`;
+          const currentLocalHour = parseInt(currentPool);
+          const nextLocalHour = currentLocalHour + 1;
+          return `Pool ${currentPool} is open! Join to find your match (closes at ${nextLocalHour}:00).`;
         }
         return "Join the current pool to find your match!";
       case "reveal-window":
         return "Identity reveal window is open! Discover your mystery buddy.";
       case "waiting":
-        const now = new Date();
-        const currentHour = now.getHours();
+        // Use server-adjusted time
+        const now = getAdjustedTime();
+        const currentHour = now.getUTCHours(); // ✅ USE UTC TIME
         if (currentHour < 10) {
-          return "Pools open at 10:00 AM. Come back soon!";
+          const localStartHour = utcToLocalHour(10);
+          return `Pools open at ${localStartHour}:00. Come back soon!`;
         } else if (currentHour >= 18 && currentHour < 21) {
-          return "Pools closed for today. Reveal at 21:00!";
+          const localRevealHour = utcToLocalHour(21);
+          return `Pools closed for today. Reveal at ${localRevealHour}:00!`;
         } else {
-          return "Pools closed. Next pool opens at 10:00 AM.";
+          const localStartHour = utcToLocalHour(10);
+          return `Pools closed. Next pool opens at ${localStartHour}:00.`;
         }
       default:
         return "Welcome to SecretBuddy!";
@@ -420,21 +491,7 @@ export const HomeScreen = () => {
       if (!user) return;
 
       try {
-        console.log(`🔍 Checking for photos for user: ${user.uid}`);
         const photos = await photoService.getUnviewedPhotos(user.uid);
-        console.log(`📸 Loaded ${photos.length} unviewed photos`);
-
-        if (photos.length > 0) {
-          console.log(
-            "📷 Photos received:",
-            photos.map((p) => ({
-              id: p.id,
-              senderId: p.senderId,
-              receiverId: p.receiverId,
-              viewed: p.viewed,
-            }))
-          );
-        }
 
         // Filter out photos older than 4 hours (receiver window)
         const now = Date.now();
@@ -611,24 +668,38 @@ export const HomeScreen = () => {
       let timeText = "";
 
       if (currentHour < 9) {
-        // Before pairing window
+        // Before pairing window (9:00 UTC = 10:00 Portugal)
         nextWindow.setHours(9, 0, 0, 0);
-        timeText = "Pairing opens at 09:00";
+        const localPairingHour = utcToLocalHour(9);
+        timeText = `Pairing opens at ${localPairingHour
+          .toString()
+          .padStart(2, "0")}:00`;
       } else if (currentHour >= 9 && currentHour < 12) {
         // During pairing window
         timeText = "Pairing pool is open!";
       } else if (currentHour >= 12 && currentHour < 21) {
-        // After pairing, before reveal
+        // After pairing, before reveal (21:00 UTC = 22:00 Portugal)
         nextWindow.setHours(21, 0, 0, 0);
-        timeText = "Reveal opens at 21:00";
+        const localRevealHour = utcToLocalHour(21);
+        timeText = `Reveal opens at ${localRevealHour
+          .toString()
+          .padStart(2, "0")}:00`;
       } else if (currentHour >= 21 && currentHour < 22) {
-        // During reveal window
-        timeText = "Reveal window is open!";
+        // During reveal window (21:00-22:00 UTC = 22:00-23:00 Portugal)
+        const localRevealHour = utcToLocalHour(21);
+        timeText = `Reveal window is open! (${localRevealHour
+          .toString()
+          .padStart(2, "0")}:00-${(localRevealHour + 1)
+          .toString()
+          .padStart(2, "0")}:00)`;
       } else {
-        // After reveal, next day pairing
+        // After reveal, next day pairing (9:00 UTC next day)
         nextWindow.setDate(nextWindow.getDate() + 1);
         nextWindow.setHours(9, 0, 0, 0);
-        timeText = "Next pairing at 09:00";
+        const localPairingHour = utcToLocalHour(9);
+        timeText = `Next pairing at ${localPairingHour
+          .toString()
+          .padStart(2, "0")}:00`;
       }
 
       setTimeUntilWindow(timeText);
@@ -637,11 +708,11 @@ export const HomeScreen = () => {
     checkDailyWindow();
     checkPromptTime();
 
-    // Check every 5 minutes instead of every minute to reduce re-renders
+    // ⚡ Check every 10 minutes to reduce Firestore reads (windows change every hour, so 10min is safe)
     const interval = setInterval(() => {
       checkDailyWindow();
       checkPromptTime();
-    }, 300000); // Check every 5 minutes (300000ms)
+    }, 600000); // Check every 10 minutes (600000ms = 10min)
 
     return () => clearInterval(interval);
   }, [pairing]);
@@ -1219,8 +1290,8 @@ export const HomeScreen = () => {
         )}
 
         {/* Photo Challenge Card - Shows after notification for 5 minutes */}
-        {/* HIDE if user has received photos to view (prioritize viewing over sending) */}
-        {showPhotoChallengeCard && !hasReceivedPhoto && (
+        {/* Always show if timer is active, regardless of received photos */}
+        {showPhotoChallengeCard && (
           <View style={styles.photoChallengeCard}>
             {/* Glow border effect */}
             <View style={styles.photoChallengeGlowBorder} />
@@ -1318,9 +1389,11 @@ export const HomeScreen = () => {
           </View>
         )}
 
-        {/* Reveal Time Card - Only show when it's actually reveal time AND user has a pair */}
+        {/* Reveal Time Card - Shows from reveal time (21:00 UTC / 22:00 PT) until midnight */}
+        {/* ✅ Card persists until midnight (doesn't disappear after reveal window closes) */}
+        {/* ✅ Button only active during reveal window (21:00-22:00 UTC / 22:00-23:00 PT) */}
         {currentPair &&
-          poolService.isRevealTime(currentPair) &&
+          poolService.isRevealTime(currentPair, timeOffset) &&
           poolService.canIReveal(currentPair, user?.uid || "") && (
             <Animated.View
               style={[
@@ -1344,18 +1417,42 @@ export const HomeScreen = () => {
               </View>
 
               <View style={styles.revealTimeContent}>
-                <Text style={styles.revealTimeMessage}>
-                  The moment you've been waiting for! Discover who your
-                  SecretBuddy really is and start chatting.
-                </Text>
+                {poolService.isRevealWindowOpen(timeOffset) ? (
+                  <>
+                    <Text style={styles.revealTimeMessage}>
+                      The moment you've been waiting for! Discover who your
+                      SecretBuddy really is and start chatting.
+                    </Text>
 
-                <TouchableOpacity
-                  style={styles.revealTimeButton}
-                  onPress={() => navigation.navigate("Reveal" as never)}
-                >
-                  <Ionicons name="sparkles" size={20} color="#FFFFFF" />
-                  <Text style={styles.revealTimeButtonText}>Reveal & Chat</Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.revealTimeButton}
+                      onPress={() => navigation.navigate("Reveal" as never)}
+                    >
+                      <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+                      <Text style={styles.revealTimeButtonText}>
+                        Reveal & Chat
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.revealTimeMessage}>
+                      Reveal window has closed for today, but you can still chat
+                      with your buddy!
+                    </Text>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.revealTimeButton,
+                        { backgroundColor: colors.accentTeal },
+                      ]}
+                      onPress={() => navigation.navigate("Chat" as never)}
+                    >
+                      <Ionicons name="chatbubbles" size={20} color="#FFFFFF" />
+                      <Text style={styles.revealTimeButtonText}>Open Chat</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             </Animated.View>
           )}

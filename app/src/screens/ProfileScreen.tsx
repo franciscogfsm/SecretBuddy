@@ -171,12 +171,13 @@ export const ProfileScreen = () => {
           try {
             await signOut();
             setProfile(null);
-            requestAnimationFrame(() =>
-              navigation.reset({
+            requestAnimationFrame(() => {
+              const rootNav = (navigation as any).getParent?.() ?? navigation;
+              rootNav.reset({
                 index: 0,
                 routes: [{ name: "Onboarding", params: { mode: "signin" } }],
-              })
-            );
+              });
+            });
           } catch (error) {
             Alert.alert(
               "Couldn't log out",
@@ -306,6 +307,87 @@ export const ProfileScreen = () => {
         },
       ]
     );
+  };
+
+  // Development-only: orchestrate pairing + notification using cloud functions
+  const [devRunning, setDevRunning] = useState(false);
+
+  const runDevPairAndNotify = async () => {
+    if (devRunning) return;
+    setDevRunning(true);
+
+    try {
+      // Compute target pool hour from current UTC: close previous hour
+      const nowUtc = new Date();
+      const previousHour = nowUtc.getUTCHours() - 1; // we close the pool for the previous hour
+
+      // Clamp to valid pool hours (9..16)
+      const clampedHour = Math.max(9, Math.min(16, previousHour));
+
+      const dateStr = nowUtc.toISOString().split("T")[0];
+      const poolId = `${dateStr}-${clampedHour}h`;
+
+      const base = "https://us-central1-secretbuddy-5637d.cloudfunctions.net";
+
+      // 1) Ensure pools exist
+      await fetch(`${base}/manualCreatePools`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      // Small delay to allow Firestore indexes to settle
+      await new Promise((r) => setTimeout(r, 1500));
+
+      // 2) Create pairs in test mode (all users)
+      const createPairsRes = await fetch(`${base}/manualCreatePairs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ poolId, allUsers: true }),
+      });
+
+      const createPairsJson = await createPairsRes.json();
+      if (!createPairsRes.ok) {
+        throw new Error(
+          `manualCreatePairs failed: ${
+            createPairsJson?.error || createPairsRes.status
+          }`
+        );
+      }
+
+      // Small delay
+      await new Promise((r) => setTimeout(r, 1000));
+
+      // 3) Trigger test photo notification for the pool
+      const notifyRes = await fetch(`${base}/manualTestPhotoNotification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ poolId }),
+      });
+
+      const notifyJson = await notifyRes.json();
+      if (!notifyRes.ok) {
+        throw new Error(
+          `manualTestPhotoNotification failed: ${
+            notifyJson?.error || notifyRes.status
+          }`
+        );
+      }
+
+      Alert.alert(
+        "Dev: Pair & Notify",
+        `Completed. Pairs created: ${
+          createPairsJson?.pairs ?? "?"
+        }. Notifications sent: ${notifyJson?.sent ?? notifyJson?.result ?? "?"}`
+      );
+    } catch (error: any) {
+      console.error("Dev pairing error:", error);
+      Alert.alert(
+        "Dev: Pair & Notify Error",
+        error instanceof Error ? error.message : String(error)
+      );
+    } finally {
+      setDevRunning(false);
+    }
   };
 
   // No loading screen needed - profile is pre-loaded on HomeScreen
@@ -829,6 +911,54 @@ export const ProfileScreen = () => {
               </View>
             </TouchableOpacity>
           </Animated.View>
+
+          {/* DEV: Pair & Notify orchestration button (only in dev) */}
+          {__DEV__ && (
+            <Animated.View
+              style={{
+                marginTop: 16,
+                opacity: settingsAnim3,
+                transform: [
+                  { scale: scaleAnim },
+                  {
+                    translateX: settingsAnim3.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [50, 0],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.settingsCard,
+                  { borderColor: "rgba(46,230,169,0.25)" },
+                ]}
+                onPress={runDevPairAndNotify}
+                disabled={devRunning}
+              >
+                <View style={styles.settingsCardContent}>
+                  <View style={styles.settingsIconContainer}>
+                    <Ionicons
+                      name="flash-outline"
+                      size={24}
+                      color={colors.textPrimary}
+                    />
+                  </View>
+                  <View style={styles.settingsTextContainer}>
+                    <Text style={styles.settingsLabel}>Pair & Notify</Text>
+                    <Text style={styles.settingsDescription} numberOfLines={2}>
+                      Create pools, pair users (all users), and send test photo
+                      notifications.
+                    </Text>
+                  </View>
+                  <Text style={styles.settingsChevron}>
+                    {devRunning ? "…" : "›"}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
         </Animated.View>
 
         {/* Footer Space */}
