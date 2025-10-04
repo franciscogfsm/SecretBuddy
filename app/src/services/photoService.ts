@@ -11,6 +11,7 @@ import {
   Timestamp,
   orderBy,
   limit,
+  increment,
 } from "firebase/firestore";
 import {
   ref,
@@ -19,8 +20,10 @@ import {
   deleteObject,
 } from "firebase/storage";
 import { db, storage } from "../config/firebase";
+import * as poolService from "./poolService";
 
 const PHOTOS_COLLECTION = "photoChallenge";
+const PAIRS_COLLECTION = "pairs";
 
 export interface PhotoChallenge {
   id: string;
@@ -70,19 +73,59 @@ export const uploadPhoto = async (
 };
 
 /**
- * Send a photo challenge to another user
+ * Send a photo challenge to paired buddy
+ * Validates photo window timing and max photos from pair
+ * @param bypassPhotoWindow - Skip photo window validation (for notifications sent by Cloud Functions)
  */
 export const sendPhotoChallenge = async (
   senderId: string,
   receiverId: string,
   photoUrl: string,
   prompt: string,
-  matchId?: string
+  matchId?: string,
+  bypassPhotoWindow?: boolean
 ): Promise<string> => {
   try {
+    // Get current pair to validate
+    const pair = await poolService.getMyCurrentPair(senderId);
+
+    if (!pair) {
+      throw new Error("You don't have an active pair. Join a pool first!");
+    }
+
+    // Validate it's the correct partner
+    const partnerId = poolService.getPartnerIdFromPair(pair, senderId);
+    if (partnerId !== receiverId) {
+      throw new Error("You can only send photos to your paired buddy!");
+    }
+
+    // Validate photo window timing (skip if bypassPhotoWindow is true)
+    if (!bypassPhotoWindow) {
+      if (!poolService.isInPhotoWindow(pair)) {
+        const timeUntil = poolService.getTimeUntilPhotoWindow(pair);
+        if (timeUntil > 0) {
+          throw new Error(
+            `Photo window hasn't opened yet! Opens in ${poolService.formatTimeRemaining(
+              timeUntil
+            )}`
+          );
+        } else {
+          throw new Error("Photo window has closed!");
+        }
+      }
+    }
+
+    // Check max photos limit
+    const myPhotoCount = poolService.getMyPhotoCount(pair, senderId);
+    if (myPhotoCount >= pair.maxPhotos) {
+      throw new Error(
+        `You've reached the maximum of ${pair.maxPhotos} photos for today!`
+      );
+    }
+
     const photoRef = doc(collection(db, PHOTOS_COLLECTION));
 
-    // Build photo data, only include matchId if provided
+    // Save photo challenge
     const photoData: any = {
       senderId,
       receiverId,
@@ -90,20 +133,31 @@ export const sendPhotoChallenge = async (
       prompt,
       timestamp: serverTimestamp(),
       viewed: false,
+      pairId: pair.id,
     };
 
-    // Only add matchId if it exists
     if (matchId) {
       photoData.matchId = matchId;
     }
 
     await setDoc(photoRef, photoData);
-    console.log("✅ Photo challenge sent:", photoRef.id);
+
+    // Update pair photo count
+    const pairRef = doc(db, PAIRS_COLLECTION, pair.id);
+    const isUserA = pair.userA === senderId;
+
+    await updateDoc(pairRef, {
+      [isUserA ? "photosA" : "photosB"]: increment(1),
+      // Enable reveal if this is first photo
+      [isUserA ? "canRevealA" : "canRevealB"]: true,
+    });
+
+    console.log("✅ Photo challenge sent and pair updated:", photoRef.id);
 
     return photoRef.id;
   } catch (error) {
     console.error("❌ Error sending photo challenge:", error);
-    throw new Error("Failed to send photo challenge");
+    throw error;
   }
 };
 
@@ -145,6 +199,28 @@ export const getUnviewedPhotos = async (
   } catch (error) {
     console.error("❌ Error getting unviewed photos:", error);
     return [];
+  }
+};
+
+/**
+ * Get a specific photo by ID
+ */
+export const getPhotoById = async (
+  photoId: string
+): Promise<PhotoChallenge | null> => {
+  try {
+    const photoRef = doc(db, PHOTOS_COLLECTION, photoId);
+    const photoDoc = await getDoc(photoRef);
+
+    if (!photoDoc.exists()) {
+      console.warn("⚠️ Photo not found:", photoId);
+      return null;
+    }
+
+    return { id: photoDoc.id, ...photoDoc.data() } as PhotoChallenge;
+  } catch (error) {
+    console.error("❌ Error getting photo by ID:", error);
+    return null;
   }
 };
 

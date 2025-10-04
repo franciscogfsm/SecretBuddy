@@ -31,6 +31,9 @@ import { useAuth } from "../context/AuthContext";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
 import * as photoService from "../services/photoService";
+import * as poolService from "../services/poolService";
+import * as notificationService from "../services/notificationService";
+import { PillOption } from "../components/PillOption";
 
 type PairingStatus =
   | "waiting"
@@ -107,7 +110,6 @@ export const HomeScreen = () => {
   const [floatAnim] = useState(new Animated.Value(0));
   const [glowAnim] = useState(new Animated.Value(0.7));
   const [receivedPhotoAnim] = useState(new Animated.Value(1)); // Animation for received photo card
-  const [isGameModeSelected, setIsGameModeSelected] = useState(false);
   const [showPairingSuccess, setShowPairingSuccess] = useState(false);
   const [isPromptTime, setIsPromptTime] = useState(false);
   const [nextPromptTime, setNextPromptTime] = useState<Date | null>(null);
@@ -131,6 +133,20 @@ export const HomeScreen = () => {
   // Ghosting warning state
   const [showGhostingWarning, setShowGhostingWarning] = useState(true);
 
+  // Pool system state
+  const [currentPool, setCurrentPool] = useState<poolService.Pool | null>(null);
+  const [currentPair, setCurrentPair] = useState<poolService.Pair | null>(null);
+  const [isInPool, setIsInPool] = useState(false);
+  const [poolLoading, setPoolLoading] = useState(false);
+  const [showPriorityModal, setShowPriorityModal] = useState(false);
+  const [selectedPriority, setSelectedPriority] = useState<
+    "friends" | "country" | "world" | null
+  >(null);
+
+  // Photo notification state
+  const [photoPrompt, setPhotoPrompt] = useState("");
+  const [showPairedModal, setShowPairedModal] = useState(false);
+
   // Current photo prompt (stable - doesn't change on every render)
   const [currentPromptIndex] = useState(() => Math.floor(Math.random() * 8));
 
@@ -144,6 +160,8 @@ export const HomeScreen = () => {
   >(null);
   // Countdown timer state - calculated based on actual timestamp
   const [timeRemaining, setTimeRemaining] = useState(300); // 5 minutes in seconds
+  // Show photo challenge card (appears after notification)
+  const [showPhotoChallengeCard, setShowPhotoChallengeCard] = useState(false);
 
   // Random photo prompts that appear throughout the day
   const randomPrompts = [
@@ -303,6 +321,86 @@ export const HomeScreen = () => {
     }
   };
 
+  // Send photo from notification modal
+  const sendPhotoFromNotification = async () => {
+    if (!user?.uid || !currentPair) {
+      Alert.alert("Error", "No active pair found");
+      return;
+    }
+
+    try {
+      // Get camera permissions
+      let cameraPermission = await ImagePicker.getCameraPermissionsAsync();
+      if (cameraPermission.status !== "granted") {
+        cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+      }
+
+      if (cameraPermission.status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Camera access is needed to send photos"
+        );
+        return;
+      }
+
+      // Launch camera
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        cameraType: ImagePicker.CameraType.back,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const photoUri = result.assets[0].uri;
+
+        // Get partner ID
+        const partnerId = poolService.getPartnerIdFromPair(
+          currentPair,
+          user.uid
+        );
+
+        if (!partnerId) {
+          Alert.alert("Error", "Could not find partner");
+          return;
+        }
+
+        // Upload and send photo
+        console.log("📤 Uploading photo from notification...");
+        const photoUrl = await photoService.uploadPhoto(
+          photoUri,
+          user.uid,
+          partnerId
+        );
+
+        // Send photo with bypass flag (notification already validated timing)
+        await photoService.sendPhotoChallenge(
+          user.uid,
+          partnerId,
+          photoUrl,
+          photoPrompt,
+          currentPair.id,
+          true // bypassPhotoWindow = true
+        );
+
+        // Hide photo challenge card after sending
+        setShowPhotoChallengeCard(false);
+        setPhotoChallengeCreatedAt(null);
+        await AsyncStorage.removeItem("photoChallengeData");
+
+        Alert.alert(
+          "Photo Sent! 📸",
+          "Your photo has been shared with your mystery buddy!",
+          [{ text: "Awesome!" }]
+        );
+      }
+    } catch (error) {
+      console.error("❌ Error sending photo from notification:", error);
+      Alert.alert("Error", "Failed to send photo. Please try again.");
+    }
+  };
+
   // Load received photos when screen loads
   useEffect(() => {
     const loadReceivedPhotos = async () => {
@@ -315,7 +413,7 @@ export const HomeScreen = () => {
 
         if (photos.length > 0) {
           console.log(
-            "� Photos received:",
+            "📷 Photos received:",
             photos.map((p) => ({
               id: p.id,
               senderId: p.senderId,
@@ -363,9 +461,42 @@ export const HomeScreen = () => {
     return () => clearInterval(interval);
   }, [user]);
 
+  // Load current pool and pair status
+  useEffect(() => {
+    const loadPoolStatus = async () => {
+      if (!user) return;
+
+      try {
+        // Get current pool
+        const pool = await poolService.getCurrentPool();
+        setCurrentPool(pool);
+
+        if (pool) {
+          // Check if user is in this pool
+          const inPool = await poolService.isUserInPool(user.uid, pool.id);
+          setIsInPool(inPool);
+        }
+
+        // Get current pair (if any)
+        const pair = await poolService.getMyCurrentPair(user.uid);
+        setCurrentPair(pair);
+      } catch (error) {
+        console.error("Error loading pool status:", error);
+      }
+    };
+
+    loadPoolStatus();
+
+    // Poll for pool updates every 30 seconds
+    const interval = setInterval(loadPoolStatus, 30000);
+    return () => clearInterval(interval);
+  }, [user, isFocused]);
+
   // Handlers for photo viewing
   const handleViewPhoto = async (photoId: string) => {
     try {
+      console.log("📸 User clicked 'Got it' - Deleting photo:", photoId);
+
       // Mark as viewed
       await photoService.markPhotoAsViewed(photoId);
 
@@ -375,6 +506,9 @@ export const HomeScreen = () => {
       console.log("✅ Photo viewed and deleted:", photoId);
 
       setHasViewedPhoto(true);
+
+      // Close modal immediately
+      handleClosePhotoModal();
 
       // Reload photos to update the list (will show remaining photos if any)
       if (user) {
@@ -397,13 +531,14 @@ export const HomeScreen = () => {
         setReceivedPhotos(recentPhotos);
         setHasReceivedPhoto(recentPhotos.length > 0);
 
-        // Close modal if no more photos
-        if (recentPhotos.length === 0) {
-          handleClosePhotoModal();
-        }
+        console.log(
+          `📊 Photos remaining after deletion: ${recentPhotos.length}`
+        );
       }
     } catch (error) {
-      console.error("Error marking photo as viewed:", error);
+      console.error("❌ Error viewing/deleting photo:", error);
+      // Close modal even on error
+      handleClosePhotoModal();
     }
   };
 
@@ -418,9 +553,6 @@ export const HomeScreen = () => {
   };
 
   useEffect(() => {
-    // Check if game mode is selected
-    setIsGameModeSelected(!!profile?.mode);
-
     const checkPromptTime = () => {
       const now = new Date();
       const currentHour = now.getHours();
@@ -499,7 +631,7 @@ export const HomeScreen = () => {
     }, 300000); // Check every 5 minutes (300000ms)
 
     return () => clearInterval(interval);
-  }, [pairing, profile?.mode]);
+  }, [pairing]);
 
   useEffect(() => {
     if (pairing.phase === "searching") {
@@ -582,91 +714,218 @@ export const HomeScreen = () => {
     }
   }, [isPromptTime, floatAnim, glowAnim]);
 
-  // Load skip status and photo challenge timestamp on mount
+  // Register for push notifications and setup listeners
   useEffect(() => {
-    const loadStoredData = async () => {
-      try {
-        // Load skip status
-        const skipDate = await AsyncStorage.getItem("lastSkipDate");
-        if (skipDate) {
-          const today = new Date().toDateString();
-          setLastSkipDate(skipDate);
-          setHasSkippedToday(skipDate === today);
-        }
+    // Register for push tokens ONLY if user is logged in
+    if (user?.uid) {
+      notificationService.registerForPushNotifications(user.uid);
+    }
 
-        // Load photo challenge timestamp
-        const storedTimestamp = await AsyncStorage.getItem(
-          "photoChallengeCreatedAt"
-        );
-        if (storedTimestamp) {
-          const timestamp = parseInt(storedTimestamp, 10);
-          const now = Date.now();
-          const elapsed = Math.floor((now - timestamp) / 1000); // seconds elapsed
-          const FIVE_MINUTES = 300; // 5 minutes in seconds
+    // Listen for notifications ALWAYS (even without login) - will save to AsyncStorage
+    const notificationListener =
+      notificationService.addNotificationReceivedListener(
+        async (notification) => {
+          console.log("📩 Notification received:", notification);
+          const data = notification.request.content.data || {};
+          const type = data.type as string | undefined;
+          const prompt = data.prompt as string | undefined;
 
-          if (elapsed >= FIVE_MINUTES) {
-            // Timer already expired - hide card immediately
-            setHasSentPhoto(true);
-            setTimeRemaining(0);
-            // Clear the stored timestamp
-            await AsyncStorage.removeItem("photoChallengeCreatedAt");
-          } else {
-            // Timer still active - calculate remaining time
-            const remaining = FIVE_MINUTES - elapsed;
-            setTimeRemaining(remaining);
+          // AUTO-SHOW: Photo challenge card appears automatically when notification arrives
+          if (type === "photo_challenge") {
+            console.log(
+              "📬 Notification received in foreground - AUTO-SHOWING card!"
+            );
+
+            // Use prompt from notification or fallback to random
+            const challengePrompt =
+              prompt ||
+              randomPrompts[Math.floor(Math.random() * randomPrompts.length)];
+
+            // IMPORTANT: Use timestamp from notification (sent by Cloud Functions)
+            const timestamp = data.timestamp
+              ? Number(data.timestamp)
+              : Date.now();
+            console.log("⏰ Using timestamp from notification:", timestamp);
+
+            // Set prompt and timestamp (will work even without login)
+            setPhotoPrompt(challengePrompt);
             setPhotoChallengeCreatedAt(timestamp);
+            setShowPhotoChallengeCard(true);
+
+            // Save to AsyncStorage (persist across logout/login)
+            try {
+              await AsyncStorage.setItem(
+                "photoChallengeData",
+                JSON.stringify({
+                  prompt: challengePrompt,
+                  timestamp,
+                  poolId: data.poolId || "",
+                })
+              );
+              console.log(
+                "✅ Photo challenge saved to AsyncStorage (will show after login if not logged in)"
+              );
+            } catch (error) {
+              console.error("❌ Failed to save photo challenge:", error);
+            }
           }
         }
-      } catch (error) {
-        console.error("Error loading stored data:", error);
-      }
-    };
-    loadStoredData();
-  }, []);
+      );
 
-  // Initialize photo challenge timestamp on first render if not set
-  useEffect(() => {
-    const initializeTimer = async () => {
-      if (photoChallengeCreatedAt === null && !hasSentPhoto) {
-        const now = Date.now();
-        setPhotoChallengeCreatedAt(now);
-        try {
-          await AsyncStorage.setItem("photoChallengeCreatedAt", now.toString());
-          console.log(
-            "⏰ Photo challenge timer initialized:",
-            new Date(now).toISOString()
-          );
-        } catch (error) {
-          console.error("Error saving photo challenge timestamp:", error);
+    // Listen for notification taps (when app is in background) - ALWAYS active
+    const responseListener =
+      notificationService.addNotificationResponseReceivedListener(
+        async (response) => {
+          console.log("👆 Notification tapped:", response);
+          const data = response.notification.request.content.data || {};
+          const type = data.type as string | undefined;
+          const prompt = data.prompt as string | undefined;
+          const photoId = data.photoId as string | undefined;
+
+          // Photo challenge notification - show Photo Challenge Card
+          if (type === "photo_challenge") {
+            // Use prompt from notification or fallback to random
+            const challengePrompt =
+              prompt ||
+              randomPrompts[Math.floor(Math.random() * randomPrompts.length)];
+
+            console.log(
+              "🔔 NOTIFICATION TAPPED - Showing Photo Challenge Card"
+            );
+            console.log("  Type:", type);
+            console.log("  Prompt from notification:", prompt);
+            console.log("  Final prompt:", challengePrompt);
+
+            // IMPORTANT: Use timestamp from notification (sent by Cloud Functions)
+            const timestamp = data.timestamp
+              ? Number(data.timestamp)
+              : Date.now();
+            console.log("⏰ Using timestamp from notification:", timestamp);
+
+            // Set prompt and timestamp (will work even without login)
+            setPhotoPrompt(challengePrompt);
+            setPhotoChallengeCreatedAt(timestamp);
+            setShowPhotoChallengeCard(true);
+
+            // Save to AsyncStorage (persist across logout/login)
+            try {
+              await AsyncStorage.setItem(
+                "photoChallengeData",
+                JSON.stringify({
+                  prompt: challengePrompt,
+                  timestamp,
+                  poolId: data.poolId || "",
+                })
+              );
+              console.log("✅ Photo challenge saved to AsyncStorage");
+            } catch (error) {
+              console.error("❌ Failed to save photo challenge:", error);
+            }
+          }
+
+          // Photo received notification - open PhotoViewModal
+          if (type === "photo_received" && photoId) {
+            try {
+              console.log("📬 Loading received photo:", photoId);
+              const photo = await photoService.getPhotoById(photoId);
+              if (photo) {
+                setSelectedPhoto(photo);
+                setShowPhotoViewer(true);
+              }
+            } catch (error) {
+              console.error("❌ Error loading photo:", error);
+              Alert.alert("Error", "Could not load photo");
+            }
+          }
         }
+      );
+
+    return () => {
+      notificationListener.remove();
+      responseListener.remove();
+    };
+  }, [user?.uid]);
+
+  // Check if pair was created (for showing "Paired!" modal)
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    let checkInterval: NodeJS.Timeout;
+    if (isInPool && !currentPair) {
+      // Poll every 5 seconds to check if pairing happened
+      checkInterval = setInterval(async () => {
+        const pair = await poolService.getMyCurrentPair(user.uid);
+        if (pair) {
+          setCurrentPair(pair);
+          setShowPairedModal(true);
+          // Auto-hide modal after 3 seconds
+          setTimeout(() => setShowPairedModal(false), 3000);
+        }
+      }, 5000);
+    }
+
+    return () => {
+      if (checkInterval) clearInterval(checkInterval);
+    };
+  }, [isInPool, currentPair, user?.uid]);
+
+  // Restore photo challenge from AsyncStorage on mount (ALWAYS, even without login)
+  useEffect(() => {
+    const restorePhotoChallenge = async () => {
+      try {
+        const savedData = await AsyncStorage.getItem("photoChallengeData");
+        if (!savedData) return;
+
+        const { prompt, timestamp, poolId } = JSON.parse(savedData);
+        const elapsed = Date.now() - timestamp;
+        const FIVE_MINUTES = 5 * 60 * 1000;
+
+        // If less than 5 minutes elapsed, restore the challenge
+        if (elapsed < FIVE_MINUTES) {
+          console.log(
+            "📸 Restoring photo challenge from storage (user logged in:",
+            !!user?.uid,
+            ")"
+          );
+          setPhotoPrompt(prompt);
+          setPhotoChallengeCreatedAt(timestamp);
+          setShowPhotoChallengeCard(true);
+        } else {
+          // Clean up expired challenge
+          await AsyncStorage.removeItem("photoChallengeData");
+          console.log("🧹 Removed expired photo challenge");
+        }
+      } catch (error) {
+        console.error("❌ Failed to restore photo challenge:", error);
       }
     };
-    initializeTimer();
-  }, [photoChallengeCreatedAt, hasSentPhoto]);
 
-  // Countdown timer for photo challenge - based on actual timestamp
+    restorePhotoChallenge();
+  }, [user?.uid]); // Re-run when user logs in to show saved challenge
+
+  // Countdown timer for photo challenge card
   useEffect(() => {
-    if (!photoChallengeCreatedAt || hasSentPhoto) return;
+    if (!showPhotoChallengeCard || !photoChallengeCreatedAt) return;
 
-    const timer = setInterval(() => {
-      const now = Date.now();
-      const elapsed = Math.floor((now - photoChallengeCreatedAt) / 1000);
-      const FIVE_MINUTES = 300;
-      const remaining = FIVE_MINUTES - elapsed;
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - photoChallengeCreatedAt;
+      const FIVE_MINUTES = 5 * 60 * 1000;
+      const remaining = Math.max(0, FIVE_MINUTES - elapsed);
+      const remainingSeconds = Math.floor(remaining / 1000);
 
-      if (remaining <= 0) {
-        // Timer expired - hide the card and cleanup
-        setHasSentPhoto(true);
-        setTimeRemaining(0);
-        AsyncStorage.removeItem("photoChallengeCreatedAt").catch(console.error);
-        clearInterval(timer);
-      } else {
-        setTimeRemaining(remaining);
+      setTimeRemaining(remainingSeconds);
+
+      // Hide card when time expires
+      if (remainingSeconds <= 0) {
+        setShowPhotoChallengeCard(false);
+        setPhotoChallengeCreatedAt(null);
+        AsyncStorage.removeItem("photoChallengeData");
+        console.log("⏰ Photo challenge expired");
       }
     }, 1000);
 
-    return () => clearInterval(timer);
-  }, [photoChallengeCreatedAt, hasSentPhoto]);
+    return () => clearInterval(interval);
+  }, [showPhotoChallengeCard, photoChallengeCreatedAt]);
 
   // Auto-scroll to top when tab is tapped again
   useFocusEffect(
@@ -680,142 +939,152 @@ export const HomeScreen = () => {
   );
 
   const handleStartPairing = () => {
-    if (!profile?.mode) {
-      Alert.alert("Select Game Mode", "Please choose a game mode first!");
+    if (!currentPool) {
+      Alert.alert(
+        "No Pool Available",
+        "Please wait for the next pool window to open."
+      );
       return;
     }
 
-    // Start the pairing process
-    setPairing({
-      ...pairing,
-      phase: "searching",
-    });
+    if (isInPool) {
+      Alert.alert("Already Joined", "You're already in this pool!");
+      return;
+    }
 
-    // Simulate finding a match after 3 seconds
-    setTimeout(() => {
-      setPairing({
-        ...pairing,
-        phase: "paired-waiting",
-      });
+    // Show priority selection modal
+    setShowPriorityModal(true);
+  };
+
+  const handlePrioritySelect = async (
+    priority: "friends" | "country" | "world"
+  ) => {
+    if (!user || !currentPool) return;
+
+    setSelectedPriority(priority);
+    setShowPriorityModal(false);
+    setPoolLoading(true);
+
+    try {
+      await poolService.joinPool(user.uid, currentPool.id, priority);
+      setIsInPool(true);
+
       Alert.alert(
-        "Match Found! 🎉",
-        "Great news! We found your perfect SecretBuddy. The submission window will open soon!"
+        "Joined Pool! 🎉",
+        `You've joined the ${currentPool.type} pool with "${priority}" priority. Pairing will happen when the pool closes!`
       );
-    }, 3000);
+    } catch (error) {
+      console.error("Error joining pool:", error);
+      Alert.alert("Error", "Failed to join pool. Please try again.");
+    } finally {
+      setPoolLoading(false);
+    }
+  };
+
+  const handleLeavePool = async () => {
+    if (!user || !currentPool) return;
+
+    Alert.alert("Leave Pool?", "Are you sure you want to leave this pool?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Leave",
+        style: "destructive",
+        onPress: async () => {
+          setPoolLoading(true);
+          try {
+            await poolService.leavePool(user.uid, currentPool.id);
+            setIsInPool(false);
+            setSelectedPriority(null);
+            Alert.alert("Left Pool", "You've left the pool successfully.");
+          } catch (error) {
+            console.error("Error leaving pool:", error);
+            Alert.alert("Error", "Failed to leave pool. Please try again.");
+          } finally {
+            setPoolLoading(false);
+          }
+        },
+      },
+    ]);
   };
 
   const handlePairingPress = () => {
-    const phase = getCurrentPhase();
-
-    if (!isGameModeSelected) {
-      Alert.alert("Select Game Mode", "Please choose a game mode first!");
+    if (currentPair && poolService.isRevealTime(currentPair)) {
+      // Navigate to reveal screen
+      navigation.navigate("Reveal" as never);
       return;
     }
 
-    switch (phase) {
-      case "pool-a":
-      case "pool-b":
-        // Start the searching animation
-        setPairing({
-          ...pairing,
-          phase: "searching",
-        });
-
-        // Simulate finding a match after 3-5 seconds
-        setTimeout(() => {
-          setPairing({
-            ...pairing,
-            phase: "matched",
-          });
-          const poolName = getCurrentPool();
-          Alert.alert(
-            "Mystery Buddy Found! 🎉",
-            `Great news! We found your perfect mystery buddy in Pool ${poolName}. Send messages throughout the day to unlock reveal time!`
-          );
-        }, 4000);
-        break;
-      case "reveal-window":
-        navigation.navigate("Reveal" as never);
-        break;
-      case "waiting":
-        // For demo purposes, allow reveal even when pairing pool is closed
-        navigation.navigate("Reveal", { demo: true, bothRevealed: true });
-        break;
+    if (isInPool) {
+      // Show option to leave pool
+      handleLeavePool();
+    } else {
+      // Show option to join pool
+      handleStartPairing();
     }
   };
 
   const getStatusText = () => {
-    switch (pairing.phase) {
-      case "not-paired":
-        return isGameModeSelected
-          ? "Ready to find your SecretBuddy?"
-          : "Select a game mode to begin";
-      case "searching":
-        return "Searching for your mystery buddy... We'll notify you when we find the perfect match!";
-      case "paired-waiting":
-        return "Matched! Waiting for submission window";
-      case "submission-open":
-        return "Submit your response now!";
-      case "submitted":
-        return "Response submitted ✓";
-      case "matched":
-        return "Both responses in! Reveal coming soon";
-      case "reveal-ready":
-        return "🎉 Identity reveal time!";
-      default:
-        return timeUntilWindow
-          ? `Next window in ${timeUntilWindow}`
-          : "Ready to connect!";
-    }
-  };
+    if (currentPair) {
+      if (poolService.isRevealTime(currentPair)) {
+        return "🎉 Reveal time! See who your buddy is.";
+      }
+      if (poolService.isInPhotoWindow(currentPair)) {
+        const photosRemaining =
+          currentPair.maxPhotos -
+          poolService.getMyPhotoCount(currentPair, user?.uid || "");
+        return `Send ${photosRemaining} more photo${
+          photosRemaining !== 1 ? "s" : ""
+        } during photo window.`;
+      }
 
-  const handleModeSelect = (mode: string) => {
-    if (profile) {
-      setProfile({ ...profile, mode: mode as any });
-    }
-  };
+      // If pair exists but no pool (outside pool hours)
+      if (!currentPool) {
+        return "You're paired! Photo window and reveal will happen at scheduled times.";
+      }
 
-  const getModeOptions = () => [
-    {
-      label: "Friends",
-      value: "friends",
-      description: "Connect with your friends only",
-    },
-    {
-      label: "Country",
-      value: "country",
-      description: "Pair with someone from your selected country",
-    },
-    {
-      label: "World",
-      value: "world",
-      description: "Connect with anyone worldwide",
-    },
-  ];
+      return "Paired! Photo window opens soon.";
+    }
+
+    if (isInPool && currentPool) {
+      return `Waiting for pairing at ${
+        currentPool.type === "morning" ? "1PM" : "5PM"
+      }.`;
+    }
+
+    if (currentPool) {
+      return `Join ${
+        currentPool.type === "morning" ? "morning" : "afternoon"
+      } pool to find a buddy!`;
+    }
+
+    return "Pools open 8AM-1PM and 1PM-5PM daily.";
+  };
 
   const getButtonText = () => {
-    const phase = getCurrentPhase();
-
-    if (!isGameModeSelected) {
-      return "Choose Game Mode First";
+    if (poolLoading) {
+      return "Loading...";
     }
 
-    switch (phase) {
-      case "pool-a":
-        return pairing.phase === "searching"
-          ? "Finding your buddy..."
-          : "Join Pool A";
-      case "pool-b":
-        return pairing.phase === "searching"
-          ? "Finding your buddy..."
-          : "Join Pool B";
-      case "reveal-window":
-        return "Reveal Identity";
-      case "waiting":
-        return "Pool Closed";
-      default:
-        return "Start Pairing";
+    if (currentPair && poolService.isRevealTime(currentPair)) {
+      return "Reveal Identity";
     }
+
+    // If user has a pair but no current pool (outside pool hours)
+    if (currentPair && !currentPool) {
+      return "Paired - Check Chat";
+    }
+
+    if (isInPool) {
+      return "Leave Pool";
+    }
+
+    if (currentPool) {
+      return `Join ${
+        currentPool.type === "morning" ? "Morning" : "Afternoon"
+      } Pool`;
+    }
+
+    return "No Pool Available";
   };
 
   return (
@@ -926,133 +1195,55 @@ export const HomeScreen = () => {
           </Animated.View>
         )}
 
-        {/* Reveal Time Card - Show for testing */}
-        {isGameModeSelected && (
-          <Animated.View
-            style={[
-              styles.revealTimeCard,
-              {
-                opacity: pulseAnim,
-                transform: [{ scale: pulseAnim }],
-              },
-            ]}
-          >
-            <View style={styles.revealTimeHeader}>
-              <View style={styles.revealTimeIcon}>
-                <Ionicons name="eye" size={32} color="#FF4FB7" />
-              </View>
-              <View style={styles.revealTimeHeaderText}>
-                <Text style={styles.revealTimeTitle}>🎭 Reveal Time!</Text>
-                <Text style={styles.revealTimeSubtitle}>
-                  Tap to reveal your mystery buddy's identity
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.revealTimeContent}>
-              <Text style={styles.revealTimeMessage}>
-                The moment you've been waiting for! Discover who your
-                SecretBuddy really is and decide if you want to connect.
-              </Text>
-
-              <View style={styles.revealTimeButtons}>
-                <TouchableOpacity
-                  style={styles.revealTimeButton}
-                  onPress={() =>
-                    navigation.navigate("Reveal", {
-                      demo: true,
-                      bothRevealed: true,
-                    })
-                  }
-                >
-                  <Ionicons name="sparkles" size={20} color="#FFFFFF" />
-                  <Text style={styles.revealTimeButtonText}>Tap to Reveal</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.revealTimeDemoButton}
-                  onPress={() =>
-                    navigation.navigate("Reveal", {
-                      demo: true,
-                      bothRevealed: false,
-                    })
-                  }
-                >
-                  <Ionicons name="eye-off" size={16} color="#FF4FB7" />
-                  <Text style={styles.revealTimeDemoButtonText}>
-                    👻 Ghost Demo
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Photo Challenge Card - Enhanced & Engaging - Hide after sending */}
-        {!hasSentPhoto && (
-          <Animated.View
-            style={[
-              styles.photoChallengeCard,
-              {
-                transform: [{ scale: scaleAnim }],
-              },
-            ]}
-          >
-            {/* Glowing gradient border effect */}
+        {/* Photo Challenge Card - Shows after notification for 5 minutes */}
+        {showPhotoChallengeCard && (
+          <View style={styles.photoChallengeCard}>
+            {/* Glow border effect */}
             <View style={styles.photoChallengeGlowBorder} />
 
-            {/* Header with Icon and Title */}
-            <View style={styles.photoChallengeHeaderLeft}>
-              <Animated.View
-                style={[
-                  styles.photoChallengeIconContainer,
-                  {
-                    transform: [
-                      {
-                        rotate: pulseAnim.interpolate({
-                          inputRange: [0.95, 1.05],
-                          outputRange: ["-3deg", "3deg"],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
-              >
-                <Ionicons name="camera" size={32} color={colors.accentPurple} />
-                <View style={styles.iconSparkle}>
+            {/* Header */}
+            <View style={styles.photoChallengeHeader}>
+              <View style={styles.photoChallengeHeaderLeft}>
+                <View style={styles.photoChallengeIconContainer}>
                   <Ionicons
-                    name="sparkles"
-                    size={14}
-                    color={colors.accentPink}
+                    name="camera"
+                    size={32}
+                    color={colors.accentPurple}
                   />
+                  <View style={styles.iconSparkle}>
+                    <Ionicons
+                      name="sparkles"
+                      size={12}
+                      color={colors.accentYellow}
+                    />
+                  </View>
                 </View>
-              </Animated.View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.photoChallengeTitle}>Send Photo</Text>
-                <Text style={styles.photoChallengeSubtitle}>
-                  To your mystery buddy
-                </Text>
+                <View>
+                  <Text style={styles.photoChallengeTitle}>📸 Send Photo</Text>
+                  <Text style={styles.photoChallengeSubtitle}>
+                    Time to capture the moment!
+                  </Text>
+                </View>
               </View>
             </View>
 
-            {/* Countdown Timer */}
+            {/* Timer Chip */}
             <View
               style={[
                 styles.photoChallengeTimerChip,
-                timeRemaining <= 180
-                  ? styles.photoChallengeTimerUrgent
-                  : timeRemaining <= 60
-                  ? styles.photoChallengeTimerCritical
-                  : null,
+                timeRemaining < 60 && styles.photoChallengeTimerCritical,
+                timeRemaining >= 60 &&
+                  timeRemaining < 120 &&
+                  styles.photoChallengeTimerUrgent,
               ]}
             >
               <Ionicons
-                name="timer-outline"
+                name="time"
                 size={16}
                 color={
-                  timeRemaining <= 60
+                  timeRemaining < 60
                     ? colors.danger
-                    : timeRemaining <= 180
+                    : timeRemaining < 120
                     ? colors.accentPink
                     : colors.accentPurple
                 }
@@ -1062,315 +1253,165 @@ export const HomeScreen = () => {
                   styles.photoChallengeTimerText,
                   {
                     color:
-                      timeRemaining <= 60
+                      timeRemaining < 60
                         ? colors.danger
-                        : timeRemaining <= 180
+                        : timeRemaining < 120
                         ? colors.accentPink
                         : colors.accentPurple,
                   },
                 ]}
               >
                 {Math.floor(timeRemaining / 60)}:
-                {String(timeRemaining % 60).padStart(2, "0")}
+                {(timeRemaining % 60).toString().padStart(2, "0")}
               </Text>
             </View>
 
-            {/* Challenge Prompt - More exciting */}
+            {/* Prompt Container */}
             <View style={styles.photoChallengePromptContainer}>
               <View style={styles.promptLabelRow}>
+                <Ionicons name="bulb" size={16} color={colors.accentYellow} />
                 <Text style={styles.photoChallengePromptLabel}>
-                  TODAY'S CHALLENGE:
+                  Today's Prompt
                 </Text>
               </View>
-              <Animated.Text
-                style={[styles.photoChallengePromptText, { opacity: glowAnim }]}
-              >
-                {randomPrompts[currentPromptIndex]}
-              </Animated.Text>
+              <Text style={styles.photoChallengePromptText}>{photoPrompt}</Text>
               <View style={styles.promptAccentLine} />
             </View>
 
-            {/* Action Buttons - More exciting */}
-            <View style={styles.photoChallengeActionContainer}>
-              <TouchableOpacity
-                style={styles.photoChallengePrimaryButton}
-                onPress={takeBackPhoto}
-                activeOpacity={0.8}
-              >
-                <Animated.View
-                  style={[
-                    styles.photoChallengeButtonIcon,
-                    { transform: [{ scale: pulseAnim }] },
-                  ]}
-                >
-                  <Ionicons
-                    name="camera"
-                    size={26}
-                    color={colors.textPrimary}
-                  />
-                </Animated.View>
-                <Text style={styles.photoChallengePrimaryButtonText}>
-                  Take Photo
-                </Text>
-                <Ionicons
-                  name="arrow-forward"
-                  size={20}
-                  color={colors.textPrimary}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.photoChallengeSecondaryButton}
-                onPress={async () => {
-                  const today = new Date().toDateString();
-
-                  if (hasSkippedToday && lastSkipDate === today) {
-                    Alert.alert(
-                      "Skip Limit Reached",
-                      "You can only skip once per day. Try again tomorrow!",
-                      [{ text: "OK", style: "cancel" }]
-                    );
-                    return;
-                  }
-
-                  Alert.alert(
-                    "Skip Challenge",
-                    "You'll get 5 points instead of 10. Continue?",
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      {
-                        text: "Skip",
-                        style: "destructive",
-                        onPress: async () => {
-                          try {
-                            await AsyncStorage.setItem("lastSkipDate", today);
-                            setLastSkipDate(today);
-                            setHasSkippedToday(true);
-                            setHasSentPhoto(true); // Hide the card
-
-                            // Clear the stored timestamp when skipping
-                            await AsyncStorage.removeItem(
-                              "photoChallengeCreatedAt"
-                            );
-                            console.log(
-                              "⏰ Photo challenge timer cleared after skipping"
-                            );
-
-                            Alert.alert(
-                              "Challenge Skipped",
-                              "You earned 5 points. Come back tomorrow for the next challenge!"
-                            );
-                          } catch (error) {
-                            console.error("Error saving skip status:", error);
-                          }
-                        },
-                      },
-                    ]
-                  );
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.photoChallengeSecondaryButtonText}>
-                  Skip for now
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Rules Footer - More visual */}
-            <View style={styles.photoChallengeRulesContainer}>
-              <View style={styles.photoChallengeRuleItem}>
-                <View style={styles.ruleIconContainer}>
-                  <Ionicons
-                    name="shield-checkmark"
-                    size={16}
-                    color={colors.accentTeal}
-                  />
-                </View>
-                <Text style={styles.photoChallengeRuleText}>
-                  Keep your identity anonymous
-                </Text>
-              </View>
-              <View style={styles.photoChallengeRuleItem}>
-                <View style={styles.ruleIconContainer}>
-                  <Ionicons
-                    name="person-remove"
-                    size={16}
-                    color={colors.accentTeal}
-                  />
-                </View>
-                <Text style={styles.photoChallengeRuleText}>
-                  No selfies or personal photos allowed
-                </Text>
-              </View>
-              <View style={styles.photoChallengeHintBox}>
-                <Ionicons
-                  name="information-circle"
-                  size={16}
-                  color={colors.accentTeal}
-                />
-                <Text style={styles.photoChallengeHintText}>
-                  Your mystery buddy will see this photo but not know it's you
-                  until reveal time
-                </Text>
-              </View>
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Game Mode Selection - Show first if not selected */}
-        {!isGameModeSelected && (
-          <View style={styles.gameModeCard}>
-            <View style={styles.gameModeHeader}>
-              <Ionicons
-                name="location-outline"
-                size={28}
-                color={colors.accentPurple}
-              />
-              <Text style={styles.gameModeTitle}>
-                Where should your buddy be from?
-              </Text>
-            </View>
-            <Text style={styles.gameModeSubtitle}>
-              Choose where you'd like to find your mystery buddy
-            </Text>
-            <View style={styles.modeOptions}>
-              {getModeOptions().map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.modeOption,
-                    profile?.mode === option.value && styles.modeOptionSelected,
-                  ]}
-                  onPress={() => handleModeSelect(option.value)}
-                >
-                  <View style={styles.modeOptionContent}>
-                    <Text
-                      style={[
-                        styles.modeOptionLabel,
-                        profile?.mode === option.value &&
-                          styles.modeOptionLabelSelected,
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.modeOptionDesc,
-                        profile?.mode === option.value &&
-                          styles.modeOptionDescSelected,
-                      ]}
-                    >
-                      {option.description}
-                    </Text>
-                  </View>
-                  {profile?.mode === option.value && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={24}
-                      color={colors.accentPurple}
-                    />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Ghosting Protection Info Card */}
-        {isGameModeSelected && showGhostingWarning && !hasSentPhoto && (
-          <View style={styles.ghostingInfoCard}>
+            {/* Action Button */}
             <TouchableOpacity
-              style={styles.dismissButton}
-              onPress={() => setShowGhostingWarning(false)}
-              activeOpacity={0.7}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.photoChallengeActionButton}
+              onPress={sendPhotoFromNotification}
             >
-              <Ionicons
-                name="close-circle"
-                size={isSmallScreen ? 20 : 24}
-                color="#F59E0B"
-              />
+              <Ionicons name="camera" size={20} color="#FFFFFF" />
+              <Text style={styles.photoChallengeActionText}>Open Camera</Text>
             </TouchableOpacity>
-            <View style={styles.ghostingInfoHeader}>
-              <Ionicons
-                name="shield-checkmark"
-                size={isSmallScreen ? 20 : 24}
-                color="#F59E0B"
-              />
-              <Text style={styles.ghostingInfoTitle}>
-                Share Photos to Unlock Your Reveal!
-              </Text>
-            </View>
-            <Text style={styles.ghostingInfoText}>
-              Share at least 1 photo during the day to unlock reveal time at 9
-              PM. Only active participants get to see reveals.
+
+            {/* Helper text */}
+            <Text style={styles.photoChallengeHelperText}>
+              💡 Use back camera only • No selfies allowed
             </Text>
-            <View style={styles.ghostingInfoStats}>
-              <View style={styles.ghostingInfoStat}>
-                <Text style={styles.ghostingInfoStatNumber}>⏰</Text>
-                <Text style={styles.ghostingInfoStatText}>Reveal: 9-10 PM</Text>
-              </View>
-              <View style={styles.ghostingInfoStat}>
-                <Text style={styles.ghostingInfoStatNumber}>📸</Text>
-                <Text style={styles.ghostingInfoStatText}>Min: 1 photo</Text>
-              </View>
-            </View>
           </View>
         )}
+
+        {/* Reveal Time Card - Only show when it's actually reveal time AND user has a pair */}
+        {currentPair &&
+          poolService.isRevealTime(currentPair) &&
+          poolService.canIReveal(currentPair, user?.uid || "") && (
+            <Animated.View
+              style={[
+                styles.revealTimeCard,
+                {
+                  opacity: pulseAnim,
+                  transform: [{ scale: pulseAnim }],
+                },
+              ]}
+            >
+              <View style={styles.revealTimeHeader}>
+                <View style={styles.revealTimeIcon}>
+                  <Ionicons name="eye" size={32} color="#FF4FB7" />
+                </View>
+                <View style={styles.revealTimeHeaderText}>
+                  <Text style={styles.revealTimeTitle}>🎭 Reveal Time!</Text>
+                  <Text style={styles.revealTimeSubtitle}>
+                    Discover your mystery buddy's identity
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.revealTimeContent}>
+                <Text style={styles.revealTimeMessage}>
+                  The moment you've been waiting for! Discover who your
+                  SecretBuddy really is and start chatting.
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.revealTimeButton}
+                  onPress={() => navigation.navigate("Reveal" as never)}
+                >
+                  <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+                  <Text style={styles.revealTimeButtonText}>Reveal & Chat</Text>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          )}
 
         {/* Pairing Status Card */}
         <Animated.View
           style={[
             styles.pairingCard,
-            pairing.phase === "searching" && {
+            poolLoading && {
               transform: [{ scale: pulseAnim }],
             },
           ]}
         >
           <View style={styles.statusHeader}>
             <Text style={styles.statusTitle}>
-              {getCurrentPhase() === "pool-a"
-                ? "Pool A Open"
-                : getCurrentPhase() === "pool-b"
-                ? "Pool B Open"
-                : getCurrentPhase() === "reveal-window"
-                ? "Reveal Time"
+              {currentPair
+                ? "Paired"
+                : currentPool
+                ? `${
+                    currentPool.type === "morning" ? "Morning" : "Afternoon"
+                  } Pool`
                 : "Daily Connection"}
             </Text>
             <View
               style={[
                 styles.statusIndicator,
                 {
-                  backgroundColor:
-                    getCurrentPhase() === "pool-a" ||
-                    getCurrentPhase() === "pool-b" ||
-                    getCurrentPhase() === "reveal-window"
-                      ? colors.accentTeal
-                      : colors.textSecondary,
+                  backgroundColor: currentPair
+                    ? colors.accentPink
+                    : currentPool
+                    ? colors.accentTeal
+                    : colors.textSecondary,
                 },
               ]}
             />
           </View>
-          <Text style={styles.statusText}>{getStatusMessage()}</Text>
+          <Text style={styles.statusText}>{getStatusText()}</Text>
+
+          {/* Show countdown timers if paired */}
+          {currentPair && (
+            <View style={styles.timersContainer}>
+              {!poolService.isInPhotoWindow(currentPair) && (
+                <View style={styles.timerCard}>
+                  <Text style={styles.timerLabel}>Photo Window Opens In:</Text>
+                  <Text style={styles.timerValue}>
+                    {poolService.formatTimeRemaining(
+                      poolService.getTimeUntilPhotoWindow(currentPair)
+                    )}
+                  </Text>
+                </View>
+              )}
+
+              {poolService.isInPhotoWindow(currentPair) &&
+                !poolService.isRevealTime(currentPair) && (
+                  <View style={styles.timerCard}>
+                    <Text style={styles.timerLabel}>Reveal Time In:</Text>
+                    <Text style={styles.timerValue}>
+                      {poolService.formatTimeRemaining(
+                        poolService.getTimeUntilReveal(currentPair)
+                      )}
+                    </Text>
+                  </View>
+                )}
+            </View>
+          )}
 
           <PrimaryButton
             label={getButtonText()}
             onPress={handlePairingPress}
             variant={
-              getCurrentPhase() === "pool-a" ||
-              getCurrentPhase() === "pool-b" ||
-              getCurrentPhase() === "reveal-window"
+              currentPair && poolService.isRevealTime(currentPair)
+                ? "primary"
+                : currentPool
                 ? "primary"
                 : "ghost"
             }
-            disabled={
-              !isGameModeSelected ||
-              getCurrentPhase() === "waiting" ||
-              pairing.phase === "searching"
-            }
+            disabled={(!currentPool && !currentPair) || poolLoading}
           />
 
-          {pairing.phase === "searching" && (
+          {poolLoading && (
             <View style={styles.searchingIndicator}>
               <View style={styles.searchingContent}>
                 <Animated.View
@@ -1386,22 +1427,29 @@ export const HomeScreen = () => {
                   />
                 </Animated.View>
                 <Text style={styles.searchingText}>
-                  Finding your perfect match...
+                  {isInPool ? "Leaving pool..." : "Joining pool..."}
                 </Text>
               </View>
             </View>
           )}
         </Animated.View>
 
-        {/* Mystery Card - Temporarily disabled to use new prompt system */}
-        {/* {(pairing.phase === "paired-waiting" ||
-          pairing.phase === "submission-open" ||
-          pairing.phase === "matched") &&
-          prompt &&
-          buddy && <MysteryCard prompt={prompt} buddy={buddy} />} */}
+        {/* Info Card - How Photo Challenges Work */}
+        {currentPair && poolService.isInPhotoWindow(currentPair) && (
+          <View style={styles.infoCard}>
+            <View style={styles.infoCardHeader}>
+              <Ionicons name="camera" size={20} color={colors.accentTeal} />
+              <Text style={styles.infoCardTitle}>Photo Window Active</Text>
+            </View>
+            <Text style={styles.infoCardText}>
+              You'll receive notifications to send photos. Check your
+              notifications to participate!
+            </Text>
+          </View>
+        )}
 
         {/* Country Selection for Country Mode */}
-        {isGameModeSelected && profile?.mode === "country" && (
+        {profile?.mode === "country" && (
           <View style={styles.countryCard}>
             <CountryDropdown
               label="Select Country"
@@ -1417,7 +1465,7 @@ export const HomeScreen = () => {
         )}
 
         {/* Friends Management for Friends Mode */}
-        {isGameModeSelected && profile?.mode === "friends" && (
+        {profile?.mode === "friends" && (
           <View style={styles.friendsCard}>
             <TouchableOpacity
               style={styles.manageFriendsButton}
@@ -1541,6 +1589,76 @@ export const HomeScreen = () => {
         onView={handleViewPhoto}
         currentUserId={user?.uid || ""}
       />
+
+      {/* Priority Selection Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showPriorityModal}
+        onRequestClose={() => setShowPriorityModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Choose Priority</Text>
+              <Pressable
+                hitSlop={12}
+                onPress={() => setShowPriorityModal(false)}
+              >
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalDescription}>
+              Select how you'd like to be matched with your mystery buddy
+            </Text>
+
+            <View style={styles.priorityOptions}>
+              <PillOption
+                label="Friends"
+                description="Pair with your friends first"
+                selected={selectedPriority === "friends"}
+                onPress={() => handlePrioritySelect("friends")}
+              />
+              <PillOption
+                label="Country"
+                description="Match with people from your country"
+                selected={selectedPriority === "country"}
+                onPress={() => handlePrioritySelect("country")}
+              />
+              <PillOption
+                label="World"
+                description="Connect with anyone globally"
+                selected={selectedPriority === "world"}
+                onPress={() => handlePrioritySelect("world")}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Paired Success Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showPairedModal}
+        onRequestClose={() => setShowPairedModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.pairedModalContainer}>
+            <Ionicons
+              name="people"
+              size={64}
+              color={colors.accentTeal}
+              style={{ marginBottom: 16 }}
+            />
+            <Text style={styles.pairedModalTitle}>Paired! 🎉</Text>
+            <Text style={styles.pairedModalText}>
+              You've been matched with your mystery buddy!
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </GradientBackground>
   );
 };
@@ -1780,6 +1898,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+
+  photoChallengeActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.accentPurple,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    gap: 12,
+    shadowColor: colors.accentPurple,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+    marginBottom: 16,
+  },
+
+  photoChallengeActionText: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+
+  photoChallengeHelperText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
   },
 
   photoChallengeSecondaryButtonText: {
@@ -3058,5 +3211,154 @@ const styles = StyleSheet.create({
     marginTop: isSmallScreen ? 14 : 18,
     fontStyle: "italic",
     letterSpacing: 0.5,
+  },
+  // Timer styles for pool countdown
+  timersContainer: {
+    marginVertical: 16,
+    gap: 12,
+  },
+  timerCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  timerLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  timerValue: {
+    ...typography.title,
+    color: colors.accentPurple,
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  // Priority modal styles
+  modalHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    ...typography.title,
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  modalDescription: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  // Info card styles
+  infoCard: {
+    backgroundColor: "rgba(46, 230, 169, 0.1)",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(46, 230, 169, 0.3)",
+    marginBottom: 20,
+  },
+  infoCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  infoCardTitle: {
+    ...typography.subtitle,
+    color: colors.accentTeal,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  infoCardText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  priorityOptions: {
+    gap: 12,
+  },
+  // Paired modal styles
+  pairedModalContainer: {
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    padding: 32,
+    alignItems: "center",
+    maxWidth: 340,
+    borderWidth: 2,
+    borderColor: colors.accentTeal + "50",
+  },
+  pairedModalTitle: {
+    ...typography.title,
+    color: colors.accentTeal,
+    fontSize: 32,
+    fontWeight: "800",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  pairedModalText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 16,
+    textAlign: "center",
+    lineHeight: 24,
+  },
+  // Photo modal styles
+  photoModalContainer: {
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    padding: 24,
+    width: "90%",
+    maxWidth: 400,
+    borderWidth: 2,
+    borderColor: colors.accentPurple + "50",
+  },
+  photoPromptBox: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: "center",
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: colors.accentPink + "30",
+  },
+  photoPromptText: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 26,
+  },
+  photoModalDescription: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 14,
+    marginTop: 16,
+    lineHeight: 22,
+    textAlign: "center",
+  },
+  photoModalButtonText: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  photoModalSkipButton: {
+    marginTop: 16,
+    padding: 12,
+    alignItems: "center",
+  },
+  photoModalSkipText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 14,
   },
 });

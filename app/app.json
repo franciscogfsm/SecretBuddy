@@ -37,6 +37,11 @@
         }
       ]
     ],
-    "owner": "franciscogfsm"
+    "owner": "inaciobalu",
+    "extra": {
+      "eas": {
+        "projectId": "fce3b08f-a412-435b-b80c-fab92b570c1b"
+      }
+    }
   }
 }

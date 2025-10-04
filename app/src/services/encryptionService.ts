@@ -23,8 +23,11 @@ const KEY_SIZE = 256; // AES-256
 const ITERATIONS = 1000; // Reduced from 10000 for better performance (still secure for conversation-based keys)
 const SALT_SIZE = 128; // bits
 
-// Cache for derived keys to avoid re-deriving on each encryption
+// Cache for derived keys to avoid re-deriving on each encryption/decryption
 const derivedKeyCache = new Map<string, CryptoJS.lib.WordArray>();
+
+// Cache limit to prevent memory issues
+const MAX_CACHE_SIZE = 100;
 
 /**
  * Platform-agnostic secure storage wrapper
@@ -225,11 +228,27 @@ export const decryptMessage = async (
     const combined = JSON.parse(atob(encryptedData));
     const { iv, salt, data, hmac } = combined;
 
-    // Derive the same key using stored salt
-    const derivedKey = CryptoJS.PBKDF2(key, CryptoJS.enc.Base64.parse(salt), {
-      keySize: KEY_SIZE / 32,
-      iterations: ITERATIONS,
-    });
+    // 🚀 Check cache first using salt as unique identifier
+    const cacheKey = `${conversationId}_${salt}`;
+    let derivedKey = derivedKeyCache.get(cacheKey);
+
+    if (!derivedKey) {
+      // Derive the key only if not in cache
+      derivedKey = CryptoJS.PBKDF2(key, CryptoJS.enc.Base64.parse(salt), {
+        keySize: KEY_SIZE / 32,
+        iterations: ITERATIONS,
+      });
+
+      // Store in cache (with size limit)
+      if (derivedKeyCache.size >= MAX_CACHE_SIZE) {
+        // Remove oldest entry
+        const firstKey = derivedKeyCache.keys().next().value;
+        if (firstKey) {
+          derivedKeyCache.delete(firstKey);
+        }
+      }
+      derivedKeyCache.set(cacheKey, derivedKey);
+    }
 
     // Verify HMAC (tamper detection)
     const computedHmac = CryptoJS.HmacSHA256(data, derivedKey).toString();

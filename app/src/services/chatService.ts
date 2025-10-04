@@ -223,10 +223,8 @@ export const subscribeToMessages = (
     const unsubscribe = onSnapshot(
       q,
       async (snapshot) => {
-        const messages: ChatMessage[] = [];
-
-        // Decrypt messages as we receive them
-        for (const doc of snapshot.docs) {
+        // 🚀 PARALLEL DECRYPTION for maximum speed
+        const decryptPromises = snapshot.docs.map(async (doc) => {
           const data = doc.data();
           let decryptedText = data.text;
 
@@ -237,19 +235,21 @@ export const subscribeToMessages = (
                 data.text,
                 conversationId
               );
-              console.log("🔓 Message decrypted");
             } catch (error) {
               console.error("❌ Decryption failed:", error);
               decryptedText = "[Encrypted message]";
             }
           }
 
-          messages.push({
+          return {
             id: doc.id,
             ...data,
             text: decryptedText, // Use decrypted text
-          } as ChatMessage);
-        }
+          } as ChatMessage;
+        });
+
+        // Wait for all decryptions to complete in parallel
+        const messages = await Promise.all(decryptPromises);
 
         // Reverse since we queried DESC (newest first) but want to display oldest first
         messages.reverse();

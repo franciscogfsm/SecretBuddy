@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   View,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +22,11 @@ import { useAppState } from "../store/AppStateContext";
 import { colors, typography } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import * as chatService from "../services/chatService";
+import * as poolService from "../services/poolService";
+import { getUserProfile } from "../services/userService";
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from "../config/firebase";
+import type { Pair } from "../services/poolService";
 
 const { width, height } = Dimensions.get("window");
 const TAP_PROGRESS_WIDTH = 76;
@@ -32,23 +38,69 @@ export const RevealScreen = ({ navigation, route }: Props) => {
   const { user } = useAuth();
   const [decision, setDecision] = useState<"continue" | "pass" | null>(null);
 
-  // Check if we're in demo mode
-  const isDemoMode = route.params?.demo === true;
+  // Real pair system
+  const [pair, setPair] = useState<Pair | null>(null);
+  const [partnerProfile, setPartnerProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Demo buddy data - simulate different scenarios
-  const demoBuddy = {
-    codename: "MysticShadow",
-    id: "demo-user",
-    hasRevealed: true, // Always true for demo mode to show reveal animation
-  };
+  // Load pair and partner info
+  useEffect(() => {
+    const loadPairData = async () => {
+      if (!user) return;
 
-  // Use demo buddy if in demo mode, otherwise use real buddy
-  const currentBuddy = isDemoMode ? demoBuddy : buddy;
+      try {
+        setLoading(true);
 
-  // Check if both people have revealed (in demo mode, use the bothRevealed param)
-  const bothHaveRevealed = isDemoMode
-    ? route.params?.bothRevealed ?? true
-    : buddy?.state === "revealed";
+        // Get my current pair
+        const currentPair = await poolService.getMyCurrentPair(user.uid);
+
+        if (!currentPair) {
+          setError("No active pair found. Join a pool first!");
+          setLoading(false);
+          return;
+        }
+
+        // Check if it's reveal time
+        if (!poolService.isRevealTime(currentPair)) {
+          const timeUntil = poolService.getTimeUntilReveal(currentPair);
+          setError(
+            `Reveal opens in ${poolService.formatTimeRemaining(timeUntil)}`
+          );
+          setLoading(false);
+          return;
+        }
+
+        // Check if I can reveal (sent at least 1 photo)
+        if (!poolService.canIReveal(currentPair, user.uid)) {
+          setError("You must send at least 1 photo to unlock reveal!");
+          setLoading(false);
+          return;
+        }
+
+        setPair(currentPair);
+
+        // Load partner's profile
+        const partnerId = poolService.getPartnerIdFromPair(
+          currentPair,
+          user.uid
+        );
+        const profile = await getUserProfile(partnerId);
+        setPartnerProfile(profile);
+
+        setLoading(false);
+      } catch (err: any) {
+        console.error("Error loading pair data:", err);
+        setError(err.message || "Failed to load reveal data");
+        setLoading(false);
+      }
+    };
+
+    loadPairData();
+  }, [user]);
+
+  // Check if both people can reveal (both sent >= 1 photo)
+  const bothCanReveal = pair ? pair.canRevealA && pair.canRevealB : false;
 
   // Professional reveal animation system
   const [animationStage, setAnimationStage] = useState<
@@ -415,14 +467,11 @@ export const RevealScreen = ({ navigation, route }: Props) => {
     setDecision(choice);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-    if (choice === "continue" && currentBuddy && user) {
+    if (choice === "continue" && pair && partnerProfile && user) {
       try {
         // Create conversation when user chooses to continue chatting
-        // Use buddy.id (real user ID) when integrated, for now use demo ID
-        const partnerId = isDemoMode ? "demo-partner-id" : currentBuddy.id;
-        const matchId = isDemoMode
-          ? "demo-match-id"
-          : `match-${user.uid}-${partnerId}`;
+        const partnerId = poolService.getPartnerIdFromPair(pair, user.uid);
+        const matchId = pair.id;
 
         // Create the conversation in Firestore
         const conversationId = await chatService.createConversation(
@@ -433,12 +482,22 @@ export const RevealScreen = ({ navigation, route }: Props) => {
 
         console.log("✅ Conversation created:", conversationId);
 
+        // Update pair with conversationId
+        const pairRef = doc(db, "pairs", pair.id);
+        await updateDoc(pairRef, {
+          conversationId,
+          [pair.userA === user.uid ? "revealedA" : "revealedB"]: true,
+        });
+
         // Navigate to chat with the conversation ID
         setTimeout(() => {
           navigation.navigate("Chat", {
             conversationId,
             matchedUserId: partnerId,
-            matchedUserName: currentBuddy.codename || "Anonymous",
+            matchedUserName:
+              partnerProfile.username ||
+              partnerProfile.displayName ||
+              "Anonymous",
           });
         }, 300);
       } catch (error) {
@@ -465,9 +524,41 @@ export const RevealScreen = ({ navigation, route }: Props) => {
     }
   };
 
-  if (!currentBuddy) {
-    navigation.goBack();
-    return null;
+  // Show loading state
+  if (loading) {
+    return (
+      <View
+        style={[
+          styles.container,
+          { justifyContent: "center", alignItems: "center" },
+        ]}
+      >
+        <ActivityIndicator size="large" color={colors.accentPurple} />
+        <Text style={[styles.statusText, { marginTop: 20 }]}>
+          Loading reveal...
+        </Text>
+      </View>
+    );
+  }
+
+  // Show error state
+  if (error || !pair || !partnerProfile) {
+    return (
+      <View
+        style={[
+          styles.container,
+          { justifyContent: "center", alignItems: "center", padding: 20 },
+        ]}
+      >
+        <Ionicons name="alert-circle" size={64} color={colors.textSecondary} />
+        <Text style={[styles.errorTitle, { marginTop: 20 }]}>
+          {error || "No pair found"}
+        </Text>
+        <View style={{ marginTop: 20 }}>
+          <PrimaryButton label="Go Back" onPress={() => navigation.goBack()} />
+        </View>
+      </View>
+    );
   }
 
   const tapRemaining = Math.max(totalTapsNeeded - tapCount, 0);
@@ -529,7 +620,7 @@ export const RevealScreen = ({ navigation, route }: Props) => {
 
       {/* Professional main content */}
       <View style={styles.mainContent}>
-        {bothHaveRevealed ? (
+        {bothCanReveal ? (
           <>
             {/* Professional reveal header */}
             <Animated.View
@@ -691,7 +782,13 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                           ]}
                         >
                           {isRevealed
-                            ? currentBuddy.codename.charAt(0).toUpperCase()
+                            ? (
+                                partnerProfile.username ||
+                                partnerProfile.displayName ||
+                                "User"
+                              )
+                                .charAt(0)
+                                .toUpperCase()
                             : "?"}
                         </Animated.Text>
                       </View>
@@ -709,7 +806,11 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                             },
                           ]}
                         >
-                          {isRevealed ? currentBuddy.codename : "???"}
+                          {isRevealed
+                            ? partnerProfile.username ||
+                              partnerProfile.displayName ||
+                              "Anonymous"
+                            : "???"}
                         </Animated.Text>
                         <Animated.Text
                           style={[
@@ -993,7 +1094,11 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   Alert.alert(
                     "Reminder Sent",
-                    `A gentle reminder has been sent to ${currentBuddy.codename}.`,
+                    `A gentle reminder has been sent to ${
+                      partnerProfile.username ||
+                      partnerProfile.displayName ||
+                      "your buddy"
+                    }.`,
                     [{ text: "OK" }]
                   );
                 }}
@@ -1778,5 +1883,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
     lineHeight: 20,
+  },
+
+  // Error state styles
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.textPrimary,
+    textAlign: "center",
   },
 });

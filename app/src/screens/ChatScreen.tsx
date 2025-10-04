@@ -29,6 +29,9 @@ import { useAuth } from "../context/AuthContext";
 import * as chatService from "../services/chatService";
 import type { ChatMessage as FirebaseChatMessage } from "../services/chatService";
 import { getUserProfile } from "../services/userService";
+import * as poolService from "../services/poolService";
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from "../config/firebase";
 
 export const ChatScreen = () => {
   const navigation = useNavigation();
@@ -52,6 +55,7 @@ export const ChatScreen = () => {
   const [partnerPhoto, setPartnerPhoto] = useState<string | null>(null);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [partnerProfileData, setPartnerProfileData] = useState<any>(null);
+  const [currentPair, setCurrentPair] = useState<poolService.Pair | null>(null);
 
   const flatListRef = useRef<FlatList<MessageType>>(null);
   const isUserScrollingRef = useRef(false);
@@ -124,9 +128,9 @@ export const ChatScreen = () => {
     initializeConversation();
   }, [conversationId, user, matchedUserId]);
 
-  // Load partner profile data
+  // Load partner profile data and current pair
   useEffect(() => {
-    const loadPartnerProfile = async () => {
+    const loadPartnerData = async () => {
       // Validate matchedUserId before calling getUserProfile
       if (!matchedUserId || !matchedUserId.trim()) {
         console.warn("⚠️ Invalid matchedUserId, cannot load partner profile");
@@ -144,8 +148,32 @@ export const ChatScreen = () => {
         console.error("Error loading partner profile:", error);
       }
     };
-    loadPartnerProfile();
-  }, [matchedUserId]);
+
+    const loadPair = async () => {
+      if (!user) return;
+
+      try {
+        const pair = await poolService.getMyCurrentPair(user.uid);
+        setCurrentPair(pair);
+
+        // If pair exists and conversation ID doesn't match, update it
+        if (
+          pair &&
+          (!pair.conversationId || pair.conversationId !== conversationId)
+        ) {
+          // Update pair with conversation ID
+          const pairRef = doc(db, "pairs", pair.id);
+          await updateDoc(pairRef, { conversationId });
+          console.log("✅ Updated pair with conversationId");
+        }
+      } catch (error) {
+        console.error("Error loading pair:", error);
+      }
+    };
+
+    loadPartnerData();
+    loadPair();
+  }, [matchedUserId, user, conversationId]);
 
   // Subscribe to messages
   useEffect(() => {
@@ -265,6 +293,39 @@ export const ChatScreen = () => {
     return () => clearInterval(interval);
   }, [actualConversationId, user]);
 
+  // Auto-end chat at midnight (00:00 UTC) if it's from a pool pair
+  useEffect(() => {
+    if (!currentPair || conversationEnded || conversationExpired) return;
+
+    const checkMidnightAutoEnd = () => {
+      const now = new Date();
+      const hours = now.getUTCHours();
+      const minutes = now.getUTCMinutes();
+
+      // If it's midnight UTC (00:00-00:05), auto-end the chat
+      if (hours === 0 && minutes < 5) {
+        Alert.alert(
+          "Chat Ended",
+          "This conversation has automatically ended at midnight. Thank you for using SecretBuddy!",
+          [
+            {
+              text: "OK",
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+        setConversationEnded(true);
+      }
+    };
+
+    // Check immediately
+    checkMidnightAutoEnd();
+
+    // Check every minute
+    const interval = setInterval(checkMidnightAutoEnd, 60000);
+    return () => clearInterval(interval);
+  }, [currentPair, conversationEnded, conversationExpired, navigation]);
+
   // Track keyboard visibility and height to adjust spacing dynamically
   useEffect(() => {
     const showSub = Keyboard.addListener(
@@ -368,14 +429,16 @@ export const ChatScreen = () => {
   const getTimeUntilMidnight = () => {
     const now = new Date();
     const midnight = new Date();
-    midnight.setHours(24, 0, 0, 0);
+    midnight.setUTCHours(24, 0, 0, 0); // Midnight UTC
     const diff = midnight.getTime() - now.getTime();
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    return `${hours}h ${minutes}m until midnight`;
+    return `${hours}h ${minutes}m until chat ends`;
   };
 
-  const statusLabel = `Active • ${getTimeUntilMidnight()}`;
+  const statusLabel = currentPair
+    ? `Paired • ${getTimeUntilMidnight()}`
+    : `Active • ${getTimeUntilMidnight()}`;
 
   // Load older messages when scrolling up
   const handleLoadOlderMessages = useCallback(() => {
