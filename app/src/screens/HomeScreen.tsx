@@ -63,14 +63,13 @@ export const HomeScreen = () => {
     const now = new Date();
     const currentHour = now.getHours();
 
-    if (currentHour >= 8 && currentHour < 13) {
-      return "pool-a"; // 8 AM - 1 PM: Pool A open
-    } else if (currentHour >= 13 && currentHour < 16) {
-      return "pool-b"; // 1 PM - 4 PM: Pool B open
+    // Hourly pools from 10:00 to 17:00
+    if (currentHour >= 10 && currentHour < 18) {
+      return "pool-open"; // Pool open (current hour's pool)
     } else if (currentHour >= 21 && currentHour < 22) {
       return "reveal-window"; // 9 PM - 10 PM: Identity reveal window for all paired users
     } else {
-      return "waiting"; // 4 PM - 8 AM & 1 AM - 8 AM: Waiting between pools
+      return "waiting"; // Outside pool hours
     }
   };
 
@@ -78,10 +77,9 @@ export const HomeScreen = () => {
     const now = new Date();
     const currentHour = now.getHours();
 
-    if (currentHour >= 8 && currentHour < 13) {
-      return "A";
-    } else if (currentHour >= 13 && currentHour < 16) {
-      return "B";
+    // Return current hour pool (10h, 11h, 12h, 13h, 14h, 15h, 16h, 17h)
+    if (currentHour >= 10 && currentHour < 18) {
+      return `${currentHour}h`;
     }
     return null;
   };
@@ -89,17 +87,26 @@ export const HomeScreen = () => {
   const getStatusMessage = () => {
     const phase = getCurrentPhase();
     const currentPool = getCurrentPool();
+
     switch (phase) {
-      case "pool-a":
-        return `Pool A is open! Join to find your match (ends 1:00 PM).`;
-      case "pool-b":
-        return `Pool B is open! Join to find your match (ends 4:00 PM).`;
+      case "pool-open":
+        if (currentPool) {
+          const nextHour = parseInt(currentPool) + 1;
+          return `Pool ${currentPool} is open! Join to find your match (closes at ${nextHour}:00).`;
+        }
+        return "Join the current pool to find your match!";
       case "reveal-window":
         return "Identity reveal window is open! Discover your mystery buddy.";
       case "waiting":
-        return getCurrentPool()
-          ? "Between pools - next pool opens soon!"
-          : "Pools closed - Pool A opens at 8:00 AM.";
+        const now = new Date();
+        const currentHour = now.getHours();
+        if (currentHour < 10) {
+          return "Pools open at 10:00 AM. Come back soon!";
+        } else if (currentHour >= 18 && currentHour < 21) {
+          return "Pools closed for today. Reveal at 21:00!";
+        } else {
+          return "Pools closed. Next pool opens at 10:00 AM.";
+        }
       default:
         return "Welcome to SecretBuddy!";
     }
@@ -272,7 +279,7 @@ export const HomeScreen = () => {
           }
 
           // Upload photo to Firebase Storage
-          const photoUrl = await photoService.uploadPhoto(
+          const { downloadURL, storagePath } = await photoService.uploadPhoto(
             photoUri,
             user.uid,
             buddyId
@@ -283,18 +290,23 @@ export const HomeScreen = () => {
           await photoService.sendPhotoChallenge(
             user.uid,
             buddyId,
-            photoUrl,
-            currentPrompt
+            downloadURL,
+            currentPrompt,
+            storagePath
           );
 
           setHasSentPhoto(true); // Mark photo as sent
 
-          // Clear the stored timestamp when photo is sent
+          // Hide photo challenge card after sending
+          setShowPhotoChallengeCard(false);
+          setPhotoChallengeCreatedAt(null);
+
+          // Clear the stored photo challenge data
           try {
-            await AsyncStorage.removeItem("photoChallengeCreatedAt");
-            console.log("⏰ Photo challenge timer cleared after sending");
+            await AsyncStorage.removeItem("photoChallengeData");
+            console.log("✅ Photo challenge cleared after sending");
           } catch (error) {
-            console.error("Error clearing photo challenge timestamp:", error);
+            console.error("Error clearing photo challenge:", error);
           }
 
           console.log("✅ Photo challenge sent successfully");
@@ -368,7 +380,7 @@ export const HomeScreen = () => {
 
         // Upload and send photo
         console.log("📤 Uploading photo from notification...");
-        const photoUrl = await photoService.uploadPhoto(
+        const { downloadURL, storagePath } = await photoService.uploadPhoto(
           photoUri,
           user.uid,
           partnerId
@@ -378,8 +390,9 @@ export const HomeScreen = () => {
         await photoService.sendPhotoChallenge(
           user.uid,
           partnerId,
-          photoUrl,
+          downloadURL,
           photoPrompt,
+          storagePath,
           currentPair.id,
           true // bypassPhotoWindow = true
         );
@@ -1014,8 +1027,19 @@ export const HomeScreen = () => {
       return;
     }
 
+    // If user already has a pair, don't allow leaving pool
+    if (currentPair) {
+      // Just show a message - they're already paired
+      Alert.alert(
+        "Already Paired! 🎉",
+        "You're already matched with a mystery buddy. Wait for the reveal time!",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
     if (isInPool) {
-      // Show option to leave pool
+      // Show option to leave pool (only if not paired yet)
       handleLeavePool();
     } else {
       // Show option to join pool
@@ -1069,19 +1093,18 @@ export const HomeScreen = () => {
       return "Reveal Identity";
     }
 
-    // If user has a pair but no current pool (outside pool hours)
-    if (currentPair && !currentPool) {
-      return "Paired - Check Chat";
+    // If user has a pair, show waiting message (don't show "Leave Pool")
+    if (currentPair) {
+      return "Paired - Waiting for Reveal";
     }
 
+    // Only show "Leave Pool" if in pool but NOT paired yet
     if (isInPool) {
       return "Leave Pool";
     }
 
     if (currentPool) {
-      return `Join ${
-        currentPool.type === "morning" ? "Morning" : "Afternoon"
-      } Pool`;
+      return `Join Pool ${getCurrentPool()}`;
     }
 
     return "No Pool Available";
@@ -1196,7 +1219,8 @@ export const HomeScreen = () => {
         )}
 
         {/* Photo Challenge Card - Shows after notification for 5 minutes */}
-        {showPhotoChallengeCard && (
+        {/* HIDE if user has received photos to view (prioritize viewing over sending) */}
+        {showPhotoChallengeCard && !hasReceivedPhoto && (
           <View style={styles.photoChallengeCard}>
             {/* Glow border effect */}
             <View style={styles.photoChallengeGlowBorder} />

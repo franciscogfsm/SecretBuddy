@@ -15,13 +15,15 @@ import { getUserProfile } from "./userService";
 
 export interface Pool {
   id: string;
-  type: "morning" | "afternoon";
+  type: string; // "hourly-10h", "hourly-11h", etc.
   date: string;
+  hour: number; // 10, 11, 12, 13, 14, 15, 16, 17
   joinWindowStart: Timestamp;
   joinWindowEnd: Timestamp;
   photoWindowStart: Timestamp;
   photoWindowEnd: Timestamp;
   maxPhotos: number;
+  photoTimes: Timestamp[]; // Array of scheduled photo notification times
   revealAt: Timestamp;
   status: "open" | "pairing" | "closed";
   userCount: number;
@@ -33,7 +35,7 @@ export interface Pair {
   userA: string;
   userB: string;
   poolId: string;
-  poolType: "morning" | "afternoon";
+  poolType: string; // "hourly-10h", "hourly-11h", etc.
   pairedAt: Timestamp;
   photoWindowStart: Timestamp;
   photoWindowEnd: Timestamp;
@@ -53,7 +55,7 @@ export interface Pair {
 export interface PoolUser {
   userId: string;
   poolId: string;
-  poolType: "morning" | "afternoon";
+  poolType: string; // "hourly-10h", "hourly-11h", etc.
   gameMode: "friends" | "country" | "world";
   joinedAt: Timestamp;
   country?: string;
@@ -70,22 +72,14 @@ export const getCurrentPool = async (): Promise<Pool | null> => {
   try {
     const now = new Date();
     const dateStr = now.toISOString().split("T")[0]; // YYYY-MM-DD
-    const hour = now.getUTCHours();
+    const hour = now.getHours(); // Changed from getUTCHours() to getHours() - use LOCAL time
 
-    // Determine which pool should be active
-    let poolType: "morning" | "afternoon" | null = null;
-
-    if (hour >= 8 && hour < 13) {
-      poolType = "morning";
-    } else if (hour >= 13 && hour < 17) {
-      poolType = "afternoon";
-    }
-
-    if (!poolType) {
+    // Hourly pools from 10:00 to 17:00 (LOCAL TIME)
+    if (hour < 10 || hour >= 18) {
       return null; // Outside pool hours
     }
 
-    const poolId = `${poolType}-${dateStr}`;
+    const poolId = `${dateStr}-${hour}h`;
     const poolDoc = await getDoc(doc(db, POOLS_COLLECTION, poolId));
 
     if (!poolDoc.exists()) {
@@ -114,12 +108,16 @@ export const joinPool = async (
     // Get user's country from profile
     const userProfile = await getUserProfile(userId);
 
+    // Extract pool type from poolId (e.g., "2025-10-04-13h" -> "hourly-13h")
+    const hourMatch = poolId.match(/(\d+)h$/);
+    const poolType = hourMatch ? `hourly-${hourMatch[0]}` : poolId;
+
     // Create pool user entry
     const poolUserDoc = doc(db, POOL_USERS_COLLECTION, `${poolId}-${userId}`);
     await setDoc(poolUserDoc, {
       userId,
       poolId,
-      poolType: poolId.startsWith("morning") ? "morning" : "afternoon",
+      poolType,
       gameMode,
       joinedAt: serverTimestamp(),
       country: userProfile?.country || undefined,

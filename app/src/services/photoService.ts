@@ -47,7 +47,7 @@ export const uploadPhoto = async (
   uri: string,
   userId: string,
   receiverId: string
-): Promise<string> => {
+): Promise<{ downloadURL: string; storagePath: string }> => {
   try {
     // Convert URI to blob for upload
     const response = await fetch(uri);
@@ -64,8 +64,9 @@ export const uploadPhoto = async (
     // Get download URL
     const downloadURL = await getDownloadURL(storageRef);
     console.log("✅ Photo uploaded successfully:", downloadURL);
+    console.log("📁 Storage path:", filename);
 
-    return downloadURL;
+    return { downloadURL, storagePath: filename };
   } catch (error) {
     console.error("❌ Error uploading photo:", error);
     throw new Error("Failed to upload photo");
@@ -82,6 +83,7 @@ export const sendPhotoChallenge = async (
   receiverId: string,
   photoUrl: string,
   prompt: string,
+  storagePath?: string,
   matchId?: string,
   bypassPhotoWindow?: boolean
 ): Promise<string> => {
@@ -134,6 +136,7 @@ export const sendPhotoChallenge = async (
       timestamp: serverTimestamp(),
       viewed: false,
       pairId: pair.id,
+      storagePath: storagePath || null, // IMPORTANT: Save storagePath for cleanup
     };
 
     if (matchId) {

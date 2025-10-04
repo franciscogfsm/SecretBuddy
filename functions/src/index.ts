@@ -17,6 +17,7 @@ async function performCleanup() {
   initAdmin();
   const db = admin.firestore();
   const storage = admin.storage();
+  const bucket = storage.bucket();
 
   const now = Date.now();
   const FOUR_HOURS = 4 * 60 * 60 * 1000;
@@ -45,23 +46,37 @@ async function performCleanup() {
 
           // Full cleanup: older than 24h
           if (age > TWENTY_FOUR_HOURS) {
+            // Delete from storage using storagePath
             if (photoData.storagePath) {
               try {
-                const bucket = storage.bucket();
                 const file = bucket.file(photoData.storagePath);
                 const [exists] = await file.exists();
                 if (exists) {
                   await file.delete();
                   deletedFromStorage++;
+                  console.log(
+                    `🗑️ Deleted from storage: ${photoData.storagePath}`
+                  );
+                } else {
+                  console.log(
+                    `⚠️ File not found in storage: ${photoData.storagePath}`
+                  );
                 }
               } catch (e) {
-                console.warn(`⚠️ Storage deletion error: ${doc.id}`, e);
+                console.warn(
+                  `⚠️ Storage deletion error: ${photoData.storagePath}`,
+                  e
+                );
               }
+            } else {
+              console.warn(`⚠️ No storagePath for photo: ${doc.id}`);
             }
+
+            // Delete Firestore document
             await doc.ref.delete();
             deletedFromFirestore++;
           }
-          // Expire unviewed 4h+ photos
+          // Expire unviewed 4h+ photos (soft delete)
           else if (age > FOUR_HOURS && !photoData.viewed) {
             await doc.ref.update({
               deleted: true,
@@ -118,11 +133,164 @@ export const manualCleanupPhotos = functions
     }
   });
 
+// ==================== DAILY CLEANUP ====================
+
+/**
+ * Daily cleanup at 00:01 UTC (1 minute after new pools are created)
+ * Deletes:
+ * 1. poolUsers from previous day
+ * 2. pools from previous day (only if today's pools exist)
+ * 3. messages older than 2 days
+ * 4. photo challenges older than 1 day
+ * 5. photos from storage older than 1 day
+ */
+export const dailyCleanup = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("1 0 * * *") // Every day at 00:01 UTC
+  .timeZone("UTC")
+  .onRun(async () => {
+    initAdmin();
+    const db = admin.firestore();
+    const storage = admin.storage();
+
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+    const twoDaysAgo = new Date(now);
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
+    console.log(`🧹 Starting daily cleanup for ${yesterdayStr}`);
+
+    let poolUsersDeleted = 0;
+    let poolsDeleted = 0;
+    let messagesDeleted = 0;
+    let photoChallengesDeleted = 0;
+    let photosDeletedFromStorage = 0;
+
+    // 1. Delete poolUsers from previous day
+    console.log("🗑️ Deleting poolUsers from previous day...");
+    const poolUsersSnapshot = await db
+      .collection("poolUsers")
+      .where("poolId", ">=", yesterdayStr)
+      .where("poolId", "<", `${yesterdayStr}~`) // ~ is after all numbers/letters
+      .get();
+
+    const poolUsersBatch = db.batch();
+    poolUsersSnapshot.forEach((doc) => {
+      poolUsersBatch.delete(doc.ref);
+      poolUsersDeleted++;
+    });
+    await poolUsersBatch.commit();
+
+    // 2. Delete pools from previous day (only if today's pools exist)
+    console.log("🗑️ Checking if today's pools exist...");
+    const todayStr = now.toISOString().split("T")[0];
+    const todayPoolsSnapshot = await db
+      .collection("pools")
+      .where("date", "==", todayStr)
+      .get();
+
+    if (!todayPoolsSnapshot.empty) {
+      console.log("✅ Today's pools exist, deleting previous day's pools...");
+      const yesterdayPoolsSnapshot = await db
+        .collection("pools")
+        .where("date", "==", yesterdayStr)
+        .get();
+
+      const poolsBatch = db.batch();
+      yesterdayPoolsSnapshot.forEach((doc) => {
+        poolsBatch.delete(doc.ref);
+        poolsDeleted++;
+      });
+      await poolsBatch.commit();
+    } else {
+      console.log("⚠️ Today's pools don't exist yet, keeping previous pools");
+    }
+
+    // 3. Delete messages older than 2 days
+    console.log("🗑️ Deleting messages older than 2 days...");
+    const messagesSnapshot = await db
+      .collection("messages")
+      .where("timestamp", "<", admin.firestore.Timestamp.fromDate(twoDaysAgo))
+      .get();
+
+    const messagesBatch = db.batch();
+    messagesSnapshot.forEach((doc) => {
+      messagesBatch.delete(doc.ref);
+      messagesDeleted++;
+    });
+    await messagesBatch.commit();
+
+    // 4. Delete photo challenges older than 1 day
+    console.log("🗑️ Deleting photo challenges older than 1 day...");
+    const photoChallengeSnapshot = await db
+      .collection("photoChallenge")
+      .where("timestamp", "<", admin.firestore.Timestamp.fromDate(yesterday))
+      .get();
+
+    const photoBatch = db.batch();
+    const storageDeleteTasks: Promise<any>[] = [];
+
+    photoChallengeSnapshot.forEach((doc) => {
+      const data = doc.data();
+
+      // Delete from storage if storagePath exists
+      if (data.storagePath) {
+        storageDeleteTasks.push(
+          (async () => {
+            try {
+              const bucket = storage.bucket();
+              const file = bucket.file(data.storagePath);
+              const [exists] = await file.exists();
+              if (exists) {
+                await file.delete();
+                photosDeletedFromStorage++;
+                console.log(`🗑️ Deleted from storage: ${data.storagePath}`);
+              }
+            } catch (e) {
+              console.warn(`⚠️ Storage deletion error: ${data.storagePath}`, e);
+            }
+          })()
+        );
+      }
+
+      photoBatch.delete(doc.ref);
+      photoChallengesDeleted++;
+    });
+
+    await Promise.all([photoBatch.commit(), ...storageDeleteTasks]);
+
+    console.log("✅ Daily cleanup complete", {
+      poolUsersDeleted,
+      poolsDeleted,
+      messagesDeleted,
+      photoChallengesDeleted,
+      photosDeletedFromStorage,
+      date: yesterdayStr,
+    });
+
+    return {
+      success: true,
+      poolUsersDeleted,
+      poolsDeleted,
+      messagesDeleted,
+      photoChallengesDeleted,
+      photosDeletedFromStorage,
+    };
+  });
+
 // ==================== POOL SYSTEM ====================
 
 /**
- * Create daily pools at midnight (00:00 UTC)
- * Creates both morning and afternoon pools with random photo windows and reveal times
+ * Create daily hourly pools at midnight (00:00 UTC)
+ * Creates 8 hourly pools: 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00
+ * Each pool:
+ * - Opens at the hour (e.g., 10:00)
+ * - Closes and pairs at the next hour (e.g., 11:00)
+ * - Users get 2 photo notifications between join time and 21:00
+ * - Reveal is always between 21:00-22:00
  */
 export const createDailyPools = functions
   .runWith({ timeoutSeconds: 60, memory: "256MB" })
@@ -135,254 +303,229 @@ export const createDailyPools = functions
     const now = new Date();
     const dateStr = now.toISOString().split("T")[0]; // YYYY-MM-DD
 
-    console.log(`📅 Creating pools for ${dateStr}`);
+    console.log(`📅 Creating hourly pools for ${dateStr}`);
 
-    // Morning Pool: Join 08:00-13:00, Pairing at 13:00
-    const morningJoinStart = new Date(now);
-    morningJoinStart.setHours(8, 0, 0, 0);
+    // Create 8 hourly pools: 10h, 11h, 12h, 13h, 14h, 15h, 16h, 17h
+    const poolHours = [10, 11, 12, 13, 14, 15, 16, 17];
+    const batch = db.batch();
 
-    const morningJoinEnd = new Date(now);
-    morningJoinEnd.setHours(13, 0, 0, 0);
-
-    // Random photo window between 13:00-21:00 (different each day)
-    const photoStartHour = 13 + Math.floor(Math.random() * 8); // 13-20
-    const photoStartMin = Math.floor(Math.random() * 60);
-    const morningPhotoStart = new Date(now);
-    morningPhotoStart.setHours(photoStartHour, photoStartMin, 0, 0);
-
-    const morningPhotoEnd = new Date(morningPhotoStart);
-    morningPhotoEnd.setHours(morningPhotoEnd.getHours() + 6); // 6 hour window
-
-    // Random max photos (1-3)
-    const morningMaxPhotos = 1 + Math.floor(Math.random() * 3);
-
-    // Generate photo notification times for morning pool
-    const morningPhotoTimes: Date[] = [];
-    const morningWindowStart = 13;
-    const morningWindowEnd = 21;
-
-    for (let i = 0; i < morningMaxPhotos; i++) {
-      // Ensure at least 1 hour spacing between photo times
-      const minHour = i === 0 ? morningWindowStart : morningWindowStart + i + 1;
-      const maxHour =
-        morningWindowEnd - (morningMaxPhotos - i - 1) - 1 >= minHour
-          ? morningWindowEnd - (morningMaxPhotos - i - 1) - 1
-          : minHour;
-
-      const photoHour =
-        minHour + Math.floor(Math.random() * (maxHour - minHour + 1));
-      const photoMin = Math.floor(Math.random() * 60);
-
-      const photoTime = new Date(now);
-      photoTime.setHours(photoHour, photoMin, 0, 0);
-      morningPhotoTimes.push(photoTime);
-    }
-
-    // Sort times in ascending order
-    morningPhotoTimes.sort((a, b) => a.getTime() - b.getTime());
-
-    // Random reveal time between 21:00-22:00
+    // Random reveal time between 21:00-22:00 (same for all pools)
     const revealHour = 21;
     const revealMin = Math.floor(Math.random() * 60);
-    const morningRevealAt = new Date(now);
-    morningRevealAt.setHours(revealHour, revealMin, 0, 0);
+    const revealAt = new Date(now);
+    revealAt.setHours(revealHour, revealMin, 0, 0);
 
-    await db
-      .collection("pools")
-      .doc(`morning-${dateStr}`)
-      .set({
-        type: "morning",
+    for (const hour of poolHours) {
+      const poolId = `${dateStr}-${hour}h`;
+
+      // Join window: From hour:00 to (hour+1):00
+      const joinWindowStart = new Date(now);
+      joinWindowStart.setHours(hour, 0, 0, 0);
+
+      const joinWindowEnd = new Date(now);
+      joinWindowEnd.setHours(hour + 1, 0, 0, 0);
+
+      // Photo notification window: From hour:00 to 21:00 (2 photos)
+      const photoWindowStart = new Date(now);
+      photoWindowStart.setHours(hour, 0, 0, 0);
+
+      const photoWindowEnd = new Date(now);
+      photoWindowEnd.setHours(21, 0, 0, 0);
+
+      // Calculate 2 photo times evenly spaced between hour and 21:00
+      // Only if there's time (hour < 21)
+      const photoTimes: Date[] = [];
+      if (hour < 21) {
+        const hoursAvailable = 21 - hour;
+
+        if (hoursAvailable >= 2) {
+          // Space 2 photos evenly
+          const spacing = hoursAvailable / 2;
+
+          // First photo: hour + spacing/2
+          const photo1Hour = hour + Math.floor(spacing / 2);
+          const photo1Min = Math.floor(Math.random() * 60);
+          const photo1 = new Date(now);
+          photo1.setHours(photo1Hour, photo1Min, 0, 0);
+          photoTimes.push(photo1);
+
+          // Second photo: hour + spacing + spacing/2
+          const photo2Hour = hour + Math.floor(spacing * 1.5);
+          const photo2Min = Math.floor(Math.random() * 60);
+          const photo2 = new Date(now);
+          photo2.setHours(photo2Hour, photo2Min, 0, 0);
+          photoTimes.push(photo2);
+        } else if (hoursAvailable === 1) {
+          // Only 1 hour left, send 1 photo at random time
+          const photoHour = hour;
+          const photoMin = Math.floor(Math.random() * 60);
+          const photo = new Date(now);
+          photo.setHours(photoHour, photoMin, 0, 0);
+          photoTimes.push(photo);
+        }
+        // If hour >= 20, no photos (too close to reveal)
+      }
+
+      const poolRef = db.collection("pools").doc(poolId);
+      batch.set(poolRef, {
+        type: `hourly-${hour}h`,
         date: dateStr,
-        joinWindowStart: admin.firestore.Timestamp.fromDate(morningJoinStart),
-        joinWindowEnd: admin.firestore.Timestamp.fromDate(morningJoinEnd),
-        photoWindowStart: admin.firestore.Timestamp.fromDate(morningPhotoStart),
-        photoWindowEnd: admin.firestore.Timestamp.fromDate(morningPhotoEnd),
-        maxPhotos: morningMaxPhotos,
-        photoTimes: morningPhotoTimes.map((t) =>
+        hour,
+        joinWindowStart: admin.firestore.Timestamp.fromDate(joinWindowStart),
+        joinWindowEnd: admin.firestore.Timestamp.fromDate(joinWindowEnd),
+        photoWindowStart: admin.firestore.Timestamp.fromDate(photoWindowStart),
+        photoWindowEnd: admin.firestore.Timestamp.fromDate(photoWindowEnd),
+        maxPhotos: photoTimes.length,
+        photoTimes: photoTimes.map((t) =>
           admin.firestore.Timestamp.fromDate(t)
         ),
-        revealAt: admin.firestore.Timestamp.fromDate(morningRevealAt),
+        revealAt: admin.firestore.Timestamp.fromDate(revealAt),
         status: "open",
         userCount: 0,
         pairsCount: 0,
       });
 
-    console.log(
-      `✅ Morning pool created: Photos at ${morningPhotoTimes
-        .map(
-          (t) => `${t.getHours()}:${t.getMinutes().toString().padStart(2, "0")}`
-        )
-        .join(", ")}, Max ${morningMaxPhotos}, Reveal ${revealHour}:${revealMin
-        .toString()
-        .padStart(2, "0")}`
-    );
+      console.log(
+        `✅ Pool ${poolId} created: Join ${hour}:00-${hour + 1}:00, Photos: ${
+          photoTimes.length
+        }, Reveal ${revealHour}:${revealMin.toString().padStart(2, "0")}`
+      );
+    }
 
-    // Afternoon Pool: Join 13:00-17:00, Pairing at 17:00
-    const afternoonJoinStart = new Date(now);
-    afternoonJoinStart.setHours(13, 0, 0, 0);
+    await batch.commit();
+    console.log(`✅ Created ${poolHours.length} hourly pools for ${dateStr}`);
 
-    const afternoonJoinEnd = new Date(now);
-    afternoonJoinEnd.setHours(17, 0, 0, 0);
-
-    // Random photo window between 17:00-21:00
-    const afternoonPhotoStartHour = 17 + Math.floor(Math.random() * 4); // 17-20
-    const afternoonPhotoStartMin = Math.floor(Math.random() * 60);
-    const afternoonPhotoStart = new Date(now);
-    afternoonPhotoStart.setHours(
-      afternoonPhotoStartHour,
-      afternoonPhotoStartMin,
-      0,
-      0
-    );
-
-    const afternoonPhotoEnd = new Date(afternoonPhotoStart);
-    afternoonPhotoEnd.setHours(afternoonPhotoEnd.getHours() + 4); // 4 hour window
-
-    // Always 1 photo for afternoon
-    const afternoonMaxPhotos = 1;
-
-    // Generate photo notification time for afternoon pool (only 1 photo)
-    const afternoonPhotoTimes: Date[] = [];
-    const afternoonPhotoHour = 17 + Math.floor(Math.random() * 4); // 17-20
-    const afternoonPhotoMin = Math.floor(Math.random() * 60);
-    const afternoonPhotoTime = new Date(now);
-    afternoonPhotoTime.setHours(afternoonPhotoHour, afternoonPhotoMin, 0, 0);
-    afternoonPhotoTimes.push(afternoonPhotoTime);
-
-    // Same reveal time as morning
-    const afternoonRevealAt = new Date(now);
-    afternoonRevealAt.setHours(revealHour, revealMin, 0, 0);
-
-    await db
-      .collection("pools")
-      .doc(`afternoon-${dateStr}`)
-      .set({
-        type: "afternoon",
-        date: dateStr,
-        joinWindowStart: admin.firestore.Timestamp.fromDate(afternoonJoinStart),
-        joinWindowEnd: admin.firestore.Timestamp.fromDate(afternoonJoinEnd),
-        photoWindowStart:
-          admin.firestore.Timestamp.fromDate(afternoonPhotoStart),
-        photoWindowEnd: admin.firestore.Timestamp.fromDate(afternoonPhotoEnd),
-        maxPhotos: afternoonMaxPhotos,
-        photoTimes: afternoonPhotoTimes.map((t) =>
-          admin.firestore.Timestamp.fromDate(t)
-        ),
-        revealAt: admin.firestore.Timestamp.fromDate(afternoonRevealAt),
-        status: "open",
-        userCount: 0,
-        pairsCount: 0,
-      });
-
-    console.log(
-      `✅ Afternoon pool created: Photo at ${afternoonPhotoHour}:${afternoonPhotoMin
-        .toString()
-        .padStart(
-          2,
-          "0"
-        )}, Max ${afternoonMaxPhotos}, Reveal ${revealHour}:${revealMin
-        .toString()
-        .padStart(2, "0")}`
-    );
-
-    return { success: true, date: dateStr };
+    return { success: true, date: dateStr, pools: poolHours.length };
   });
 
 /**
- * Close morning pool and create pairs (13:00 UTC daily)
+ * Close and pair hourly pools
+ * Creates 8 functions, one for each hour (11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00, 18:00)
+ * Each function pairs users from the previous hour's pool
  */
-export const closeMorningPool = functions
+
+// 11:00 - Pair users from 10h pool
+export const closePool10h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 13 * * *") // Every day at 13:00 UTC
+  .pubsub.schedule("0 11 * * *")
   .timeZone("UTC")
   .onRun(async () => {
-    initAdmin();
-    const db = admin.firestore();
+    return await closeHourlyPool(10);
+  });
 
-    const now = new Date();
-    const dateStr = now.toISOString().split("T")[0];
-    const poolId = `morning-${dateStr}`;
+// 12:00 - Pair users from 11h pool
+export const closePool11h = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("0 12 * * *")
+  .timeZone("UTC")
+  .onRun(async () => {
+    return await closeHourlyPool(11);
+  });
 
-    console.log(`🔒 Closing morning pool: ${poolId}`);
+// 13:00 - Pair users from 12h pool
+export const closePool12h = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("0 13 * * *")
+  .timeZone("UTC")
+  .onRun(async () => {
+    return await closeHourlyPool(12);
+  });
 
-    await db.collection("pools").doc(poolId).update({
-      status: "pairing",
-    });
+// 14:00 - Pair users from 13h pool
+export const closePool13h = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("0 14 * * *")
+  .timeZone("UTC")
+  .onRun(async () => {
+    return await closeHourlyPool(13);
+  });
 
-    // Get all users in this pool
-    const poolUsersSnapshot = await db
-      .collection("poolUsers")
-      .where("poolId", "==", poolId)
-      .get();
+// 15:00 - Pair users from 14h pool
+export const closePool14h = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("0 15 * * *")
+  .timeZone("UTC")
+  .onRun(async () => {
+    return await closeHourlyPool(14);
+  });
 
-    console.log(`👥 Found ${poolUsersSnapshot.size} users in pool`);
+// 16:00 - Pair users from 15h pool
+export const closePool15h = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("0 16 * * *")
+  .timeZone("UTC")
+  .onRun(async () => {
+    return await closeHourlyPool(15);
+  });
 
-    if (poolUsersSnapshot.empty) {
-      console.log("⚠️ No users to pair");
-      await db.collection("pools").doc(poolId).update({ status: "closed" });
-      return { success: true, pairs: 0 };
-    }
+// 17:00 - Pair users from 16h pool
+export const closePool16h = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("0 17 * * *")
+  .timeZone("UTC")
+  .onRun(async () => {
+    return await closeHourlyPool(16);
+  });
 
-    // Match users
-    const pairs = await matchUsers(poolId, poolUsersSnapshot.docs, db);
-
-    await db.collection("pools").doc(poolId).update({
-      status: "closed",
-      pairsCount: pairs,
-    });
-
-    console.log(`✅ Morning pool closed. Created ${pairs} pairs`);
-
-    return { success: true, pairs };
+// 18:00 - Pair users from 17h pool
+export const closePool17h = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("0 18 * * *")
+  .timeZone("UTC")
+  .onRun(async () => {
+    return await closeHourlyPool(17);
   });
 
 /**
- * Close afternoon pool and create pairs (17:00 UTC daily)
+ * Shared logic to close and pair an hourly pool
  */
-export const closeAfternoonPool = functions
-  .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 17 * * *") // Every day at 17:00 UTC
-  .timeZone("UTC")
-  .onRun(async () => {
-    initAdmin();
-    const db = admin.firestore();
+async function closeHourlyPool(hour: number): Promise<any> {
+  initAdmin();
+  const db = admin.firestore();
 
-    const now = new Date();
-    const dateStr = now.toISOString().split("T")[0];
-    const poolId = `afternoon-${dateStr}`;
+  const now = new Date();
+  const dateStr = now.toISOString().split("T")[0];
+  const poolId = `${dateStr}-${hour}h`;
 
-    console.log(`🔒 Closing afternoon pool: ${poolId}`);
+  console.log(`🔒 Closing pool: ${poolId}`);
 
-    await db.collection("pools").doc(poolId).update({
-      status: "pairing",
-    });
+  const poolDoc = await db.collection("pools").doc(poolId).get();
 
-    // Get all users in this pool
-    const poolUsersSnapshot = await db
-      .collection("poolUsers")
-      .where("poolId", "==", poolId)
-      .get();
+  if (!poolDoc.exists) {
+    console.log(`⚠️ Pool ${poolId} not found`);
+    return { success: false, error: "Pool not found" };
+  }
 
-    console.log(`👥 Found ${poolUsersSnapshot.size} users in pool`);
-
-    if (poolUsersSnapshot.empty) {
-      console.log("⚠️ No users to pair");
-      await db.collection("pools").doc(poolId).update({ status: "closed" });
-      return { success: true, pairs: 0 };
-    }
-
-    // Match users
-    const pairs = await matchUsers(poolId, poolUsersSnapshot.docs, db);
-
-    await db.collection("pools").doc(poolId).update({
-      status: "closed",
-      pairsCount: pairs,
-    });
-
-    console.log(`✅ Afternoon pool closed. Created ${pairs} pairs`);
-
-    return { success: true, pairs };
+  await db.collection("pools").doc(poolId).update({
+    status: "pairing",
   });
+
+  // Get all users in this pool (OPTIMIZED: only queries users who joined)
+  const poolUsersSnapshot = await db
+    .collection("poolUsers")
+    .where("poolId", "==", poolId)
+    .get();
+
+  console.log(`👥 Found ${poolUsersSnapshot.size} users in pool ${poolId}`);
+
+  if (poolUsersSnapshot.empty) {
+    console.log("⚠️ No users to pair");
+    await db.collection("pools").doc(poolId).update({ status: "closed" });
+    return { success: true, pairs: 0 };
+  }
+
+  // Match users
+  const pairs = await matchUsers(poolId, poolUsersSnapshot.docs, db);
+
+  await db.collection("pools").doc(poolId).update({
+    status: "closed",
+    pairsCount: pairs,
+  });
+
+  console.log(`✅ Pool ${poolId} closed. Created ${pairs} pairs`);
+
+  return { success: true, pairs };
+}
 
 /**
  * Match users in a pool
@@ -1065,6 +1208,141 @@ export const deleteAllPairs = functions
       });
     } catch (error: any) {
       console.error("Error deleting pairs:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+/**
+ * Manual create pools for today (for testing)
+ * POST https://us-central1-secretbuddy-5637d.cloudfunctions.net/manualCreatePools
+ */
+export const manualCreatePools = functions
+  .runWith({ timeoutSeconds: 60, memory: "256MB" })
+  .https.onRequest(async (req, res) => {
+    try {
+      initAdmin();
+      const db = admin.firestore();
+
+      const now = new Date();
+      const dateStr = now.toISOString().split("T")[0];
+
+      console.log(`📅 Creating hourly pools for ${dateStr}`);
+
+      const poolHours = [10, 11, 12, 13, 14, 15, 16, 17];
+      const batch = db.batch();
+
+      const revealHour = 21;
+      const revealMin = Math.floor(Math.random() * 60);
+      const revealAt = new Date(now);
+      revealAt.setHours(revealHour, revealMin, 0, 0);
+
+      for (const hour of poolHours) {
+        const poolId = `${dateStr}-${hour}h`;
+
+        const joinWindowStart = new Date(now);
+        joinWindowStart.setHours(hour, 0, 0, 0);
+
+        const joinWindowEnd = new Date(now);
+        joinWindowEnd.setHours(hour + 1, 0, 0, 0);
+
+        const photoWindowStart = new Date(now);
+        photoWindowStart.setHours(hour, 0, 0, 0);
+
+        const photoWindowEnd = new Date(now);
+        photoWindowEnd.setHours(21, 0, 0, 0);
+
+        const photoTimes: Date[] = [];
+        if (hour < 21) {
+          const hoursAvailable = 21 - hour;
+
+          if (hoursAvailable >= 2) {
+            const spacing = hoursAvailable / 2;
+
+            const photo1Hour = hour + Math.floor(spacing / 2);
+            const photo1Min = Math.floor(Math.random() * 60);
+            const photo1 = new Date(now);
+            photo1.setHours(photo1Hour, photo1Min, 0, 0);
+            photoTimes.push(photo1);
+
+            const photo2Hour = hour + Math.floor(spacing * 1.5);
+            const photo2Min = Math.floor(Math.random() * 60);
+            const photo2 = new Date(now);
+            photo2.setHours(photo2Hour, photo2Min, 0, 0);
+            photoTimes.push(photo2);
+          } else if (hoursAvailable === 1) {
+            const photoHour = hour;
+            const photoMin = Math.floor(Math.random() * 60);
+            const photo = new Date(now);
+            photo.setHours(photoHour, photoMin, 0, 0);
+            photoTimes.push(photo);
+          }
+        }
+
+        const poolRef = db.collection("pools").doc(poolId);
+        batch.set(poolRef, {
+          type: `hourly-${hour}h`,
+          date: dateStr,
+          hour,
+          joinWindowStart: admin.firestore.Timestamp.fromDate(joinWindowStart),
+          joinWindowEnd: admin.firestore.Timestamp.fromDate(joinWindowEnd),
+          photoWindowStart:
+            admin.firestore.Timestamp.fromDate(photoWindowStart),
+          photoWindowEnd: admin.firestore.Timestamp.fromDate(photoWindowEnd),
+          maxPhotos: photoTimes.length,
+          photoTimes: photoTimes.map((t) =>
+            admin.firestore.Timestamp.fromDate(t)
+          ),
+          revealAt: admin.firestore.Timestamp.fromDate(revealAt),
+          status: "open",
+          userCount: 0,
+          pairsCount: 0,
+        });
+      }
+
+      await batch.commit();
+
+      res.status(200).json({
+        success: true,
+        message: `Created ${poolHours.length} pools for ${dateStr}`,
+        pools: poolHours.map((h) => `${dateStr}-${h}h`),
+      });
+    } catch (error: any) {
+      console.error("Error creating pools:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+/**
+ * Manual close a specific hourly pool (for testing)
+ * POST https://us-central1-secretbuddy-5637d.cloudfunctions.net/manualClosePool
+ * Body: { "hour": 14 }  // To close the 14h pool for today
+ */
+export const manualClosePool = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .https.onRequest(async (req, res) => {
+    try {
+      initAdmin();
+
+      const { hour } = req.body;
+
+      if (!hour || hour < 10 || hour > 17) {
+        res.status(400).json({
+          error: "Invalid hour. Must be between 10 and 17.",
+        });
+        return;
+      }
+
+      const result = await closeHourlyPool(hour);
+
+      res.status(200).json(result);
+    } catch (error: any) {
+      console.error("Error closing pool:", error);
       res.status(500).json({
         success: false,
         error: error.message,
