@@ -394,7 +394,7 @@ export const isUserInPool = async (
         POOLS_COLLECTION,
         poolId,
         "shards",
-        shardId.toString(),
+        `shard_${shardId}`,
         "poolUsers",
         userId
       );

@@ -255,21 +255,8 @@ export const HomeScreen = () => {
 
   // Camera function for back camera only (no selfies allowed)
   const takeBackPhoto = async () => {
-    // Simple reminder alert that doesn't block camera
-    Alert.alert(
-      "Camera Guidelines",
-      "IMPORTANT: Use back camera only!\n\n• Do NOT flip to front camera\n• No selfies allowed\n• Keep your identity hidden\n\nViolating these rules may result in removal from the game.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "I understand",
-          style: "default",
-          onPress: async () => {
-            await openCamera();
-          },
-        },
-      ]
-    );
+    // Simple reminder modal instead of alert
+    setShowCameraModal(true);
   };
 
   const handleCameraConfirm = async () => {
@@ -382,11 +369,7 @@ export const HomeScreen = () => {
 
           console.log("✅ Photo challenge sent successfully");
 
-          Alert.alert(
-            "Photo Sent! 📸",
-            "Your photo has been shared with your mystery buddy. They'll get a notification to view it!",
-            [{ text: "Awesome!" }]
-          );
+          // Success - card will disappear automatically
         } catch (error) {
           console.error("❌ Error sending photo:", error);
           Alert.alert(
@@ -473,11 +456,7 @@ export const HomeScreen = () => {
         setPhotoChallengeCreatedAt(null);
         await AsyncStorage.removeItem("photoChallengeData");
 
-        Alert.alert(
-          "Photo Sent! 📸",
-          "Your photo has been shared with your mystery buddy!",
-          [{ text: "Awesome!" }]
-        );
+        console.log("✅ Photo sent successfully from notification");
       }
     } catch (error) {
       console.error("❌ Error sending photo from notification:", error);
@@ -1052,14 +1031,6 @@ export const HomeScreen = () => {
     try {
       await poolService.joinPool(user.uid, currentPool.id, priority);
       setIsInPool(true);
-
-      Alert.alert(
-        "Joined Pool! 🎉",
-        `You've joined the ${currentPool.type} pool with "${priority}" priority. Pairing will happen when the pool closes!`
-      );
-    } catch (error) {
-      console.error("Error joining pool:", error);
-      Alert.alert("Error", "Failed to join pool. Please try again.");
     } finally {
       setPoolLoading(false);
     }
@@ -1079,7 +1050,6 @@ export const HomeScreen = () => {
             await poolService.leavePool(user.uid, currentPool.id);
             setIsInPool(false);
             setSelectedPriority(null);
-            Alert.alert("Left Pool", "You've left the pool successfully.");
           } catch (error) {
             console.error("Error leaving pool:", error);
             Alert.alert("Error", "Failed to leave pool. Please try again.");
@@ -1141,15 +1111,14 @@ export const HomeScreen = () => {
     }
 
     if (isInPool && currentPool) {
-      return `Waiting for pairing at ${
-        currentPool.type === "morning" ? "1PM" : "5PM"
-      }.`;
+      // Show the local hour for pairing (pool closes next hour)
+      const poolHour = getCurrentPool();
+      return `Waiting for pairing at ${poolHour}.`;
     }
 
     if (currentPool) {
-      return `Join ${
-        currentPool.type === "morning" ? "morning" : "afternoon"
-      } pool to find a buddy!`;
+      const poolHour = getCurrentPool();
+      return `Join Pool ${poolHour} to find a buddy!`;
     }
 
     return "Pools open 8AM-1PM and 1PM-5PM daily.";
@@ -1471,9 +1440,7 @@ export const HomeScreen = () => {
               {currentPair
                 ? "Paired"
                 : currentPool
-                ? `${
-                    currentPool.type === "morning" ? "Morning" : "Afternoon"
-                  } Pool`
+                ? `Pool ${getCurrentPool()}`
                 : "Daily Connection"}
             </Text>
             <View

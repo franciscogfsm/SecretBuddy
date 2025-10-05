@@ -1,5 +1,6 @@
 import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
+import { CloudTasksClient } from "@google-cloud/tasks";
 
 // Don't initialize at module load - causes timeout
 let initialized = false;
@@ -9,6 +10,22 @@ function initAdmin() {
     initialized = true;
   }
 }
+
+// Cloud Tasks setup - lazy initialize to avoid deployment timeouts
+let tasksClient: CloudTasksClient | null = null;
+
+function getTasksClient(): CloudTasksClient {
+  if (!tasksClient) {
+    tasksClient = new CloudTasksClient();
+  }
+  return tasksClient;
+}
+const PROJECT = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
+const LOCATION = process.env.TASKS_LOCATION || "us-central1";
+const QUEUE = process.env.TASKS_QUEUE || "reveal-queue";
+const REVEAL_HANDLER_URL =
+  process.env.REVEAL_HANDLER_URL ||
+  `https://${LOCATION}-${PROJECT}.cloudfunctions.net/sendRevealForPair`;
 
 // ==================== PHOTO CLEANUP ====================
 
@@ -1003,6 +1020,10 @@ async function createPair(
 
     status: "active",
   });
+
+  // Schedule reveal notification task
+  const revealAtDate = poolData.revealAt.toDate();
+  await scheduleRevealTask(pairId, revealAtDate);
 }
 
 /**
@@ -1390,6 +1411,297 @@ async function sendPhotoNotificationToPool(
     return totalSent;
   } catch (error) {
     console.error("❌ Error sending notifications:", error);
+    return 0;
+  }
+}
+
+/**
+ * Send reveal notifications for pairs whose revealAt has arrived
+ * - Queries pairs where status=='active', revealAt <= now, and revealNotified != true
+ * - Sends Expo push notifications to both users (if expoPushToken exists)
+ * - Marks pair.revealNotified = true to avoid duplicate notifications
+ */
+async function sendRevealNotifications(db: admin.firestore.Firestore) {
+  try {
+    const nowTs = admin.firestore.Timestamp.now();
+    const pairsRef = db.collection("pairs");
+
+    // Firestore doesn't support != filters in a straightforward way here,
+    // so query active pairs and filter client-side for revealAt <= now and revealNotified != true
+    const snapshot = await pairsRef.where("status", "==", "active").get();
+
+    if (snapshot.empty) return 0;
+
+    const messages: any[] = [];
+    const pairsToUpdate: admin.firestore.DocumentReference[] = [];
+
+    for (const doc of snapshot.docs) {
+      const data: any = doc.data();
+      if (!data.revealAt) continue;
+      if (data.revealNotified) continue; // already notified
+
+      const revealAt: admin.firestore.Timestamp = data.revealAt;
+      if (revealAt.toMillis() > nowTs.toMillis()) continue; // not yet time
+
+      // load user docs for both participants
+      const userARef = db.collection("users").doc(data.userA);
+      const userBRef = db.collection("users").doc(data.userB);
+      const [userADoc, userBDoc] = await db.getAll(userARef, userBRef);
+
+      const userA = userADoc.exists ? userADoc.data() : null;
+      const userB = userBDoc.exists ? userBDoc.data() : null;
+
+      const title = "🎉 Reveal Time!";
+      const body = "It's reveal time — see who your mystery buddy is now!";
+
+      // Build messages for expo tokens
+      if (userA?.expoPushToken) {
+        messages.push({
+          to: userA.expoPushToken,
+          sound: "default",
+          title,
+          body,
+          data: { type: "reveal", pairId: doc.id },
+        });
+      }
+
+      if (userB?.expoPushToken) {
+        messages.push({
+          to: userB.expoPushToken,
+          sound: "default",
+          title,
+          body,
+          data: { type: "reveal", pairId: doc.id },
+        });
+      }
+
+      pairsToUpdate.push(doc.ref);
+    }
+
+    // Send in batches (Expo allows 100 per request)
+    let totalSent = 0;
+    for (let i = 0; i < messages.length; i += 100) {
+      const batch = messages.slice(i, i + 100);
+      const resp = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(batch),
+      });
+      if (resp.ok) totalSent += batch.length;
+      else console.error("❌ Expo push batch failed:", await resp.text());
+    }
+
+    // Mark pairs as notified in a batch
+    if (pairsToUpdate.length > 0) {
+      const updateBatch = db.batch();
+      pairsToUpdate.forEach((ref) =>
+        updateBatch.update(ref, { revealNotified: true })
+      );
+      await updateBatch.commit();
+    }
+
+    console.log(`✅ Sent ${totalSent} reveal notifications`);
+    return totalSent;
+  } catch (error) {
+    console.error("❌ Error sending reveal notifications:", error);
+    return 0;
+  }
+}
+
+/**
+ * Schedule a Cloud Task to send reveal notification at revealAt time
+ */
+async function scheduleRevealTask(pairId: string, revealAt: Date) {
+  if (!PROJECT) {
+    throw new Error("PROJECT environment variable not set");
+  }
+
+  try {
+    const tasksClient = getTasksClient();
+    const parent = tasksClient.queuePath(PROJECT, LOCATION, QUEUE);
+    const payload = { pairId };
+    const scheduleTime = { seconds: Math.floor(revealAt.getTime() / 1000) };
+
+    const task = {
+      httpRequest: {
+        httpMethod: "POST" as const,
+        url: REVEAL_HANDLER_URL,
+        headers: { "Content-Type": "application/json" },
+        body: Buffer.from(JSON.stringify(payload)).toString("base64"),
+        oidcToken: {
+          serviceAccountEmail: `${PROJECT}@appspot.gserviceaccount.com`,
+        },
+      },
+      scheduleTime,
+    };
+
+    const response = await tasksClient.createTask({ parent, task });
+    console.log(
+      `✅ Scheduled reveal task for pair ${pairId} at ${revealAt.toISOString()}`
+    );
+    return response[0].name;
+  } catch (error) {
+    console.error("❌ Error scheduling reveal task:", error);
+    return null;
+  }
+}
+
+// Scheduled function to check reveal notifications every minute
+// COMMENTED OUT: Now using Cloud Tasks for precise scheduling instead of polling
+// export const checkRevealNotifications = functions
+//   .runWith({ timeoutSeconds: 60, memory: "128MB" })
+//   .pubsub.schedule("every 1 minutes")
+//   .timeZone("UTC")
+//   .onRun(async () => {
+//     initAdmin();
+//     const db = admin.firestore();
+//     const sent = await sendRevealNotifications(db);
+//     return { success: true, sent };
+//   });
+
+// Manual test endpoint to trigger reveal notification for a specific pair (for testing)
+export const manualTestRevealNotification = functions
+  .runWith({ timeoutSeconds: 60, memory: "128MB" })
+  .https.onRequest(async (req, res) => {
+    try {
+      initAdmin();
+      const db = admin.firestore();
+      const { pairId } = req.body;
+      if (!pairId) {
+        res.status(400).json({ error: "pairId required" });
+        return;
+      }
+
+      const pairDocRef = db.collection("pairs").doc(pairId);
+      const pairDoc = await pairDocRef.get();
+      if (!pairDoc.exists) {
+        res.status(404).json({ error: "pair not found" });
+        return;
+      }
+
+      // Temporarily set revealAt to now and clear revealNotified so sendRevealNotifications will pick it up
+      await pairDocRef.update({
+        revealAt: admin.firestore.Timestamp.now(),
+        revealNotified: false,
+      });
+
+      const sent = await sendRevealNotifications(db);
+      res.status(200).json({ success: true, sent });
+      return;
+    } catch (error: any) {
+      console.error("Error manual reveal test:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+/**
+ * HTTP handler called by Cloud Tasks to send reveal notification for a pair
+ */
+export const sendRevealForPair = functions
+  .runWith({ timeoutSeconds: 60, memory: "128MB" })
+  .https.onRequest(async (req, res) => {
+    try {
+      initAdmin();
+      const db = admin.firestore();
+      const { pairId } = req.body;
+      if (!pairId) {
+        res.status(400).json({ error: "pairId required" });
+        return;
+      }
+
+      const pairDocRef = db.collection("pairs").doc(pairId);
+      const pairDoc = await pairDocRef.get();
+      if (!pairDoc.exists) {
+        res.status(404).json({ error: "pair not found" });
+        return;
+      }
+
+      const pair = pairDoc.data();
+      if (!pair || pair.revealNotified) {
+        res.status(200).json({ success: true, reason: "already notified" });
+        return;
+      }
+
+      // Send notifications (reuse existing logic)
+      const sent = await sendRevealNotificationsForPair(pairId, db);
+      res.status(200).json({ success: true, sent });
+    } catch (error: any) {
+      console.error("Error in sendRevealForPair:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+/**
+ * Send reveal notifications for a specific pair
+ */
+async function sendRevealNotificationsForPair(
+  pairId: string,
+  db: admin.firestore.Firestore
+) {
+  try {
+    const pairDoc = await db.collection("pairs").doc(pairId).get();
+    if (!pairDoc.exists) return 0;
+
+    const data = pairDoc.data();
+    if (!data || data.revealNotified) return 0;
+
+    // Load user docs
+    const userARef = db.collection("users").doc(data.userA);
+    const userBRef = db.collection("users").doc(data.userB);
+    const [userADoc, userBDoc] = await db.getAll(userARef, userBRef);
+
+    const userA = userADoc.exists ? userADoc.data() : null;
+    const userB = userBDoc.exists ? userBDoc.data() : null;
+
+    const title = "🎉 Reveal Time!";
+    const body = "It's reveal time — see who your mystery buddy is now!";
+    const messages: any[] = [];
+
+    if (userA?.expoPushToken) {
+      messages.push({
+        to: userA.expoPushToken,
+        sound: "default",
+        title,
+        body,
+        data: { type: "reveal", pairId },
+      });
+    }
+
+    if (userB?.expoPushToken) {
+      messages.push({
+        to: userB.expoPushToken,
+        sound: "default",
+        title,
+        body,
+        data: { type: "reveal", pairId },
+      });
+    }
+
+    // Send messages
+    let totalSent = 0;
+    for (let i = 0; i < messages.length; i += 100) {
+      const batch = messages.slice(i, i + 100);
+      const resp = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(batch),
+      });
+      if (resp.ok) totalSent += batch.length;
+      else console.error("❌ Expo push batch failed:", await resp.text());
+    }
+
+    // Mark as notified
+    await pairDoc.ref.update({ revealNotified: true });
+    console.log(`✅ Sent ${totalSent} reveal notifications for pair ${pairId}`);
+    return totalSent;
+  } catch (error) {
+    console.error("❌ Error sending reveal notifications for pair:", error);
     return 0;
   }
 }

@@ -32,7 +32,7 @@ export const PrimaryButton = ({
   >
     {variant === "primary" && (
       <LinearGradient
-        colors={["#A855F7", "#EC4899"]}
+        colors={[colors.accentTeal, colors.accentPurple]}
         style={[StyleSheet.absoluteFill, { borderRadius: 28 }]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
