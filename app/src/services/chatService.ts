@@ -46,10 +46,21 @@ export interface Conversation {
   isRevealed: boolean; // Only show chat after reveal
 }
 
-const MESSAGES_COLLECTION = "messages";
 const CONVERSATIONS_COLLECTION = "conversations";
 const MAX_MESSAGE_LENGTH = 500; // Character limit per message
 const MESSAGES_PER_BATCH = 10; // Load only 10 messages initially for faster loading
+
+/**
+ * Get date-partitioned messages collection name
+ * Format: messages_YYYY_MM_DD
+ * ✅ SCALE OPTIMIZED: Allows efficient cleanup by date
+ */
+const getMessagesCollection = (date: Date = new Date()): string => {
+  const year = date.getUTCFullYear();
+  const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
+  const day = date.getUTCDate().toString().padStart(2, "0");
+  return `messages_${year}_${month}_${day}`;
+};
 
 /**
  * Get midnight of the current day (for expiration)
@@ -168,8 +179,9 @@ export const sendMessage = async (
     ]);
     console.log("🔐 Message encrypted with conversation key");
 
-    // Create message document with encrypted text
-    const messagesRef = collection(db, MESSAGES_COLLECTION);
+    // ✅ SCALE OPTIMIZED: Use date-partitioned collection (messages_YYYY_MM_DD)
+    const messagesCollection = getMessagesCollection();
+    const messagesRef = collection(db, messagesCollection);
     const messageData: Omit<ChatMessage, "id"> = {
       conversationId,
       senderId,
@@ -189,7 +201,7 @@ export const sendMessage = async (
       }),
     ]);
 
-    console.log("✅ Message sent:", messageDoc.id);
+    console.log(`✅ Message sent to ${messagesCollection}:`, messageDoc.id);
     return messageDoc.id;
   } catch (error) {
     console.error("❌ Error sending message:", error);
@@ -202,6 +214,12 @@ export const sendMessage = async (
  * 🔐 Messages are automatically decrypted when received
  * Optimized for super fast loading - only loads recent messages
  */
+/**
+ * Subscribe to messages (reads from date-partitioned collections)
+ * ✅ SCALE OPTIMIZED: Queries today's and yesterday's message collections
+ * ✅ INDEX-FREE: Only uses conversationId filter, sorts in memory
+ * Note: Messages older than 2 days are automatically cleaned up by backend
+ */
 export const subscribeToMessages = (
   conversationId: string,
   onMessagesUpdate: (messages: ChatMessage[]) => void,
@@ -209,66 +227,147 @@ export const subscribeToMessages = (
   messageLimit: number = MESSAGES_PER_BATCH // Allow custom limit
 ) => {
   try {
-    const messagesRef = collection(db, MESSAGES_COLLECTION);
+    // Query today's and yesterday's messages (messages older than 2 days are deleted)
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-    // Optimized query: filter by conversation, order by timestamp DESC, limit results
-    // This uses Firebase's server-side limit for maximum performance
-    const q = query(
-      messagesRef,
-      where("conversationId", "==", conversationId),
-      orderBy("timestamp", "desc"),
-      limit(messageLimit)
-    );
+    const todayCollection = getMessagesCollection(today);
+    const yesterdayCollection = getMessagesCollection(yesterday);
 
-    const unsubscribe = onSnapshot(
-      q,
-      async (snapshot) => {
-        // 🚀 PARALLEL DECRYPTION for maximum speed
-        const decryptPromises = snapshot.docs.map(async (doc) => {
-          const data = doc.data();
-          let decryptedText = data.text;
+    // Store messages from both collections
+    let todayMessages: ChatMessage[] = [];
+    let yesterdayMessages: ChatMessage[] = [];
 
-          // 🔐 DECRYPT if message is encrypted (with conversation-specific key)
-          if (data.encrypted && encryptionService.isEncrypted(data.text)) {
-            try {
-              decryptedText = await encryptionService.decryptMessage(
-                data.text,
-                conversationId
-              );
-            } catch (error) {
-              console.error("❌ Decryption failed:", error);
-              decryptedText = "[Encrypted message]";
-            }
-          }
+    // Combined update function that merges messages from both collections
+    const handleCombinedUpdate = () => {
+      // Merge and sort all messages
+      const allMessages = [...yesterdayMessages, ...todayMessages];
 
-          return {
-            id: doc.id,
-            ...data,
-            text: decryptedText, // Use decrypted text
-          } as ChatMessage;
-        });
+      // Sort by timestamp (ascending - oldest first)
+      allMessages.sort((a, b) => {
+        const aTime = a.timestamp?.toMillis?.() || 0;
+        const bTime = b.timestamp?.toMillis?.() || 0;
+        return aTime - bTime;
+      });
 
-        // Wait for all decryptions to complete in parallel
-        const messages = await Promise.all(decryptPromises);
+      // Apply limit (keep most recent N messages)
+      const limitedMessages = allMessages.slice(-messageLimit);
 
-        // Reverse since we queried DESC (newest first) but want to display oldest first
-        messages.reverse();
+      onMessagesUpdate(limitedMessages);
+    };
 
-        onMessagesUpdate(messages);
+    // Subscribe to today's collection
+    const unsubscribeToday = subscribeToMessagesInCollection(
+      todayCollection,
+      conversationId,
+      (messages) => {
+        todayMessages = messages;
+        handleCombinedUpdate();
       },
-      (error) => {
-        console.error("❌ Error in message subscription:", error);
-        if (onError) {
-          onError(error as Error);
-        }
-      }
+      onError,
+      messageLimit
     );
 
-    return unsubscribe;
+    // Subscribe to yesterday's collection
+    const unsubscribeYesterday = subscribeToMessagesInCollection(
+      yesterdayCollection,
+      conversationId,
+      (messages) => {
+        yesterdayMessages = messages;
+        handleCombinedUpdate();
+      },
+      onError,
+      messageLimit
+    );
+
+    // Return combined unsubscribe function
+    return () => {
+      unsubscribeToday();
+      unsubscribeYesterday();
+    };
   } catch (error) {
     console.error("❌ Error subscribing to messages:", error);
     throw error;
   }
+};
+
+/**
+ * Subscribe to messages in a specific date-partitioned collection
+ * Helper function for subscribeToMessages
+ * ✅ INDEX-FREE: Uses only conversationId filter, sorts in memory
+ */
+const subscribeToMessagesInCollection = (
+  messagesCollection: string,
+  conversationId: string,
+  onMessagesUpdate: (messages: ChatMessage[]) => void,
+  onError?: (error: Error) => void,
+  messageLimit: number = MESSAGES_PER_BATCH
+) => {
+  const messagesRef = collection(db, messagesCollection);
+
+  // ✅ INDEX-FREE QUERY: Only filter by conversationId (no composite index needed)
+  // Sort in memory instead of using orderBy (avoids needing index for each date collection)
+  const q = query(
+    messagesRef,
+    where("conversationId", "==", conversationId)
+    // No orderBy - will sort in memory
+  );
+
+  const unsubscribe = onSnapshot(
+    q,
+    async (snapshot) => {
+      // 🚀 PARALLEL DECRYPTION for maximum speed
+      const decryptPromises = snapshot.docs.map(async (doc) => {
+        const data = doc.data();
+        let decryptedText = data.text;
+
+        // 🔐 DECRYPT if message is encrypted (with conversation-specific key)
+        if (data.encrypted && encryptionService.isEncrypted(data.text)) {
+          try {
+            decryptedText = await encryptionService.decryptMessage(
+              data.text,
+              conversationId
+            );
+          } catch (error) {
+            console.error("❌ Decryption failed:", error);
+            decryptedText = "[Encrypted message]";
+          }
+        }
+
+        return {
+          id: doc.id,
+          ...data,
+          text: decryptedText, // Use decrypted text
+        } as ChatMessage;
+      });
+
+      // Wait for all decryptions to complete in parallel
+      let messages = await Promise.all(decryptPromises);
+
+      // ✅ SORT IN MEMORY by timestamp (ascending - oldest first)
+      messages.sort((a, b) => {
+        const aTime = a.timestamp?.toMillis?.() || 0;
+        const bTime = b.timestamp?.toMillis?.() || 0;
+        return aTime - bTime; // Ascending order (oldest first)
+      });
+
+      // Apply limit after sorting (keep most recent N messages)
+      if (messages.length > messageLimit) {
+        messages = messages.slice(-messageLimit); // Keep last N messages
+      }
+
+      onMessagesUpdate(messages);
+    },
+    (error) => {
+      console.error("❌ Error in message subscription:", error);
+      if (onError) {
+        onError(error as Error);
+      }
+    }
+  );
+
+  return unsubscribe;
 };
 
 /**
@@ -395,6 +494,7 @@ export const subscribeToUserConversations = (
 
 /**
  * End a conversation (can be called by either participant)
+ * ✅ When one user ends conversation, it closes for BOTH participants
  */
 export const endConversation = async (
   conversationId: string,
@@ -403,13 +503,17 @@ export const endConversation = async (
   try {
     const conversationRef = doc(db, CONVERSATIONS_COLLECTION, conversationId);
 
+    // Update conversation to ended state
+    // This will be visible to BOTH participants via real-time listeners
     await updateDoc(conversationRef, {
       isActive: false,
       endedBy: userId,
       endedAt: serverTimestamp(),
     });
 
-    console.log("✅ Conversation ended");
+    console.log(
+      `✅ Conversation ended by ${userId} - closes for both participants`
+    );
   } catch (error) {
     console.error("❌ Error ending conversation:", error);
     throw error;
@@ -418,34 +522,45 @@ export const endConversation = async (
 
 /**
  * Mark messages as read
- * Simplified to avoid composite index requirement
+ * ✅ SCALE OPTIMIZED: Queries today's and yesterday's message collections only
  */
 export const markMessagesAsRead = async (
   conversationId: string,
   userId: string
 ): Promise<void> => {
   try {
-    const messagesRef = collection(db, MESSAGES_COLLECTION);
-    // Simple query - only filter by conversationId
-    const q = query(messagesRef, where("conversationId", "==", conversationId));
+    // Query today's and yesterday's messages
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-    const snapshot = await getDocs(q);
+    const collections = [
+      getMessagesCollection(today),
+      getMessagesCollection(yesterday),
+    ];
 
-    if (snapshot.empty) {
-      return; // No messages
-    }
-
-    // Filter in memory - only mark unread messages from other user
     const batch = writeBatch(db);
     let count = 0;
 
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      if (data.senderId !== userId && data.read === false) {
-        batch.update(doc.ref, { read: true });
-        count++;
-      }
-    });
+    // Query both collections
+    for (const collectionName of collections) {
+      const messagesRef = collection(db, collectionName);
+      const q = query(
+        messagesRef,
+        where("conversationId", "==", conversationId)
+      );
+
+      const snapshot = await getDocs(q);
+
+      // Filter in memory - only mark unread messages from other user
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.senderId !== userId && data.read === false) {
+          batch.update(doc.ref, { read: true });
+          count++;
+        }
+      });
+    }
 
     if (count > 0) {
       await batch.commit();
@@ -501,27 +616,43 @@ export const isConversationExpired = (conversation: Conversation): boolean => {
 
 /**
  * Get unread message count for a conversation
- * Simplified to avoid composite index requirement
+ * ✅ SCALE OPTIMIZED: Queries today's and yesterday's message collections only
  */
 export const getUnreadCount = async (
   conversationId: string,
   userId: string
 ): Promise<number> => {
   try {
-    const messagesRef = collection(db, MESSAGES_COLLECTION);
-    // Simple query - only filter by conversationId
-    const q = query(messagesRef, where("conversationId", "==", conversationId));
+    // Query today's and yesterday's messages
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-    const snapshot = await getDocs(q);
+    const collections = [
+      getMessagesCollection(today),
+      getMessagesCollection(yesterday),
+    ];
 
-    // Count unread messages from other user in memory
     let count = 0;
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      if (data.senderId !== userId && data.read === false) {
-        count++;
-      }
-    });
+
+    // Query both collections
+    for (const collectionName of collections) {
+      const messagesRef = collection(db, collectionName);
+      const q = query(
+        messagesRef,
+        where("conversationId", "==", conversationId)
+      );
+
+      const snapshot = await getDocs(q);
+
+      // Count unread messages from other user in memory
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.senderId !== userId && data.read === false) {
+          count++;
+        }
+      });
+    }
 
     return count;
   } catch (error) {

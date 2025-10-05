@@ -10,6 +10,8 @@ import {
   serverTimestamp,
   Timestamp,
   writeBatch,
+  updateDoc,
+  increment,
 } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db } from "../config/firebase";
@@ -238,7 +240,8 @@ export const getCurrentPool = async (): Promise<Pool | null> => {
 };
 
 /**
- * Join a pool
+ * Join a pool (uses sharded structure)
+ * ✅ SCALE OPTIMIZED: Automatically assigns users to shards (max 10k per shard)
  */
 export const joinPool = async (
   userId: string,
@@ -253,8 +256,39 @@ export const joinPool = async (
     const hourMatch = poolId.match(/(\d+)h$/);
     const poolType = hourMatch ? `hourly-${hourMatch[0]}` : poolId;
 
-    // Create pool user entry
-    const poolUserDoc = doc(db, POOL_USERS_COLLECTION, `${poolId}-${userId}`);
+    // Get pool document to find available shard
+    const poolDoc = await getDoc(doc(db, POOLS_COLLECTION, poolId));
+    if (!poolDoc.exists()) {
+      throw new Error(`Pool ${poolId} not found`);
+    }
+
+    const poolData = poolDoc.data();
+    const currentShard = poolData.currentShard || 0;
+    const shardUserCounts = poolData.shardUserCounts || { 0: 0 };
+
+    // Find available shard (max 10k users per shard)
+    const MAX_USERS_PER_SHARD = 10000;
+    let targetShard = currentShard;
+
+    // If current shard is full, use next shard
+    if (shardUserCounts[currentShard] >= MAX_USERS_PER_SHARD) {
+      targetShard = currentShard + 1;
+      console.log(
+        `📊 Shard ${currentShard} full (${shardUserCounts[currentShard]} users), moving to shard ${targetShard}`
+      );
+    }
+
+    // Create pool user entry in shard
+    const poolUserDoc = doc(
+      db,
+      POOLS_COLLECTION,
+      poolId,
+      "shards",
+      `shard_${targetShard}`,
+      "poolUsers",
+      userId
+    );
+
     await setDoc(poolUserDoc, {
       userId,
       poolId,
@@ -264,7 +298,18 @@ export const joinPool = async (
       country: userProfile?.country || undefined,
     });
 
-    console.log(`✅ User ${userId} joined pool ${poolId}`);
+    // ✅ FIX: Update pool metadata (shard counts)
+    const poolRef = doc(db, POOLS_COLLECTION, poolId);
+    await updateDoc(poolRef, {
+      [`shardUserCounts.${targetShard}`]: increment(1),
+      userCount: increment(1),
+      // If we created a new shard, update currentShard
+      ...(targetShard > currentShard && { currentShard: targetShard }),
+    });
+
+    console.log(
+      `✅ User ${userId} joined pool ${poolId} (shard_${targetShard})`
+    );
   } catch (error) {
     console.error("❌ Error joining pool:", error);
     throw error;
@@ -273,16 +318,51 @@ export const joinPool = async (
 
 /**
  * Leave a pool (before pairing happens)
+ * ✅ SCALE OPTIMIZED: Searches all shards to find user
  */
 export const leavePool = async (
   userId: string,
   poolId: string
 ): Promise<void> => {
   try {
-    const poolUserDoc = doc(db, POOL_USERS_COLLECTION, `${poolId}-${userId}`);
-    await deleteDoc(poolUserDoc);
+    // Get pool document to find which shard the user is in
+    const poolDoc = await getDoc(doc(db, POOLS_COLLECTION, poolId));
+    if (!poolDoc.exists()) {
+      throw new Error(`Pool ${poolId} not found`);
+    }
 
-    console.log(`✅ User ${userId} left pool ${poolId}`);
+    const poolData = poolDoc.data();
+    const currentShard = poolData.currentShard || 0;
+
+    // Check all shards (from 0 to currentShard)
+    for (let shardId = 0; shardId <= currentShard; shardId++) {
+      const poolUserDoc = doc(
+        db,
+        POOLS_COLLECTION,
+        poolId,
+        "shards",
+        `shard_${shardId}`,
+        "poolUsers",
+        userId
+      );
+
+      const userDoc = await getDoc(poolUserDoc);
+      if (userDoc.exists()) {
+        await deleteDoc(poolUserDoc);
+
+        // ✅ FIX: Decrement pool metadata
+        const poolRef = doc(db, POOLS_COLLECTION, poolId);
+        await updateDoc(poolRef, {
+          [`shardUserCounts.${shardId}`]: increment(-1),
+          userCount: increment(-1),
+        });
+
+        console.log(`✅ User ${userId} left pool ${poolId} (shard_${shardId})`);
+        return;
+      }
+    }
+
+    console.log(`⚠️ User ${userId} not found in pool ${poolId}`);
   } catch (error) {
     console.error("❌ Error leaving pool:", error);
     throw error;
@@ -291,16 +371,41 @@ export const leavePool = async (
 
 /**
  * Check if user is in a pool
+ * ✅ SCALE OPTIMIZED: Searches all shards
  */
 export const isUserInPool = async (
   userId: string,
   poolId: string
 ): Promise<boolean> => {
   try {
-    const poolUserDoc = await getDoc(
-      doc(db, POOL_USERS_COLLECTION, `${poolId}-${userId}`)
-    );
-    return poolUserDoc.exists();
+    // Get pool document to find which shard to check
+    const poolDoc = await getDoc(doc(db, POOLS_COLLECTION, poolId));
+    if (!poolDoc.exists()) {
+      return false;
+    }
+
+    const poolData = poolDoc.data();
+    const currentShard = poolData.currentShard || 0;
+
+    // Check all shards (from 0 to currentShard)
+    for (let shardId = 0; shardId <= currentShard; shardId++) {
+      const poolUserDoc = doc(
+        db,
+        POOLS_COLLECTION,
+        poolId,
+        "shards",
+        shardId.toString(),
+        "poolUsers",
+        userId
+      );
+
+      const userDoc = await getDoc(poolUserDoc);
+      if (userDoc.exists()) {
+        return true;
+      }
+    }
+
+    return false;
   } catch (error) {
     console.error("❌ Error checking pool membership:", error);
     return false;

@@ -26,6 +26,7 @@ interface ReportModalProps {
   reportedUserId: string; // User being reported
   reportingUserId: string; // User making the report
   photoUrl?: string; // Photo URL for photo reports
+  onReported?: () => void; // optional callback invoked after a successful report submission
 }
 
 const reportCategories: {
@@ -80,6 +81,7 @@ export const ReportModal = ({
   reportedUserId,
   reportingUserId,
   photoUrl,
+  onReported,
 }: ReportModalProps) => {
   const [selectedCategory, setSelectedCategory] =
     useState<ReportCategory | null>(null);
@@ -117,6 +119,12 @@ export const ReportModal = ({
           "Thank you for helping keep SecretBuddy safe. We'll review this report promptly.",
           [{ text: "OK", onPress: handleClose }]
         );
+        // notify caller that a report was submitted so it can update UI (for example close PhotoViewModal)
+        try {
+          onReported && onReported();
+        } catch (e) {
+          // ignore
+        }
       } else {
         Alert.alert("Report Failed", result.message);
         setIsSubmitting(false);

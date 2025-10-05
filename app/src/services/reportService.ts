@@ -13,7 +13,12 @@ import {
   arrayUnion,
   arrayRemove,
 } from "firebase/firestore";
-import { db } from "../config/firebase";
+import { db, storage } from "../config/firebase";
+import {
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
 import { getUserProfile } from "./userService";
 
 export type ReportReason =
@@ -95,6 +100,32 @@ export const reportUser = async (
     await setDoc(newReportRef, reportData);
 
     console.log(`✅ ${reportType || "User"} report created:`, newReportRef.id);
+
+    // If a photo URL was provided, store a copy under reported-photos/<reportId>
+    if (photoUrl) {
+      try {
+        // Fetch the image data from the provided URL
+        const resp = await fetch(photoUrl);
+        const blob = await resp.blob();
+
+        const fileRef = storageRef(
+          storage,
+          `reported-photos/${newReportRef.id}.jpg`
+        );
+        await uploadBytes(fileRef, blob);
+        const reportedDownloadUrl = await getDownloadURL(fileRef);
+
+        // Update the report doc with storage path and download URL
+        await updateDoc(newReportRef, {
+          reportedPhotoStoragePath: `reported-photos/${newReportRef.id}.jpg`,
+          reportedPhotoUrl: reportedDownloadUrl,
+        });
+
+        console.log(`✅ Uploaded reported photo for report ${newReportRef.id}`);
+      } catch (e) {
+        console.warn("⚠️ Failed to upload reported photo:", e);
+      }
+    }
 
     // 3. Update or create userReports summary
     const userReportRef = doc(db, USER_REPORTS_COLLECTION, reportedUserId);

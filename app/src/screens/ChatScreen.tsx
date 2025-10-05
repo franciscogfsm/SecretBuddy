@@ -280,7 +280,31 @@ export const ChatScreen = () => {
             result.conversation
           );
           setConversationExpired(expired);
-          setConversationEnded(!result.conversation.isActive);
+
+          const wasActive = !conversationEnded;
+          const isNowEnded = !result.conversation.isActive;
+
+          // ✅ If conversation just ended and it wasn't ended by current user, notify them
+          if (
+            wasActive &&
+            isNowEnded &&
+            result.conversation.endedBy !== user!.uid
+          ) {
+            // If partner ended the conversation, automatically close the chat for this user
+            // Do a small delay to allow any UI updates to settle
+            setTimeout(() => {
+              try {
+                // Navigate back to previous screen to close chat
+                navigation.goBack();
+              } catch (e) {
+                // Fallback: set conversationEnded to true so UI disables input
+                setConversationEnded(true);
+              }
+            }, 300);
+          }
+
+          // Update local ended state
+          setConversationEnded(isNowEnded);
         }
       } catch (error) {
         console.error("Error checking conversation status:", error);
@@ -291,7 +315,7 @@ export const ChatScreen = () => {
     // Check every 5 minutes instead of every minute to reduce API calls
     const interval = setInterval(checkConversationStatus, 300000);
     return () => clearInterval(interval);
-  }, [actualConversationId, user]);
+  }, [actualConversationId, user, conversationEnded]);
 
   // Auto-end chat at midnight (00:00 UTC) if it's from a pool pair
   useEffect(() => {

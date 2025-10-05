@@ -327,30 +327,49 @@ export const ProfileScreen = () => {
       const dateStr = nowUtc.toISOString().split("T")[0];
       const poolId = `${dateStr}-${clampedHour}h`;
 
+      console.log(`🔧 Dev tool: Pool ID = ${poolId}`);
+
       const base = "https://us-central1-secretbuddy-5637d.cloudfunctions.net";
 
       // 1) Ensure pools exist
-      await fetch(`${base}/manualCreatePools`, {
+      console.log("📅 Step 1: Creating pools...");
+      const createPoolsRes = await fetch(`${base}/manualCreatePools`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
+
+      if (!createPoolsRes.ok) {
+        const error = await createPoolsRes.json();
+        throw new Error(
+          `Pool creation failed: ${error.error || createPoolsRes.status}`
+        );
+      }
+
+      console.log("✅ Pools created");
 
       // Small delay to allow Firestore indexes to settle
       await new Promise((r) => setTimeout(r, 1500));
 
-      // 2) Create pairs in test mode (all users)
+      // 2) Create pairs in test mode (allUsers=true to pair ALL users, not just pool members)
+      // ✅ This ensures it works even when no users are in the specific pool
+      console.log("👥 Step 2: Creating pairs with allUsers=true...");
       const createPairsRes = await fetch(`${base}/manualCreatePairs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ poolId, allUsers: true }),
+        body: JSON.stringify({
+          poolId,
+          allUsers: true, // ✅ Pair ALL users regardless of pool membership
+        }),
       });
 
       const createPairsJson = await createPairsRes.json();
+      console.log("📊 Pairs response:", createPairsJson);
+
       if (!createPairsRes.ok) {
         throw new Error(
           `manualCreatePairs failed: ${
             createPairsJson?.error || createPairsRes.status
-          }`
+          }\n\nThis usually means:\n• No users registered in the app yet\n• Database connection issue`
         );
       }
 
@@ -358,6 +377,7 @@ export const ProfileScreen = () => {
       await new Promise((r) => setTimeout(r, 1000));
 
       // 3) Trigger test photo notification for the pool
+      console.log("📸 Step 3: Sending photo notifications...");
       const notifyRes = await fetch(`${base}/manualTestPhotoNotification`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -366,21 +386,22 @@ export const ProfileScreen = () => {
 
       const notifyJson = await notifyRes.json();
       if (!notifyRes.ok) {
-        throw new Error(
-          `manualTestPhotoNotification failed: ${
-            notifyJson?.error || notifyRes.status
-          }`
-        );
+        console.warn("⚠️ Photo notifications failed:", notifyJson);
+        // Don't throw - pairing succeeded, notification is optional
       }
 
       Alert.alert(
-        "Dev: Pair & Notify",
-        `Completed. Pairs created: ${
-          createPairsJson?.pairs ?? "?"
-        }. Notifications sent: ${notifyJson?.sent ?? notifyJson?.result ?? "?"}`
+        "✅ Dev: Pair & Notify Complete",
+        `Pool: ${poolId}\n\n` +
+          `Pairs created: ${createPairsJson?.pairs ?? 0}\n` +
+          `Unpaired: ${createPairsJson?.unpaired ?? 0}\n` +
+          `Notifications sent: ${
+            notifyJson?.sent ?? notifyJson?.result ?? "N/A"
+          }\n\n` +
+          `Mode: ${createPairsJson?.mode || "unknown"}`
       );
     } catch (error: any) {
-      console.error("Dev pairing error:", error);
+      console.error("❌ Dev pairing error:", error);
       Alert.alert(
         "Dev: Pair & Notify Error",
         error instanceof Error ? error.message : String(error)

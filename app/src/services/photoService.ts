@@ -84,6 +84,7 @@ export const uploadPhoto = async (
 /**
  * Send a photo challenge to paired buddy
  * Validates photo window timing and max photos from pair
+ * ✅ SCALE OPTIMIZED: Sets expireAt field for Firestore TTL auto-cleanup
  * @param bypassPhotoWindow - Skip photo window validation (for notifications sent by Cloud Functions)
  */
 export const sendPhotoChallenge = async (
@@ -135,6 +136,10 @@ export const sendPhotoChallenge = async (
 
     const photoRef = doc(collection(db, PHOTOS_COLLECTION));
 
+    // ✅ SCALE OPTIMIZED: Set expireAt for Firestore TTL auto-cleanup (24 hours)
+    const expireDate = new Date();
+    expireDate.setHours(expireDate.getHours() + 24);
+
     // Save photo challenge
     const photoData: any = {
       senderId,
@@ -142,6 +147,7 @@ export const sendPhotoChallenge = async (
       photoUrl,
       prompt,
       timestamp: serverTimestamp(),
+      expireAt: Timestamp.fromDate(expireDate), // ✅ TTL field for auto-cleanup
       viewed: false,
       pairId: pair.id,
       storagePath: storagePath || null, // IMPORTANT: Save storagePath for cleanup
@@ -163,7 +169,7 @@ export const sendPhotoChallenge = async (
       [isUserA ? "canRevealA" : "canRevealB"]: true,
     });
 
-    console.log("✅ Photo challenge sent and pair updated:", photoRef.id);
+    console.log("✅ Photo challenge sent with TTL expireAt:", photoRef.id);
 
     return photoRef.id;
   } catch (error) {

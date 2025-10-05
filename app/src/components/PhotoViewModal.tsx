@@ -137,6 +137,7 @@ export const PhotoViewModal: React.FC<PhotoViewModalProps> = ({
                   <Ionicons name="checkmark-circle" size={24} color="#000000" />
                   <Text style={styles.gotItButtonText}>Got it!</Text>
                 </TouchableOpacity>
+                {/* Report modal is rendered below once so it's not duplicated here */}
               </View>
             </View>
           </View>
@@ -153,6 +154,11 @@ export const PhotoViewModal: React.FC<PhotoViewModalProps> = ({
           reportingUserId={currentUserId}
           targetName="Photo"
           photoUrl={photo.photoUrl} // Pass the photo URL
+          onReported={() => {
+            // Close the report modal and then the photo view
+            setShowReportModal(false);
+            onClose && onClose();
+          }}
         />
       )}
     </>
