@@ -20,12 +20,18 @@ function getTasksClient(): CloudTasksClient {
   }
   return tasksClient;
 }
+
+// Get configuration from Firebase functions config
+const config = functions.config();
 const PROJECT = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
-const LOCATION = process.env.TASKS_LOCATION || "us-central1";
-const QUEUE = process.env.TASKS_QUEUE || "reveal-queue";
+const LOCATION = config?.tasks?.location || "us-central1";
+const QUEUE = config?.tasks?.queue || "reveal-queue-now";
 const REVEAL_HANDLER_URL =
-  process.env.REVEAL_HANDLER_URL ||
+  config?.tasks?.handler_url ||
   `https://${LOCATION}-${PROJECT}.cloudfunctions.net/sendRevealForPair`;
+const PHOTO_HANDLER_URL =
+  config?.tasks?.photo_handler_url ||
+  `https://${LOCATION}-${PROJECT}.cloudfunctions.net/sendPhotoForPool`;
 
 // ==================== PHOTO CLEANUP ====================
 
@@ -202,6 +208,8 @@ export const dailyCleanup = functions
       poolUsersBatch.delete(doc.ref);
       poolUsersDeleted++;
     });
+
+    // end of dailyCleanup's inline code block
     await poolUsersBatch.commit();
 
     // 2. Delete pools from previous day (only if today's pools exist)
@@ -367,6 +375,56 @@ export const dailyCleanup = functions
       photoChallengesDeleted,
       photosDeletedFromStorage,
     };
+  });
+// Scheduled cleanup: At 01:00 UTC delete/expire yesterday's pairs
+export const cleanupYesterdayPairs = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("0 1 * * *") // 01:00 UTC every day
+  .timeZone("UTC")
+  .onRun(async () => {
+    initAdmin();
+    const db = admin.firestore();
+
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateStr = yesterday.toISOString().split("T")[0]; // YYYY-MM-DD
+
+    console.log(`🧹 Cleaning pairs from ${dateStr}`);
+
+    // Query pairs that reference yesterday's pools
+    // Pool IDs are in format `${dateStr}-${hour}h`
+    const pairsRef = db.collection("pairs");
+    const query = pairsRef
+      .where("poolId", ">=", `${dateStr}-0`)
+      .where("poolId", "<", `${dateStr}~`);
+
+    const snapshot = await query.get();
+    if (snapshot.empty) {
+      console.log("⚠️ No pairs found for yesterday");
+      return { success: true, processed: 0 };
+    }
+
+    let processed = 0;
+    // Process in chunks to avoid large batches
+    const docs = snapshot.docs;
+    for (let i = 0; i < docs.length; i += 450) {
+      const chunk = docs.slice(i, i + 450);
+      const batch = db.batch();
+      chunk.forEach((d) => {
+        // Soft-delete/expire the pair
+        batch.update(d.ref, {
+          status: "expired",
+          deleted: true,
+          deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        processed++;
+      });
+      await batch.commit();
+    }
+
+    console.log(`✅ Expired ${processed} pairs from ${dateStr}`);
+    return { success: true, processed };
   });
 
 // ==================== POOL SYSTEM ====================
@@ -570,6 +628,11 @@ export const createDailyPools = functions
         // If hour >= 20, no photos (too close to reveal)
       }
 
+      // Schedule Cloud Tasks for each photo time instead of storing in Firestore
+      for (const photoTime of photoTimes) {
+        await schedulePhotoTask(poolId, photoTime);
+      }
+
       const poolRef = db.collection("pools").doc(poolId);
       batch.set(poolRef, {
         type: `hourly-${hour}h`,
@@ -580,9 +643,7 @@ export const createDailyPools = functions
         photoWindowStart: admin.firestore.Timestamp.fromDate(photoWindowStart),
         photoWindowEnd: admin.firestore.Timestamp.fromDate(photoWindowEnd),
         maxPhotos: photoTimes.length,
-        photoTimes: photoTimes.map((t) =>
-          admin.firestore.Timestamp.fromDate(t)
-        ),
+        // Removed photoTimes array - now using Cloud Tasks for scheduling
         revealAt: admin.firestore.Timestamp.fromDate(revealAt),
         status: "open",
         userCount: 0,
@@ -856,6 +917,7 @@ async function closeHourlyPool(hour: number): Promise<any> {
  * Priority: Friends > Same Country > Random
  * Returns: { pairsCreated, unpairedUserIds }
  * OPTIMIZED: Uses friends array in user docs instead of querying friendships collection
+ * OPTIMIZED: Batches all pair creations and sends notifications once
  */
 async function matchUsers(
   poolId: string,
@@ -880,6 +942,7 @@ async function matchUsers(
 
   const matched = new Set<string>();
   let pairsCreated = 0;
+  const pairIds: string[] = []; // Collect pair IDs for batch notification
 
   // OPTIMIZATION: Load friends lists for all users in batch
   const userIds = users.map((u) => u.id);
@@ -920,7 +983,14 @@ async function matchUsers(
       if (matched.has(otherUser.id) || user.id === otherUser.id) continue;
 
       if (areFriends(user.id, otherUser.id)) {
-        await createPair(user.id, otherUser.id, poolId, poolData, db);
+        const pairId = await createPair(
+          user.id,
+          otherUser.id,
+          poolId,
+          poolData,
+          db
+        );
+        pairIds.push(pairId);
         matched.add(user.id);
         matched.add(otherUser.id);
         pairsCreated++;
@@ -938,7 +1008,14 @@ async function matchUsers(
     for (const otherUser of users) {
       if (matched.has(otherUser.id) || user.id === otherUser.id) continue;
       if (otherUser.country === user.country) {
-        await createPair(user.id, otherUser.id, poolId, poolData, db);
+        const pairId = await createPair(
+          user.id,
+          otherUser.id,
+          poolId,
+          poolData,
+          db
+        );
+        pairIds.push(pairId);
         matched.add(user.id);
         matched.add(otherUser.id);
         pairsCreated++;
@@ -955,17 +1032,27 @@ async function matchUsers(
   const unmatched = users.filter((u) => !matched.has(u.id));
 
   for (let i = 0; i < unmatched.length - 1; i += 2) {
-    await createPair(
+    const pairId = await createPair(
       unmatched[i].id,
       unmatched[i + 1].id,
       poolId,
       poolData,
       db
     );
+    pairIds.push(pairId);
     pairsCreated++;
     console.log(
       `✅ Paired randomly: ${unmatched[i].id} <-> ${unmatched[i + 1].id}`
     );
+  }
+
+  // Send all pairing notifications in ONE batch call
+  if (pairIds.length > 0) {
+    try {
+      await sendBatchPairingNotifications(pairIds, db);
+    } catch (e) {
+      console.warn(`⚠️ Failed to send batch pairing notifications:`, e);
+    }
   }
 
   // Collect unpaired user IDs (odd number case)
@@ -983,6 +1070,7 @@ async function matchUsers(
 
 /**
  * Create a pair in Firestore
+ * OPTIMIZED: Returns pairId for batch notification later
  */
 async function createPair(
   userA: string,
@@ -990,7 +1078,7 @@ async function createPair(
   poolId: string,
   poolData: any,
   db: admin.firestore.Firestore
-): Promise<void> {
+): Promise<string> {
   const pairId = `${poolId}-${userA}-${userB}`;
 
   await db.collection("pairs").doc(pairId).set({
@@ -1024,6 +1112,148 @@ async function createPair(
   // Schedule reveal notification task
   const revealAtDate = poolData.revealAt.toDate();
   await scheduleRevealTask(pairId, revealAtDate);
+
+  return pairId; // Return for batch notification
+}
+
+/**
+ * Send pairing notifications to all pairs in a batch
+ * OPTIMIZED: Single function call for N pairs instead of N calls
+ * - Fetches all unique user IDs in one batch (max 10 per getAll, chunked)
+ * - Sends all push notifications in batches of 100 to Expo
+ * - Updates all pairs with pairedNotified flag in batched writes
+ */
+async function sendBatchPairingNotifications(
+  pairIds: string[],
+  db: admin.firestore.Firestore
+) {
+  if (pairIds.length === 0) return 0;
+
+  console.log(
+    `📤 Sending pairing notifications for ${pairIds.length} pairs...`
+  );
+
+  try {
+    // Step 1: Fetch all pair docs in chunks (Firestore getAll limit: 10 docs)
+    const pairRefs = pairIds.map((id) => db.collection("pairs").doc(id));
+    const pairChunks: admin.firestore.DocumentReference[][] = [];
+    for (let i = 0; i < pairRefs.length; i += 10) {
+      pairChunks.push(pairRefs.slice(i, i + 10));
+    }
+
+    const pairDocs: admin.firestore.DocumentSnapshot[] = [];
+    for (const chunk of pairChunks) {
+      const docs = await db.getAll(...chunk);
+      pairDocs.push(...docs);
+    }
+
+    // Step 2: Extract unique user IDs from all pairs
+    const userIdSet = new Set<string>();
+    const pairDataMap = new Map<string, any>();
+
+    for (const pairDoc of pairDocs) {
+      if (!pairDoc.exists) continue;
+      const data = pairDoc.data();
+      if (!data || data.pairedNotified) continue; // Skip already notified
+
+      pairDataMap.set(pairDoc.id, data);
+      userIdSet.add(data.userA);
+      userIdSet.add(data.userB);
+    }
+
+    if (userIdSet.size === 0) {
+      console.log("⚠️ No pairs to notify (all already notified or missing)");
+      return 0;
+    }
+
+    // Step 3: Fetch all user docs in batches
+    const userIds = Array.from(userIdSet);
+    const userRefs = userIds.map((id) => db.collection("users").doc(id));
+    const userChunks: admin.firestore.DocumentReference[][] = [];
+    for (let i = 0; i < userRefs.length; i += 10) {
+      userChunks.push(userRefs.slice(i, i + 10));
+    }
+
+    const userDocsMap = new Map<string, any>();
+    for (const chunk of userChunks) {
+      const docs = await db.getAll(...chunk);
+      docs.forEach((doc) => {
+        if (doc.exists) {
+          userDocsMap.set(doc.id, doc.data());
+        }
+      });
+    }
+
+    // Step 4: Build push messages for all users
+    const title = "🎉 You have a match!";
+    const body =
+      "You've been paired with a mystery buddy. Say hi and send your first photo!";
+    const messages: any[] = [];
+
+    for (const [pairId, pairData] of pairDataMap.entries()) {
+      const userA = userDocsMap.get(pairData.userA);
+      const userB = userDocsMap.get(pairData.userB);
+
+      if (userA?.expoPushToken) {
+        messages.push({
+          to: userA.expoPushToken,
+          sound: "default",
+          title,
+          body,
+          data: { type: "paired", pairId },
+        });
+      }
+      if (userB?.expoPushToken) {
+        messages.push({
+          to: userB.expoPushToken,
+          sound: "default",
+          title,
+          body,
+          data: { type: "paired", pairId },
+        });
+      }
+    }
+
+    // Step 5: Send push notifications in batches of 100 (Expo limit)
+    let totalSent = 0;
+    for (let i = 0; i < messages.length; i += 100) {
+      const batch = messages.slice(i, i + 100);
+      const resp = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(batch),
+      });
+      if (resp.ok) {
+        totalSent += batch.length;
+      } else {
+        console.error("❌ Expo push batch failed:", await resp.text());
+      }
+    }
+
+    // Step 6: Mark all pairs as notified in batched writes (500 limit)
+    const pairsToUpdate = Array.from(pairDataMap.keys());
+    for (let i = 0; i < pairsToUpdate.length; i += 450) {
+      const chunk = pairsToUpdate.slice(i, i + 450);
+      const batch = db.batch();
+      chunk.forEach((pairId) => {
+        batch.update(db.collection("pairs").doc(pairId), {
+          pairedNotified: true,
+        });
+      });
+      await batch.commit();
+    }
+
+    console.log(
+      `✅ Sent ${totalSent} pairing notifications for ${pairIds.length} pairs`
+    );
+    return totalSent;
+  } catch (error) {
+    console.error("❌ Error sending batch pairing notifications:", error);
+    return 0;
+  }
 }
 
 /**
@@ -1420,41 +1650,71 @@ async function sendPhotoNotificationToPool(
  * - Queries pairs where status=='active', revealAt <= now, and revealNotified != true
  * - Sends Expo push notifications to both users (if expoPushToken exists)
  * - Marks pair.revealNotified = true to avoid duplicate notifications
+ * OPTIMIZED: Batches user fetches instead of individual getAll per pair
  */
 async function sendRevealNotifications(db: admin.firestore.Firestore) {
   try {
     const nowTs = admin.firestore.Timestamp.now();
     const pairsRef = db.collection("pairs");
 
-    // Firestore doesn't support != filters in a straightforward way here,
-    // so query active pairs and filter client-side for revealAt <= now and revealNotified != true
+    // Query active pairs
     const snapshot = await pairsRef.where("status", "==", "active").get();
-
     if (snapshot.empty) return 0;
 
-    const messages: any[] = [];
-    const pairsToUpdate: admin.firestore.DocumentReference[] = [];
+    // Filter pairs that need notification
+    const eligiblePairs: Array<{
+      doc: admin.firestore.DocumentSnapshot;
+      data: any;
+    }> = [];
+    const userIdSet = new Set<string>();
 
     for (const doc of snapshot.docs) {
       const data: any = doc.data();
-      if (!data.revealAt) continue;
-      if (data.revealNotified) continue; // already notified
+      if (!data.revealAt || data.revealNotified) continue;
 
       const revealAt: admin.firestore.Timestamp = data.revealAt;
-      if (revealAt.toMillis() > nowTs.toMillis()) continue; // not yet time
+      if (revealAt.toMillis() > nowTs.toMillis()) continue;
 
-      // load user docs for both participants
-      const userARef = db.collection("users").doc(data.userA);
-      const userBRef = db.collection("users").doc(data.userB);
-      const [userADoc, userBDoc] = await db.getAll(userARef, userBRef);
+      eligiblePairs.push({ doc, data });
+      userIdSet.add(data.userA);
+      userIdSet.add(data.userB);
+    }
 
-      const userA = userADoc.exists ? userADoc.data() : null;
-      const userB = userBDoc.exists ? userBDoc.data() : null;
+    if (eligiblePairs.length === 0) return 0;
 
-      const title = "🎉 Reveal Time!";
-      const body = "It's reveal time — see who your mystery buddy is now!";
+    console.log(
+      `📤 Sending reveal notifications for ${eligiblePairs.length} pairs...`
+    );
 
-      // Build messages for expo tokens
+    // Batch fetch all unique users (chunks of 10)
+    const userIds = Array.from(userIdSet);
+    const userRefs = userIds.map((id) => db.collection("users").doc(id));
+    const userChunks: admin.firestore.DocumentReference[][] = [];
+    for (let i = 0; i < userRefs.length; i += 10) {
+      userChunks.push(userRefs.slice(i, i + 10));
+    }
+
+    const userDocsMap = new Map<string, any>();
+    for (const chunk of userChunks) {
+      const docs = await db.getAll(...chunk);
+      docs.forEach((doc) => {
+        if (doc.exists) {
+          userDocsMap.set(doc.id, doc.data());
+        }
+      });
+    }
+
+    // Build messages for all eligible pairs
+    const messages: any[] = [];
+    const pairsToUpdate: admin.firestore.DocumentReference[] = [];
+
+    const title = "🎉 Reveal Time!";
+    const body = "It's reveal time — see who your mystery buddy is now!";
+
+    for (const { doc, data } of eligiblePairs) {
+      const userA = userDocsMap.get(data.userA);
+      const userB = userDocsMap.get(data.userB);
+
       if (userA?.expoPushToken) {
         messages.push({
           to: userA.expoPushToken,
@@ -1494,16 +1754,17 @@ async function sendRevealNotifications(db: admin.firestore.Firestore) {
       else console.error("❌ Expo push batch failed:", await resp.text());
     }
 
-    // Mark pairs as notified in a batch
-    if (pairsToUpdate.length > 0) {
+    // Mark pairs as notified in batches (500 write limit)
+    for (let i = 0; i < pairsToUpdate.length; i += 450) {
+      const chunk = pairsToUpdate.slice(i, i + 450);
       const updateBatch = db.batch();
-      pairsToUpdate.forEach((ref) =>
-        updateBatch.update(ref, { revealNotified: true })
-      );
+      chunk.forEach((ref) => updateBatch.update(ref, { revealNotified: true }));
       await updateBatch.commit();
     }
 
-    console.log(`✅ Sent ${totalSent} reveal notifications`);
+    console.log(
+      `✅ Sent ${totalSent} reveal notifications for ${eligiblePairs.length} pairs`
+    );
     return totalSent;
   } catch (error) {
     console.error("❌ Error sending reveal notifications:", error);
@@ -1545,6 +1806,44 @@ async function scheduleRevealTask(pairId: string, revealAt: Date) {
     return response[0].name;
   } catch (error) {
     console.error("❌ Error scheduling reveal task:", error);
+    return null;
+  }
+}
+
+/**
+ * Schedule a Cloud Task to send photo notification at photo time
+ */
+async function schedulePhotoTask(poolId: string, photoAt: Date) {
+  if (!PROJECT) {
+    throw new Error("PROJECT environment variable not set");
+  }
+
+  try {
+    const tasksClient = getTasksClient();
+    const parent = tasksClient.queuePath(PROJECT, LOCATION, QUEUE);
+    const payload = { poolId };
+    const scheduleTime = { seconds: Math.floor(photoAt.getTime() / 1000) };
+
+    const task = {
+      httpRequest: {
+        httpMethod: "POST" as const,
+        url: PHOTO_HANDLER_URL,
+        headers: { "Content-Type": "application/json" },
+        body: Buffer.from(JSON.stringify(payload)).toString("base64"),
+        oidcToken: {
+          serviceAccountEmail: `${PROJECT}@appspot.gserviceaccount.com`,
+        },
+      },
+      scheduleTime,
+    };
+
+    const response = await tasksClient.createTask({ parent, task });
+    console.log(
+      `✅ Scheduled photo task for pool ${poolId} at ${photoAt.toISOString()}`
+    );
+    return response[0].name;
+  } catch (error) {
+    console.error("❌ Error scheduling photo task:", error);
     return null;
   }
 }
@@ -1635,6 +1934,30 @@ export const sendRevealForPair = functions
   });
 
 /**
+ * HTTP handler called by Cloud Tasks to send photo notification for a pool
+ */
+export const sendPhotoForPool = functions
+  .runWith({ timeoutSeconds: 60, memory: "256MB" })
+  .https.onRequest(async (req, res) => {
+    try {
+      initAdmin();
+      const db = admin.firestore();
+      const { poolId } = req.body;
+      if (!poolId) {
+        res.status(400).json({ error: "poolId required" });
+        return;
+      }
+
+      // Send photo notifications to all users in the pool
+      const sent = await sendPhotoNotificationToPool(poolId, db);
+      res.status(200).json({ success: true, sent });
+    } catch (error: any) {
+      console.error("Error in sendPhotoForPool:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+/**
  * Send reveal notifications for a specific pair
  */
 async function sendRevealNotificationsForPair(
@@ -1706,73 +2029,70 @@ async function sendRevealNotificationsForPair(
   }
 }
 
-/**
- * Check and send photo notifications every minute
- * OPTIMIZED: Only runs if there are photo times scheduled for current minute
- * ✅ UPDATED: Works with new hourly pool system (10h-17h pools)
- */
-export const checkPhotoNotifications = functions
-  .runWith({ timeoutSeconds: 60, memory: "256MB" })
-  .pubsub.schedule("every 1 minutes")
-  .timeZone("UTC")
-  .onRun(async () => {
-    initAdmin();
-    const db = admin.firestore();
+// Scheduled function to check photo notifications every minute
+// COMMENTED OUT: Now using Cloud Tasks for precise scheduling instead of polling
+// export const checkPhotoNotifications = functions
+//   .runWith({ timeoutSeconds: 60, memory: "256MB" })
+//   .pubsub.schedule("every 1 minutes")
+//   .timeZone("UTC")
+//   .onRun(async () => {
+//     initAdmin();
+//     const db = admin.firestore();
 
-    const now = new Date();
-    const dateStr = now.toISOString().split("T")[0];
-    const currentHour = now.getHours();
-    const currentMin = now.getMinutes();
+//     const now = new Date();
+//     const dateStr = now.toISOString().split("T")[0];
+//     const currentHour = now.getHours();
+//     const currentMin = now.getMinutes();
 
-    // Early exit: Photo times only happen between 09:00-21:00 UTC (10:00-22:00 Portugal)
-    if (currentHour < 9 || currentHour >= 21) {
-      // Silent exit - no logs to save costs
-      return { success: true, skipped: "outside_photo_hours" };
-    }
+//     // Early exit: Photo times only happen between 09:00-21:00 UTC (10:00-22:00 Portugal)
+//     if (currentHour < 9 || currentHour >= 21) {
+//       // Silent exit - no logs to save costs
+//       return { success: true, skipped: "outside_photo_hours" };
+//     }
 
-    console.log(
-      `⏰ Checking photo notifications at ${currentHour}:${currentMin}`
-    );
+//     console.log(
+//       `⏰ Checking photo notifications at ${currentHour}:${currentMin}`
+//     );
 
-    // ✅ Get all 8 hourly pools for today (9h-16h UTC = 10h-17h Portugal)
-    const poolHours = [9, 10, 11, 12, 13, 14, 15, 16];
-    const poolRefs = poolHours.map((hour) =>
-      db.collection("pools").doc(`${dateStr}-${hour}h`)
-    );
+//     // ✅ Get all 8 hourly pools for today (9h-16h UTC = 10h-17h Portugal)
+//     const poolHours = [9, 10, 11, 12, 13, 14, 15, 16];
+//     const poolRefs = poolHours.map((hour) =>
+//       db.collection("pools").doc(`${dateStr}-${hour}h`)
+//     );
 
-    // OPTIMIZATION: Batch get all pools in one call (max 10 docs)
-    const poolDocs = await db.getAll(...poolRefs);
+//     // OPTIMIZATION: Batch get all pools in one call (max 10 docs)
+//     const poolDocs = await db.getAll(...poolRefs);
 
-    let notificationsSent = 0;
+//     let notificationsSent = 0;
 
-    for (const doc of poolDocs) {
-      if (!doc.exists) continue;
+//     for (const doc of poolDocs) {
+//       if (!doc.exists) continue;
 
-      const poolData = doc.data();
-      const photoTimes = poolData?.photoTimes || [];
+//       const poolData = doc.data();
+//       const photoTimes = poolData?.photoTimes || [];
 
-      // OPTIMIZATION: Check all photo times in memory (no extra queries)
-      for (const photoTime of photoTimes) {
-        const photoDate = photoTime.toDate();
-        const photoHour = photoDate.getHours();
-        const photoMin = photoDate.getMinutes();
+//       // OPTIMIZATION: Check all photo times in memory (no extra queries)
+//       for (const photoTime of photoTimes) {
+//         const photoDate = photoTime.toDate();
+//         const photoHour = photoDate.getHours();
+//         const photoMin = photoDate.getMinutes();
 
-        // Match current time (within 1-minute window)
-        if (photoHour === currentHour && photoMin === currentMin) {
-          // Matched a scheduled photo time for pool - send notifications
-          const sent = await sendPhotoNotificationToPool(doc.id, db);
-          notificationsSent += sent;
-        }
-      }
-    }
+//         // Match current time (within 1-minute window)
+//         if (photoHour === currentHour && photoMin === currentMin) {
+//           // Matched a scheduled photo time for pool - send notifications
+//           const sent = await sendPhotoNotificationToPool(doc.id, db);
+//           notificationsSent += sent;
+//         }
+//       }
+//     }
 
-    // Only log if notifications were sent
-    if (notificationsSent > 0) {
-      console.log(`✅ Sent ${notificationsSent} total notifications`);
-    }
+//     // Only log if notifications were sent
+//     if (notificationsSent > 0) {
+//       console.log(`✅ Sent ${notificationsSent} total notifications`);
+//     }
 
-    return { success: true, sent: notificationsSent };
-  });
+//     return { success: true, sent: notificationsSent };
+//   });
 
 /**
  * Manual test function to send photo notification
@@ -2052,6 +2372,11 @@ export const manualCreatePools = functions
           }
         }
 
+        // Schedule Cloud Tasks for each photo time instead of storing in Firestore
+        for (const photoTime of photoTimes) {
+          await schedulePhotoTask(poolId, photoTime);
+        }
+
         const poolRef = db.collection("pools").doc(poolId);
         batch.set(poolRef, {
           type: `hourly-${hour}h`,
@@ -2063,9 +2388,7 @@ export const manualCreatePools = functions
             admin.firestore.Timestamp.fromDate(photoWindowStart),
           photoWindowEnd: admin.firestore.Timestamp.fromDate(photoWindowEnd),
           maxPhotos: photoTimes.length,
-          photoTimes: photoTimes.map((t) =>
-            admin.firestore.Timestamp.fromDate(t)
-          ),
+          // Removed photoTimes array - now using Cloud Tasks for scheduling
           revealAt: admin.firestore.Timestamp.fromDate(revealAt),
           status: "open",
           userCount: 0,
@@ -2134,3 +2457,347 @@ export const manualClosePool = functions
       });
     }
   });
+
+/**
+ * Send push notification when a photo is received
+ * Triggers automatically when a new photo document is created
+ */
+export const notifyPhotoReceived = functions
+  .runWith({ timeoutSeconds: 60, memory: "128MB" })
+  .firestore.document("photoChallenge/{photoId}")
+  .onCreate(async (snap, context) => {
+    try {
+      initAdmin();
+      const db = admin.firestore();
+
+      const photoData = snap.data();
+      if (!photoData) return;
+
+      const { receiverId, senderId, prompt } = photoData;
+
+      // Don't send notification if sender and receiver are the same (shouldn't happen but safety check)
+      if (receiverId === senderId) return;
+
+      // Get receiver's user data to check for push token
+      const receiverDoc = await db.collection("users").doc(receiverId).get();
+      if (!receiverDoc.exists) return;
+
+      const receiverData = receiverDoc.data();
+      if (!receiverData?.expoPushToken) {
+        console.log(`⚠️ No push token for receiver ${receiverId}`);
+        return;
+      }
+
+      // Get sender's display name for the notification
+      const senderDoc = await db.collection("users").doc(senderId).get();
+      const senderName = senderDoc.exists
+        ? senderDoc.data()?.displayName || "Your buddy"
+        : "Your buddy";
+
+      // Send push notification
+      const message = {
+        to: receiverData.expoPushToken,
+        sound: "default",
+        title: "📸 New photo from your buddy!",
+        body: `${senderName} sent you a photo: "${prompt}"`,
+        data: {
+          type: "photo_received",
+          photoId: context.params.photoId,
+          senderId,
+          prompt,
+        },
+      };
+
+      const response = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(message),
+      });
+
+      if (response.ok) {
+        console.log(
+          `✅ Sent photo notification to ${receiverId} for photo ${context.params.photoId}`
+        );
+      } else {
+        console.error(`❌ Failed to send photo notification:`, response.status);
+      }
+    } catch (error) {
+      console.error("❌ Error in notifyPhotoReceived:", error);
+    }
+  });
+
+// ==================== POINTS & STREAK SYSTEM ====================
+
+/**
+ * Award points when a user sends a photo
+ * Triggers automatically when a new photo document is created
+ */
+export const awardPointsForPhoto = functions
+  .runWith({ timeoutSeconds: 60, memory: "128MB" })
+  .firestore.document("photoChallenge/{photoId}")
+  .onCreate(async (snap, context) => {
+    try {
+      initAdmin();
+      const db = admin.firestore();
+
+      const photoData = snap.data();
+      if (!photoData) return;
+
+      const { senderId } = photoData;
+      if (!senderId) return;
+
+      // Award 10 points for sending a photo
+      const senderRef = db.collection("users").doc(senderId);
+      await senderRef.update({
+        points: admin.firestore.FieldValue.increment(10),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log(`✅ Awarded 10 points to ${senderId} for sending photo`);
+    } catch (error) {
+      console.error("❌ Error in awardPointsForPhoto:", error);
+    }
+  });
+
+/**
+ * Award points and update streak when users get paired
+ * Triggers automatically when a new pair document is created
+ */
+export const awardPointsForPairing = functions
+  .runWith({ timeoutSeconds: 60, memory: "128MB" })
+  .firestore.document("pairs/{pairId}")
+  .onCreate(async (snap, context) => {
+    try {
+      initAdmin();
+      const db = admin.firestore();
+
+      const pairData = snap.data();
+      if (!pairData) return;
+
+      const { userA, userB, poolId } = pairData;
+      if (!userA || !userB) return;
+
+      const today = new Date().toISOString().split("T")[0];
+
+      // Process both users in parallel
+      await Promise.all([
+        updateUserPairingStats(db, userA, today, poolId),
+        updateUserPairingStats(db, userB, today, poolId),
+      ]);
+
+      console.log(
+        `✅ Awarded pairing points and updated streaks for pair: ${userA} <-> ${userB}`
+      );
+    } catch (error) {
+      console.error("❌ Error in awardPointsForPairing:", error);
+    }
+  });
+
+/**
+ * Helper function to update user pairing stats (points and streak)
+ */
+async function updateUserPairingStats(
+  db: admin.firestore.Firestore,
+  userId: string,
+  today: string,
+  poolId: string
+): Promise<void> {
+  const userRef = db.collection("users").doc(userId);
+  const userDoc = await userRef.get();
+
+  if (!userDoc.exists) {
+    console.warn(`⚠️ User ${userId} not found`);
+    return;
+  }
+
+  const userData = userDoc.data();
+  const lastPairedDate = userData?.lastPairedDate;
+  const currentStreak = userData?.streak || 0;
+
+  let newStreak = currentStreak;
+
+  // Check if this is a consecutive day pairing
+  if (lastPairedDate) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+    if (lastPairedDate === yesterdayStr) {
+      // Consecutive day - increment streak
+      newStreak = currentStreak + 1;
+    } else if (lastPairedDate !== today) {
+      // Streak broken - reset to 1
+      newStreak = 1;
+    }
+    // If lastPairedDate === today, keep current streak (already paired today)
+  } else {
+    // First time pairing - start streak
+    newStreak = 1;
+  }
+
+  // Award 20 points for getting paired + bonus points for streak
+  const basePoints = 20;
+  const streakBonus = Math.min(newStreak * 5, 50); // Max 50 bonus points
+  const totalPoints = basePoints + streakBonus;
+
+  await userRef.update({
+    points: admin.firestore.FieldValue.increment(totalPoints),
+    streak: newStreak,
+    lastPairedDate: today,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  console.log(
+    `✅ User ${userId}: +${totalPoints} points (base: ${basePoints}, streak bonus: ${streakBonus}), streak: ${newStreak} days`
+  );
+}
+
+/**
+ * Get leaderboard (top users by points)
+ * HTTP endpoint to fetch leaderboard data
+ * OPTIMIZED: Uses Firestore cache with 5-minute TTL to avoid expensive queries
+ */
+export const getLeaderboard = functions
+  .runWith({ timeoutSeconds: 60, memory: "256MB" })
+  .https.onRequest(async (req, res) => {
+    try {
+      initAdmin();
+      const db = admin.firestore();
+
+      const { type = "global", userId, limit = 10 } = req.query;
+      const cacheKey = `leaderboard_${type}_${limit}`;
+      const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+      // Step 1: Try to get from cache
+      const cacheRef = db.collection("cache").doc(cacheKey);
+      const cacheDoc = await cacheRef.get();
+
+      if (cacheDoc.exists) {
+        const cached = cacheDoc.data();
+        const cacheAge = cached
+          ? Date.now() - (cached.timestamp || 0)
+          : Infinity;
+
+        if (cached && cacheAge < CACHE_TTL_MS) {
+          console.log(
+            `✅ Serving leaderboard from cache (age: ${Math.round(
+              cacheAge / 1000
+            )}s)`
+          );
+
+          // Still need to get user rank if requested
+          let userRank = null;
+          if (userId) {
+            userRank = await getUserRank(db, userId as string, type as string);
+          }
+
+          res.status(200).json({
+            success: true,
+            type,
+            leaderboard: cached.leaderboard,
+            userRank,
+            cached: true,
+            cacheAge: Math.round(cacheAge / 1000),
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return;
+        }
+      }
+
+      // Step 2: Cache miss or expired - query fresh data
+      console.log("🔄 Cache miss or expired, querying fresh leaderboard...");
+
+      let query = db.collection("users").orderBy("points", "desc");
+
+      // Filter by country if requested
+      if (type === "country" && userId) {
+        const userDoc = await db
+          .collection("users")
+          .doc(userId as string)
+          .get();
+        const userData = userDoc.data();
+
+        if (userData?.country) {
+          query = query.where("country", "==", userData.country) as any;
+        }
+      }
+
+      // Get top users
+      const snapshot = await query.limit(Number(limit)).get();
+
+      const leaderboard = snapshot.docs.map((doc, index) => ({
+        rank: index + 1,
+        userId: doc.id,
+        displayName: doc.data().displayName || "Unknown",
+        points: doc.data().points || 0,
+        streak: doc.data().streak || 0,
+        country: doc.data().country || null,
+      }));
+
+      // Step 3: Store in cache
+      await cacheRef.set({
+        leaderboard,
+        timestamp: Date.now(),
+        expiresAt: admin.firestore.Timestamp.fromMillis(
+          Date.now() + CACHE_TTL_MS
+        ),
+      });
+
+      // Step 4: Get user rank if requested
+      let userRank = null;
+      if (userId) {
+        userRank = await getUserRank(db, userId as string, type as string);
+      }
+
+      res.status(200).json({
+        success: true,
+        type,
+        leaderboard,
+        userRank,
+        cached: false,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (error: any) {
+      console.error("❌ Error in getLeaderboard:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+/**
+ * Helper: Get a specific user's rank
+ * OPTIMIZED: Separate function to avoid duplicate logic
+ */
+async function getUserRank(
+  db: admin.firestore.Firestore,
+  userId: string,
+  type: string
+): Promise<any> {
+  const userDoc = await db.collection("users").doc(userId).get();
+  if (!userDoc.exists) return null;
+
+  const userData = userDoc.data();
+  const userPoints = userData?.points || 0;
+
+  let countQuery = db.collection("users").where("points", ">", userPoints);
+
+  if (type === "country" && userData?.country) {
+    countQuery = countQuery.where("country", "==", userData.country) as any;
+  }
+
+  const countSnapshot = await countQuery.get();
+
+  return {
+    rank: countSnapshot.size + 1,
+    userId,
+    displayName: userData?.displayName || "Unknown",
+    points: userPoints,
+    streak: userData?.streak || 0,
+    country: userData?.country || null,
+  };
+}

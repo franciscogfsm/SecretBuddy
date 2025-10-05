@@ -177,6 +177,24 @@ let currentPoolCache: {
 } | null = null;
 const POOL_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes (pool changes every hour, so safe to cache)
 
+// ⚡ Cache for current pair data (reduces repeated pair queries)
+let currentPairCache: {
+  pair: Pair | null;
+  cachedAt: number;
+  userId: string;
+} | null = null;
+const PAIR_CACHE_DURATION = 30 * 1000; // 30 seconds (pair status changes frequently but not constantly)
+
+/**
+ * Invalidate pair cache for a specific user
+ * Call this when pair data changes (joining pool, pairing, etc.)
+ */
+const invalidatePairCache = (userId?: string) => {
+  if (!userId || !currentPairCache || currentPairCache.userId === userId) {
+    currentPairCache = null;
+  }
+};
+
 /**
  * Get current active pool (if any)
  * Uses Firestore server time to prevent device clock manipulation
@@ -306,6 +324,9 @@ export const joinPool = async (
     console.log(
       `✅ User ${userId} joined pool ${poolId} (shard_${targetShard})`
     );
+
+    // ⚡ Invalidate pair cache since user status changed
+    invalidatePairCache(userId);
   } catch (error) {
     console.error("❌ Error joining pool:", error);
     throw error;
@@ -354,6 +375,8 @@ export const leavePool = async (
         });
 
         console.log(`✅ User ${userId} left pool ${poolId} (shard_${shardId})`);
+        // ⚡ Invalidate pair cache since user status changed
+        invalidatePairCache(userId);
         return;
       }
     }
@@ -410,11 +433,24 @@ export const isUserInPool = async (
 
 /**
  * Get user's current pair (if any)
+ * ⚡ OPTIMIZED: Caches pair data for 30 seconds to reduce Firestore reads
  */
 export const getMyCurrentPair = async (
   userId: string
 ): Promise<Pair | null> => {
   try {
+    // ⚡ Check cache first (if same user and less than 30 seconds old)
+    if (currentPairCache) {
+      const cacheAge = Date.now() - currentPairCache.cachedAt;
+      if (
+        currentPairCache.userId === userId &&
+        cacheAge < PAIR_CACHE_DURATION
+      ) {
+        return currentPairCache.pair;
+      }
+    }
+
+    // Cache miss or expired - fetch from Firestore
     const pairsRef = collection(db, PAIRS_COLLECTION);
 
     // Query for pairs where user is either userA or userB and status is active
@@ -443,14 +479,17 @@ export const getMyCurrentPair = async (
       pairDoc = snapshotB.docs[0];
     }
 
-    if (!pairDoc) {
-      return null;
+    let pair: Pair | null = null;
+    if (pairDoc) {
+      pair = {
+        id: pairDoc.id,
+        ...pairDoc.data(),
+      } as Pair;
     }
 
-    return {
-      id: pairDoc.id,
-      ...pairDoc.data(),
-    } as Pair;
+    // Update cache
+    currentPairCache = { pair, cachedAt: Date.now(), userId };
+    return pair;
   } catch (error) {
     console.error("❌ Error getting current pair:", error);
     throw error;

@@ -7,6 +7,7 @@ import {
   Text,
   View,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 
 import { GradientBackground } from "../components/GradientBackground";
@@ -14,6 +15,7 @@ import { TopHeader } from "../components/TopHeader";
 import { colors, gradients, typography } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import { useUserProfile } from "../hooks/useUserProfile";
+import { useCachedLeaderboards } from "../hooks/useCachedLeaderboards";
 import {
   getUserBadges,
   getUnlockedBadgeDetails,
@@ -38,14 +40,23 @@ export const PointsScreen = () => {
   const [unlockedBadges, setUnlockedBadges] = useState<Badge[]>([]);
   const [totalBadgesCount, setTotalBadgesCount] = useState(0);
 
-  // Leaderboard state
-  const [friendsLeaderboard, setFriendsLeaderboard] = useState<
-    LeaderboardEntry[]
-  >([]);
-  const [countryLeaderboard, setCountryLeaderboard] = useState<
-    LeaderboardEntry[]
-  >([]);
-  const [loadingLeaderboards, setLoadingLeaderboards] = useState(true);
+  // Use cached leaderboards hook - automatically caches with 5-hour TTL
+  const {
+    friendsLeaderboard,
+    countryLeaderboard,
+    loading: loadingLeaderboards,
+    cacheAge,
+    refreshLeaderboards,
+  } = useCachedLeaderboards(user?.uid);
+
+  // Pull-to-refresh state
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshLeaderboards();
+    setRefreshing(false);
+  }, [refreshLeaderboards]);
 
   // Load user badges from database
   useEffect(() => {
@@ -69,49 +80,6 @@ export const PointsScreen = () => {
 
     loadBadges();
   }, [user?.uid]);
-
-  // Load leaderboards
-  useEffect(() => {
-    if (!user) {
-      setLoadingLeaderboards(false);
-      return;
-    }
-
-    const loadLeaderboards = async () => {
-      try {
-        setLoadingLeaderboards(true);
-
-        // Load both leaderboards in parallel
-        const [friendsData, countryData] = await Promise.all([
-          getFriendsLeaderboard(user.uid).catch((err) => {
-            console.error("Error loading friends leaderboard:", err);
-            return {
-              success: false,
-              type: "friends" as const,
-              leaderboard: [],
-            };
-          }),
-          getCountryLeaderboard(user.uid, 10).catch((err) => {
-            console.error("Error loading country leaderboard:", err);
-            return {
-              success: false,
-              type: "country" as const,
-              leaderboard: [],
-            };
-          }),
-        ]);
-
-        setFriendsLeaderboard(friendsData.leaderboard || []);
-        setCountryLeaderboard(countryData.leaderboard || []);
-      } catch (error) {
-        console.error("Error loading leaderboards:", error);
-      } finally {
-        setLoadingLeaderboards(false);
-      }
-    };
-
-    loadLeaderboards();
-  }, [user?.uid, isFocused]); // Reload when screen is focused
 
   // Calculate level based on points
   const level = Math.floor(points / 50) + 1;
@@ -187,6 +155,15 @@ export const PointsScreen = () => {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="automatic"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.accentPurple}
+            title="Pull to refresh leaderboards"
+            titleColor={colors.textSecondary}
+          />
+        }
       >
         <View style={styles.highlightWrapper}>
           <LinearGradient
@@ -292,7 +269,20 @@ export const PointsScreen = () => {
         </View>
 
         <View style={styles.leaderboardCard}>
-          <Text style={styles.sectionHeading}>Leaderboards</Text>
+          <View style={styles.leaderboardHeader}>
+            <Text style={styles.sectionHeading}>Leaderboards</Text>
+            {cacheAge !== null && (
+              <View style={styles.cacheInfoBadge}>
+                <Text style={styles.cacheInfoText}>
+                  {cacheAge < 60000
+                    ? "Just updated"
+                    : cacheAge < 3600000
+                    ? `${Math.round(cacheAge / 60000)}m ago`
+                    : `${Math.round(cacheAge / 3600000)}h ago`}
+                </Text>
+              </View>
+            )}
+          </View>
           {Object.entries(leaderboards).map(([label, data]) => (
             <View key={label} style={styles.boardSection}>
               <Text style={styles.boardTitle}>{label.toUpperCase()}</Text>
@@ -515,6 +505,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
+  },
+  leaderboardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  cacheInfoBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "rgba(156, 107, 255, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(156, 107, 255, 0.3)",
+  },
+  cacheInfoText: {
+    ...typography.caption,
+    color: colors.accentPurple,
+    fontSize: 11,
+    fontWeight: "600",
   },
   boardSection: {
     gap: 10,

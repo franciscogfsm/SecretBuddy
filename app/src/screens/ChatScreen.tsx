@@ -305,8 +305,8 @@ export const ChatScreen = () => {
     };
     checkConversationStatus();
 
-    // Check every 5 minutes instead of every minute to reduce API calls
-    const interval = setInterval(checkConversationStatus, 300000);
+    // Check conversation status every 10 minutes (reduced from 5min to save reads)
+    const interval = setInterval(checkConversationStatus, 600000);
     return () => clearInterval(interval);
   }, [actualConversationId, user, conversationEnded]);
 
@@ -338,8 +338,8 @@ export const ChatScreen = () => {
     // Check immediately
     checkMidnightAutoEnd();
 
-    // Check every minute
-    const interval = setInterval(checkMidnightAutoEnd, 60000);
+    // Check every 5 minutes (reduced from 1min to save reads)
+    const interval = setInterval(checkMidnightAutoEnd, 300000);
     return () => clearInterval(interval);
   }, [currentPair, conversationEnded, conversationExpired, navigation]);
 

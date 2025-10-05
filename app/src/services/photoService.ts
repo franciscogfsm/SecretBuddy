@@ -12,6 +12,7 @@ import {
   orderBy,
   limit,
   increment,
+  onSnapshot,
 } from "firebase/firestore";
 import {
   ref,
@@ -32,6 +33,20 @@ let unviewedPhotosCache: {
   userId: string;
 } | null = null;
 const PHOTOS_CACHE_DURATION = 30 * 1000; // 30 seconds (photos update frequently)
+
+/**
+ * Invalidate photo cache for a specific user
+ * Call this when photo data changes
+ */
+const invalidatePhotoCache = (userId?: string) => {
+  if (
+    !userId ||
+    !unviewedPhotosCache ||
+    unviewedPhotosCache.userId === userId
+  ) {
+    unviewedPhotosCache = null;
+  }
+};
 
 export interface PhotoChallenge {
   id: string;
@@ -320,6 +335,7 @@ export const markPhotoAsViewed = async (photoId: string): Promise<void> => {
     });
 
     // ⚡ Invalidate cache so next getUnviewedPhotos() fetches fresh data
+    invalidatePhotoCache(); // Invalidate for both users (sender and receiver)
     unviewedPhotosCache = null;
 
     console.log("✅ Photo marked as viewed:", photoId);
@@ -369,6 +385,9 @@ export const deletePhotoChallenge = async (photoId: string): Promise<void> => {
     // Delete from Firestore (soft delete)
     await updateDoc(photoRef, { deleted: true } as any);
     console.log("✅ Photo challenge deleted from Firestore:", photoId);
+
+    // ⚡ Invalidate cache since photo data changed
+    invalidatePhotoCache();
   } catch (error) {
     console.error("❌ Error deleting photo challenge:", error);
     throw error;
@@ -377,6 +396,7 @@ export const deletePhotoChallenge = async (photoId: string): Promise<void> => {
 
 /**
  * Subscribe to unviewed photos in real-time
+ * ⚡ OPTIMIZED: Uses Firestore real-time listeners instead of polling
  */
 export const subscribeToUnviewedPhotos = (
   userId: string,
@@ -384,22 +404,62 @@ export const subscribeToUnviewedPhotos = (
 ) => {
   try {
     const photosRef = collection(db, PHOTOS_COLLECTION);
-    // Removed orderBy to avoid index requirement
-    // Sorting is done in getUnviewedPhotos() function
     const q = query(
       photosRef,
       where("receiverId", "==", userId),
       where("viewed", "==", false)
     );
 
-    // Note: This would use onSnapshot for real-time updates
-    // For now, using polling approach
-    const intervalId = setInterval(async () => {
-      const photos = await getUnviewedPhotos(userId);
-      onUpdate(photos);
-    }, 10000); // Check every 10 seconds
+    // Use real-time listener instead of polling
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const photos: PhotoChallenge[] = [];
 
-    return () => clearInterval(intervalId);
+        snapshot.forEach((doc) => {
+          photos.push({
+            id: doc.id,
+            ...doc.data(),
+          } as PhotoChallenge);
+        });
+
+        // Sort by timestamp client-side
+        photos.sort((a, b) => {
+          const aTime = a.timestamp?.toMillis?.() || 0;
+          const bTime = b.timestamp?.toMillis?.() || 0;
+          return bTime - aTime; // Descending order (newest first)
+        });
+
+        // Filter for 4-hour window (same logic as getUnviewedPhotos)
+        const now = Date.now();
+        const FOUR_HOURS = 4 * 60 * 60 * 1000;
+        const recentPhotos = photos.filter((photo) => {
+          if (photo.timestamp) {
+            const photoTime = photo.timestamp.toMillis
+              ? photo.timestamp.toMillis()
+              : photo.timestamp;
+            const age = now - photoTime;
+            return age < FOUR_HOURS;
+          }
+          return true;
+        });
+
+        // Update cache
+        unviewedPhotosCache = {
+          photos: recentPhotos,
+          cachedAt: Date.now(),
+          userId,
+        };
+
+        // Call the update callback
+        onUpdate(recentPhotos);
+      },
+      (error) => {
+        console.error("❌ Error in photos real-time listener:", error);
+      }
+    );
+
+    return unsubscribe;
   } catch (error) {
     console.error("❌ Error subscribing to photos:", error);
     return () => {};

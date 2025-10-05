@@ -466,48 +466,19 @@ export const HomeScreen = () => {
 
   // Load received photos when screen loads
   useEffect(() => {
-    const loadReceivedPhotos = async () => {
-      if (!user) return;
+    if (!user) return;
 
-      try {
-        const photos = await photoService.getUnviewedPhotos(user.uid);
-
-        // Filter out photos older than 4 hours (receiver window)
-        const now = Date.now();
-        const FOUR_HOURS = 4 * 60 * 60 * 1000; // 4 hours in milliseconds
-        const recentPhotos = photos.filter((photo) => {
-          if (photo.timestamp) {
-            const photoTime = photo.timestamp.toMillis
-              ? photo.timestamp.toMillis()
-              : photo.timestamp;
-            const age = now - photoTime;
-            return age < FOUR_HOURS; // Photos expire after 4 hours
-          }
-          return true; // Keep if no timestamp
-        });
-
-        if (recentPhotos.length !== photos.length) {
-          console.log(
-            `⏱️ Filtered ${
-              photos.length - recentPhotos.length
-            } expired photos (older than 4 hours) - ${
-              recentPhotos.length
-            } remaining`
-          );
-        }
-
-        setReceivedPhotos(recentPhotos);
-        setHasReceivedPhoto(recentPhotos.length > 0);
-      } catch (error) {
-        console.error("Error loading received photos:", error);
+    // Use real-time listener instead of polling
+    const unsubscribe = photoService.subscribeToUnviewedPhotos(
+      user.uid,
+      (photos) => {
+        setReceivedPhotos(photos);
+        setHasReceivedPhoto(photos.length > 0);
       }
-    };
+    );
 
-    loadReceivedPhotos();
-
-    // Poll for new photos every 30 seconds
-    const interval = setInterval(loadReceivedPhotos, 30000);
-    return () => clearInterval(interval);
+    // Cleanup listener on unmount or user change
+    return unsubscribe;
   }, [user]);
 
   // Load current pool and pair status
@@ -536,8 +507,8 @@ export const HomeScreen = () => {
 
     loadPoolStatus();
 
-    // Poll for pool updates every 30 seconds
-    const interval = setInterval(loadPoolStatus, 30000);
+    // Poll for pool updates every 2 minutes (reduced from 30s to save reads)
+    const interval = setInterval(loadPoolStatus, 120000);
     return () => clearInterval(interval);
   }, [user, isFocused]);
 
@@ -953,7 +924,7 @@ export const HomeScreen = () => {
 
     let checkInterval: NodeJS.Timeout;
     if (isInPool && !currentPair) {
-      // Poll every 5 seconds to check if pairing happened
+      // Poll every 15 seconds to check if pairing happened (reduced from 5s to save reads)
       checkInterval = setInterval(async () => {
         const pair = await poolService.getMyCurrentPair(user.uid);
         if (pair) {

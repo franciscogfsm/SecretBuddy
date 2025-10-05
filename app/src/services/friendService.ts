@@ -18,6 +18,25 @@ import {
 import { db } from "../config/firebase";
 import { getUserProfile, updateUserProfile } from "./userService";
 
+const FRIENDS_COLLECTION = "friendships";
+
+// ⚡ Cache for friends data (reduces repeated Firestore reads)
+let friendsCache: {
+  friends: FriendProfile[];
+  cachedAt: number;
+  userId: string;
+} | null = null;
+const FRIENDS_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes (friends don't change super frequently)
+
+/**
+ * Invalidate friends cache for a specific user
+ */
+const invalidateFriendsCache = (userId?: string) => {
+  if (!userId || !friendsCache || friendsCache.userId === userId) {
+    friendsCache = null;
+  }
+};
+
 export type FriendshipStatus =
   | "pending" // Friend request sent/received
   | "accepted" // Friends
@@ -51,8 +70,6 @@ export interface FriendProfile {
     | "blocked";
   friendshipId?: string;
 }
-
-const FRIENDS_COLLECTION = "friendships";
 
 /**
  * Search for users by username
@@ -191,6 +208,10 @@ export const sendFriendRequest = async (
       updatedAt: serverTimestamp(),
     });
 
+    // ⚡ Invalidate cache for both users
+    invalidateFriendsCache(fromUserId);
+    invalidateFriendsCache(toUserId);
+
     console.log("✅ Friend request sent:", friendshipRef.id);
     return friendshipRef.id;
   } catch (error) {
@@ -237,6 +258,10 @@ export const acceptFriendRequest = async (
       friendsCount: increment(1),
     } as any);
 
+    // ⚡ Invalidate cache for both users
+    invalidateFriendsCache(friendship.userId1);
+    invalidateFriendsCache(friendship.userId2);
+
     console.log("✅ Friend request accepted:", friendshipId);
   } catch (error) {
     console.error("❌ Error accepting friend request:", error);
@@ -252,7 +277,19 @@ export const declineFriendRequest = async (
 ): Promise<void> => {
   try {
     const friendshipRef = doc(db, FRIENDS_COLLECTION, friendshipId);
+    const friendshipSnap = await getDoc(friendshipRef);
+
+    if (!friendshipSnap.exists()) {
+      throw new Error("Friendship not found");
+    }
+
+    const friendship = friendshipSnap.data() as Friendship;
+
     await deleteDoc(friendshipRef);
+
+    // ⚡ Invalidate cache for both users
+    invalidateFriendsCache(friendship.userId1);
+    invalidateFriendsCache(friendship.userId2);
 
     console.log("✅ Friend request declined:", friendshipId);
   } catch (error) {
@@ -282,6 +319,10 @@ export const removeFriend = async (
       friendsCount: increment(-1),
     } as any);
 
+    // ⚡ Invalidate cache for both users
+    invalidateFriendsCache(userId1);
+    invalidateFriendsCache(userId2);
+
     console.log("✅ Friend removed:", friendshipId);
   } catch (error) {
     console.error("❌ Error removing friend:", error);
@@ -296,6 +337,16 @@ export const getUserFriends = async (
   userId: string
 ): Promise<FriendProfile[]> => {
   try {
+    // ⚡ Check cache first (30-minute TTL)
+    if (
+      friendsCache &&
+      friendsCache.userId === userId &&
+      Date.now() - friendsCache.cachedAt < FRIENDS_CACHE_DURATION
+    ) {
+      console.log("⚡ Using cached friends data");
+      return friendsCache.friends;
+    }
+
     const friendshipsRef = collection(db, FRIENDS_COLLECTION);
 
     const q = query(friendshipsRef, where("status", "==", "accepted"));
@@ -341,6 +392,13 @@ export const getUserFriends = async (
       if (!b.lastActive) return -1;
       return b.lastActive.seconds - a.lastActive.seconds;
     });
+
+    // ⚡ Cache the result
+    friendsCache = {
+      friends: [...friends], // Store a copy
+      cachedAt: Date.now(),
+      userId,
+    };
 
     return friends;
   } catch (error) {
@@ -531,6 +589,10 @@ export const blockUser = async (
       });
     }
 
+    // ⚡ Invalidate cache for both users
+    invalidateFriendsCache(userId);
+    invalidateFriendsCache(blockedUserId);
+
     console.log("✅ User blocked:", blockedUserId);
   } catch (error) {
     console.error("❌ Error blocking user:", error);
@@ -557,6 +619,10 @@ export const unblockUser = async (
       );
       await deleteDoc(friendshipRef);
     }
+
+    // ⚡ Invalidate cache for both users
+    invalidateFriendsCache(userId);
+    invalidateFriendsCache(blockedUserId);
 
     console.log("✅ User unblocked:", blockedUserId);
   } catch (error) {

@@ -41,6 +41,23 @@ export interface UserProfile {
 
 const USERS_COLLECTION = "users";
 
+// ⚡ Cache for user profiles (reduces repeated Firestore reads)
+let userProfileCache: {
+  profile: UserProfile | null;
+  cachedAt: number;
+  uid: string;
+} | null = null;
+const PROFILE_CACHE_DURATION = 60 * 60 * 1000; // 1 hour (profiles don't change frequently)
+
+/**
+ * Invalidate profile cache for a specific user
+ */
+const invalidateProfileCache = (uid?: string) => {
+  if (!uid || !userProfileCache || userProfileCache.uid === uid) {
+    userProfileCache = null;
+  }
+};
+
 /**
  * Create a new user profile in Firestore
  */
@@ -113,6 +130,7 @@ export const createUserProfile = async (
 
 /**
  * Get user profile from Firestore
+ * ⚡ OPTIMIZED: Caches profile data for 1 hour to reduce Firestore reads
  */
 export const getUserProfile = async (
   uid: string
@@ -124,15 +142,26 @@ export const getUserProfile = async (
       return null;
     }
 
+    // ⚡ Check cache first (if same user and less than 1 hour old)
+    if (userProfileCache) {
+      const cacheAge = Date.now() - userProfileCache.cachedAt;
+      if (userProfileCache.uid === uid && cacheAge < PROFILE_CACHE_DURATION) {
+        return userProfileCache.profile;
+      }
+    }
+
+    // Cache miss or expired - fetch from Firestore
     const userRef = doc(db, USERS_COLLECTION, uid);
     const userSnap = await getDoc(userRef);
 
+    let profile: UserProfile | null = null;
     if (userSnap.exists()) {
-      return { uid, ...userSnap.data() } as UserProfile;
+      profile = { uid, ...userSnap.data() } as UserProfile;
     }
 
-    console.warn("⚠️ User profile not found:", uid);
-    return null;
+    // Update cache
+    userProfileCache = { profile, cachedAt: Date.now(), uid };
+    return profile;
   } catch (error) {
     console.error("❌ Error fetching user profile:", error);
     throw error;
@@ -213,6 +242,9 @@ export const updateUserProfile = async (
     await updateDoc(userRef, cleanedUpdates);
 
     console.log("✅ User profile updated:", uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
   } catch (error) {
     console.error("❌ Error updating user profile:", error);
     throw error;
@@ -248,6 +280,9 @@ export const addPoints = async (uid: string, amount: number): Promise<void> => {
     });
 
     console.log(`✅ Added ${amount} points to user:`, uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
   } catch (error) {
     console.error("❌ Error adding points:", error);
     throw error;
@@ -270,6 +305,9 @@ export const removePoints = async (
     });
 
     console.log(`✅ Removed ${amount} points from user:`, uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
   } catch (error) {
     console.error("❌ Error removing points:", error);
     throw error;
@@ -292,6 +330,9 @@ export const updateStreak = async (
     });
 
     console.log(`✅ Updated streak to ${newStreak} for user:`, uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
   } catch (error) {
     console.error("❌ Error updating streak:", error);
     throw error;
@@ -311,6 +352,9 @@ export const incrementStreak = async (uid: string): Promise<void> => {
     });
 
     console.log(`✅ Incremented streak for user:`, uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
   } catch (error) {
     console.error("❌ Error incrementing streak:", error);
     throw error;
@@ -349,6 +393,9 @@ export const addHearts = async (uid: string, amount: number): Promise<void> => {
     });
 
     console.log(`✅ Added ${amount} hearts to user:`, uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
   } catch (error) {
     console.error("❌ Error adding hearts:", error);
     throw error;
@@ -371,6 +418,9 @@ export const removeHearts = async (
     });
 
     console.log(`✅ Removed ${amount} hearts from user:`, uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
   } catch (error) {
     console.error("❌ Error removing hearts:", error);
     throw error;
@@ -393,6 +443,9 @@ export const toggleAgeVisibility = async (
     });
 
     console.log(`✅ Age visibility set to ${isVisible} for user:`, uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
   } catch (error) {
     console.error("❌ Error toggling age visibility:", error);
     throw error;
@@ -412,6 +465,9 @@ export const updateBio = async (uid: string, bio: string): Promise<void> => {
     });
 
     console.log(`✅ Bio updated for user:`, uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
   } catch (error) {
     console.error("❌ Error updating bio:", error);
     throw error;
