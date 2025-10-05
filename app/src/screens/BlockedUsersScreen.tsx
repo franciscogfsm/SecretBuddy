@@ -14,6 +14,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { useState, useEffect } from "react";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, typography } from "../theme";
@@ -30,6 +31,7 @@ const isSmallScreen = width < 375;
 
 export const BlockedUsersScreen = () => {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [blockedUsers, setBlockedUsers] = useState<FriendProfile[]>([]);
@@ -91,17 +93,38 @@ export const BlockedUsersScreen = () => {
 
   return (
     <GradientBackground gradient="midnight">
-      {/* Header - Fixed at top */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+      {/* Header - Rounded gradient like Settings */}
+      <LinearGradient
+        colors={["rgba(0,0,0,0.9)", "#070319", "#1C0E3C"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.roundedHeader, { paddingTop: insets.top + 12 }]}
+      >
+        <TouchableOpacity
+          onPress={handleBack}
+          hitSlop={{ top: 20, left: 20, bottom: 20, right: 20 }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          activeOpacity={0.7}
+          style={[
+            styles.backButton,
+            {
+              position: "absolute",
+              left: 12,
+              top: insets.top + 12,
+            },
+          ]}
+        >
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Blocked Users</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+
+        <View style={styles.headerCentered} pointerEvents="box-none">
+          <Text style={styles.headerTitle}>Blocked Users</Text>
+        </View>
+      </LinearGradient>
 
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, { paddingTop: 110 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Info Card */}
@@ -248,41 +271,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
 
-  // Header Styles
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: "rgba(6, 0, 18, 0.95)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.05)",
-  },
-
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-  },
-
-  headerTitle: {
-    ...typography.title,
-    color: colors.textPrimary,
-    fontSize: isSmallScreen ? 20 : 24,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-  },
-
-  headerSpacer: {
-    width: 44,
-  },
+  // (replaced inline header with absolute roundedHeader)
 
   // Info Card
   infoCard: {
@@ -545,5 +534,42 @@ const styles = StyleSheet.create({
 
   footerSpace: {
     height: 20,
+  },
+  roundedHeader: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+  },
+  headerSpacer: {
+    width: 44,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  headerTitle: {
+    ...typography.title,
+    color: colors.textPrimary,
+    fontSize: isSmallScreen ? 20 : 24,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+  },
+  headerCentered: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
   },
 });

@@ -183,6 +183,7 @@ export const HomeScreen = () => {
   };
   const [timeUntilWindow, setTimeUntilWindow] = useState<string>("");
   const [pulseAnim] = useState(new Animated.Value(1));
+  const [timePulse] = useState(() => new Animated.Value(1));
   const [scaleAnim] = useState(new Animated.Value(1));
   const [floatAnim] = useState(new Animated.Value(0));
   const [glowAnim] = useState(new Animated.Value(0.7));
@@ -776,6 +777,44 @@ export const HomeScreen = () => {
     }
   }, [isPromptTime, floatAnim, glowAnim]);
 
+  // Pulsate the reveal countdown when the user has sent all photos and is waiting for reveal
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+
+    const photosRemaining =
+      currentPair && poolService.isInPhotoWindow(currentPair)
+        ? currentPair.maxPhotos -
+          poolService.getMyPhotoCount(currentPair, user?.uid || "")
+        : 1;
+
+    if (currentPair && photosRemaining <= 0) {
+      // Very subtle pulse on the time text (almost imperceptible)
+      anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(timePulse, {
+            toValue: 1.01,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(timePulse, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      anim.start();
+    } else {
+      // Reset
+      timePulse.setValue(1);
+    }
+
+    return () => {
+      if (anim) anim.stop();
+      timePulse.setValue(1);
+    };
+  }, [currentPair, user?.uid, timePulse]);
+
   // Register for push notifications and setup listeners
   useEffect(() => {
     // Register for push tokens ONLY if user is logged in
@@ -1096,6 +1135,9 @@ export const HomeScreen = () => {
         const photosRemaining =
           currentPair.maxPhotos -
           poolService.getMyPhotoCount(currentPair, user?.uid || "");
+        if (photosRemaining <= 0) {
+          return "Wait for the reveal";
+        }
         return `Send ${photosRemaining} more photo${
           photosRemaining !== 1 ? "s" : ""
         } during photo window.`;
@@ -1148,6 +1190,18 @@ export const HomeScreen = () => {
 
     return "No Pool Available";
   };
+
+  // Determine if user has sent all photos and is waiting for reveal
+  let excitedForReveal = false;
+  let statusMessage = getStatusText();
+  if (currentPair && poolService.isInPhotoWindow(currentPair)) {
+    const photosRemaining =
+      currentPair.maxPhotos -
+      poolService.getMyPhotoCount(currentPair, user?.uid || "");
+    if (photosRemaining <= 0) {
+      excitedForReveal = true;
+    }
+  }
 
   return (
     <GradientBackground gradient="midnight">
@@ -1454,10 +1508,42 @@ export const HomeScreen = () => {
               ]}
             />
           </View>
-          <Text style={styles.statusText}>{getStatusText()}</Text>
+          {!excitedForReveal && (
+            <Text style={styles.statusText}>{statusMessage}</Text>
+          )}
 
-          {/* Show countdown timers if paired */}
-          {currentPair && (
+          {excitedForReveal && currentPair && (
+            <Animated.View
+              style={[
+                styles.revealWaitingContainer,
+                {
+                  transform: [
+                    {
+                      scale: pulseAnim.interpolate({
+                        inputRange: [1, 1.1],
+                        outputRange: [1, 1.02],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <Animated.Text
+                style={[
+                  styles.revealCountdownText,
+                  { transform: [{ scale: timePulse }] },
+                ]}
+              >
+                {poolService.formatTimeRemaining(
+                  poolService.getTimeUntilReveal(currentPair)
+                )}
+              </Animated.Text>
+              <Text style={styles.revealLabel}>Reveal</Text>
+            </Animated.View>
+          )}
+
+          {/* Show countdown timers if paired (hidden when excited for reveal) */}
+          {currentPair && !excitedForReveal && (
             <View style={styles.timersContainer}>
               {!poolService.isInPhotoWindow(currentPair) && (
                 <View style={styles.timerCard}>
@@ -1484,18 +1570,20 @@ export const HomeScreen = () => {
             </View>
           )}
 
-          <PrimaryButton
-            label={getButtonText()}
-            onPress={handlePairingPress}
-            variant={
-              currentPair && poolService.isRevealTime(currentPair)
-                ? "primary"
-                : currentPool
-                ? "primary"
-                : "ghost"
-            }
-            disabled={(!currentPool && !currentPair) || poolLoading}
-          />
+          {!excitedForReveal && (
+            <PrimaryButton
+              label={getButtonText()}
+              onPress={handlePairingPress}
+              variant={
+                currentPair && poolService.isRevealTime(currentPair)
+                  ? "primary"
+                  : currentPool
+                  ? "primary"
+                  : "ghost"
+              }
+              disabled={(!currentPool && !currentPair) || poolLoading}
+            />
+          )}
 
           {poolLoading && (
             <View style={styles.searchingIndicator}>
@@ -1521,18 +1609,20 @@ export const HomeScreen = () => {
         </Animated.View>
 
         {/* Info Card - How Photo Challenges Work */}
-        {currentPair && poolService.isInPhotoWindow(currentPair) && (
-          <View style={styles.infoCard}>
-            <View style={styles.infoCardHeader}>
-              <Ionicons name="camera" size={20} color={colors.accentTeal} />
-              <Text style={styles.infoCardTitle}>Photo Window Active</Text>
+        {currentPair &&
+          poolService.isInPhotoWindow(currentPair) &&
+          !excitedForReveal && (
+            <View style={styles.infoCard}>
+              <View style={styles.infoCardHeader}>
+                <Ionicons name="camera" size={20} color={colors.accentTeal} />
+                <Text style={styles.infoCardTitle}>Photo Window Active</Text>
+              </View>
+              <Text style={styles.infoCardText}>
+                You'll receive notifications to send photos. Check your
+                notifications to participate!
+              </Text>
             </View>
-            <Text style={styles.infoCardText}>
-              You'll receive notifications to send photos. Check your
-              notifications to participate!
-            </Text>
-          </View>
-        )}
+          )}
 
         {/* Country Selection for Country Mode */}
         {profile?.mode === "country" && (
@@ -2337,6 +2427,67 @@ const styles = StyleSheet.create({
   metaSection: {
     flexDirection: "row",
     gap: 16,
+  },
+  revealWaitingContainer: {
+    marginTop: 12,
+    alignItems: "center",
+    paddingHorizontal: isSmallScreen ? 16 : 20,
+    paddingVertical: isSmallScreen ? 28 : 36,
+    borderRadius: 24,
+    backgroundColor: "rgba(11,7,24,0.8)",
+    borderWidth: 2,
+    borderColor: "rgba(139,92,246,0.25)",
+    width: "100%",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 6,
+    position: "relative",
+    overflow: "hidden",
+  },
+  revealWaitingText: {
+    ...typography.title,
+    color: colors.accentPurple,
+    fontSize: isSmallScreen ? 18 : 24,
+    fontWeight: "900",
+    textAlign: "center",
+    marginBottom: 6,
+    letterSpacing: -0.5,
+    textShadowColor: "rgba(0,0,0,0.25)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  revealWaitingSubtext: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    opacity: 0.9,
+    fontSize: isSmallScreen ? 13 : 15,
+    textAlign: "center",
+  },
+  revealCountdownText: {
+    ...typography.display,
+    color: colors.accentPurple,
+    fontSize: isSmallScreen ? 44 : 56,
+    fontWeight: "900",
+    textAlign: "center",
+    marginBottom: 12,
+    letterSpacing: -1,
+    textShadowColor: "rgba(139,92,246,0.28)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+  },
+  revealLabel: {
+    ...typography.subtitle,
+    color: colors.accentPink,
+    fontSize: isSmallScreen ? 18 : 22,
+    fontWeight: "800",
+    textAlign: "center",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    textShadowColor: "rgba(244,71,183,0.28)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   metaCard: {
     flex: 1,

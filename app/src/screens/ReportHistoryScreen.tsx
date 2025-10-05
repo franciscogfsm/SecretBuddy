@@ -6,12 +6,14 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useState, useEffect } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, typography } from "../theme";
@@ -32,6 +34,7 @@ export const ReportHistoryScreen = () => {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -76,17 +79,38 @@ export const ReportHistoryScreen = () => {
 
   return (
     <GradientBackground gradient="midnight">
-      {/* Header - Fixed at top */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+      {/* Header - Rounded gradient (matches Settings/Matches) */}
+      <LinearGradient
+        colors={["rgba(0,0,0,0.9)", "#070319", "#1C0E3C"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.roundedHeader, { paddingTop: insets.top + 12 }]}
+      >
+        <TouchableOpacity
+          onPress={handleBack}
+          hitSlop={{ top: 12, left: 12, bottom: 12, right: 12 }}
+          style={[
+            styles.backButton,
+            {
+              position: "absolute",
+              left: 12,
+              top: insets.top + 12,
+              zIndex: 30,
+              elevation: 30,
+            },
+          ]}
+        >
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Report History</Text>
+
+        <View style={styles.headerCentered} pointerEvents="box-none">
+          <Text style={styles.title}>Report History</Text>
+        </View>
         <View style={styles.headerSpacer} />
-      </View>
+      </LinearGradient>
 
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, { paddingTop: 110 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Info Card */}
@@ -302,7 +326,28 @@ export const ReportHistoryScreen = () => {
             If you need immediate assistance or have questions about a report,
             contact our support team. We're here to help keep you safe.
           </Text>
-          <TouchableOpacity style={styles.contactButton}>
+          <TouchableOpacity
+            style={styles.contactButton}
+            onPress={() => {
+              const email = "thesecretbuddyapp@gmail.com";
+              const subject = encodeURIComponent(
+                "Support request from SecretBuddy"
+              );
+              const body = encodeURIComponent(
+                `Hi SecretBuddy support,%0D%0A%0D%0AI need help with... (please describe your issue)%0D%0A%0D%0AUser ID: ${
+                  user?.uid ?? "unknown"
+                }`
+              );
+              const mailto = `mailto:${email}?subject=${subject}&body=${body}`;
+              // Open mail app
+              try {
+                //@ts-ignore
+                Linking.openURL(mailto);
+              } catch (error) {
+                console.error("Error opening mail app:", error);
+              }
+            }}
+          >
             <Ionicons name="mail-outline" size={18} color="#8B5CF6" />
             <Text style={styles.contactButtonText}>Contact Support</Text>
           </TouchableOpacity>
@@ -323,41 +368,7 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
 
-  // Header Styles
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: "rgba(6, 0, 18, 0.95)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.05)",
-  },
-
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-  },
-
-  headerTitle: {
-    ...typography.title,
-    color: colors.textPrimary,
-    fontSize: isSmallScreen ? 20 : 24,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-  },
-
-  headerSpacer: {
-    width: 44,
-  },
+  // (Replaced old inline header with roundedHeader above)
 
   // Info Card
   infoCard: {
@@ -702,5 +713,52 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textSecondary,
     fontSize: 16,
+  },
+  // Rounded header styles (copied from Matches/Settings)
+  roundedHeader: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+  },
+  headerInnerLeft: {
+    flexDirection: "column",
+  },
+  headerSpacer: {
+    width: 44,
+  },
+  title: {
+    ...typography.title,
+    color: colors.textPrimary,
+    fontSize: isSmallScreen ? 20 : 24,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+    marginBottom: 6,
+  },
+  subtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 16,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  headerCentered: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
   },
 });

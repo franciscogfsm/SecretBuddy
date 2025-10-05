@@ -290,20 +290,13 @@ export const ChatScreen = () => {
             isNowEnded &&
             result.conversation.endedBy !== user!.uid
           ) {
-            // If partner ended the conversation, automatically close the chat for this user
-            // Do a small delay to allow any UI updates to settle
-            setTimeout(() => {
-              try {
-                // Navigate back to previous screen to close chat
-                navigation.goBack();
-              } catch (e) {
-                // Fallback: set conversationEnded to true so UI disables input
-                setConversationEnded(true);
-              }
-            }, 300);
+            Alert.alert(
+              "Chat Ended",
+              "Your chat partner has ended this conversation.",
+              [{ text: "OK" }]
+            );
           }
 
-          // Update local ended state
           setConversationEnded(isNowEnded);
         }
       } catch (error) {

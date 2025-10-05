@@ -290,8 +290,8 @@ export const FriendsScreen = () => {
     // Load full user profile with privacy settings
     try {
       const fullProfile = await getUserProfile(friend.uid);
-      // @ts-ignore - privacySettings will be added to UserProfile type
-      setSelectedFriendPrivacy(fullProfile?.privacySettings || {});
+      // Store the full profile so we can read age/ageVisible directly
+      setSelectedFriendPrivacy(fullProfile || {});
     } catch (error) {
       console.error("Error loading friend profile:", error);
       setSelectedFriendPrivacy({});
@@ -730,21 +730,22 @@ export const FriendsScreen = () => {
                     </View>
 
                     {/* Show age only if not restricted by privacy settings */}
-                    {selectedFriendPrivacy &&
-                      !selectedFriendPrivacy.hideAge && (
-                        <View style={styles.profileInfoRow}>
-                          <Ionicons
-                            name="calendar-outline"
-                            size={20}
-                            color={colors.textSecondary}
-                          />
-                          <Text style={styles.profileCountryText}>
-                            {selectedFriend.points
-                              ? `${selectedFriend.points} points`
-                              : "New user"}
-                          </Text>
-                        </View>
-                      )}
+                    {selectedFriendPrivacy && (
+                      <View style={styles.profileInfoRow}>
+                        <Ionicons
+                          name="calendar-outline"
+                          size={20}
+                          color={colors.textSecondary}
+                        />
+                        <Text style={styles.profileCountryText}>
+                          {selectedFriendPrivacy.ageVisible === false
+                            ? "Private"
+                            : selectedFriendPrivacy.age
+                            ? `${selectedFriendPrivacy.age} years`
+                            : "Not specified"}
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                   {selectedFriend.bio && (

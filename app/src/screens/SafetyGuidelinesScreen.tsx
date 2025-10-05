@@ -10,6 +10,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { GradientBackground } from "../components/GradientBackground";
 import { colors, typography } from "../theme";
@@ -105,23 +106,45 @@ export const SafetyGuidelinesScreen = () => {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
+  const insets = useSafeAreaInsets();
+
   const handleBack = () => {
     navigation.goBack();
   };
 
   return (
     <GradientBackground gradient="midnight">
-      {/* Header - Fixed at top */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+      {/* Header - Rounded gradient like Settings */}
+      <LinearGradient
+        colors={["rgba(0,0,0,0.9)", "#070319", "#1C0E3C"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.roundedHeader, { paddingTop: insets.top + 12 }]}
+      >
+        <TouchableOpacity
+          onPress={handleBack}
+          hitSlop={{ top: 12, left: 12, bottom: 12, right: 12 }}
+          style={[
+            styles.backButton,
+            {
+              position: "absolute",
+              left: 12,
+              top: insets.top + 12,
+              zIndex: 30,
+              elevation: 30,
+            },
+          ]}
+        >
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Safety Guidelines</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+
+        <View style={styles.headerCentered} pointerEvents="box-none">
+          <Text style={styles.headerTitle}>Safety Guidelines</Text>
+        </View>
+      </LinearGradient>
 
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, { paddingTop: 110 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Hero Section */}
@@ -449,5 +472,22 @@ const styles = StyleSheet.create({
 
   footerSpace: {
     height: 20,
+  },
+  roundedHeader: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+  },
+  headerCentered: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
   },
 });

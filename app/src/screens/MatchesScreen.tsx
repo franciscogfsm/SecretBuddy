@@ -231,20 +231,29 @@ export const MatchesScreen = () => {
     <View style={styles.fullScreenContainer}>
       <GradientBackground gradient="midnight">
         <TopHeader />
+        {/* Header - Rounded gradient matching Settings */}
+        <LinearGradient
+          colors={["rgba(0,0,0,0.9)", "#070319", "#1C0E3C"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.roundedHeader, { paddingTop: insets.top + 12 }]}
+        >
+          <View style={styles.headerInnerLeft}>
+            <Text style={styles.title}>Matches</Text>
+            <Text style={styles.subtitle}>Your secret connections</Text>
+          </View>
+          <View style={styles.headerSpacer} />
+        </LinearGradient>
+
         <View
           style={[
             styles.container,
             {
-              paddingTop: insets.top + 20,
+              paddingTop: (insets.top || 0) + 110,
               paddingHorizontal: Math.max(16, insets.left + 4),
             },
           ]}
         >
-          <View style={styles.header}>
-            <Text style={styles.title}>Matches</Text>
-            <Text style={styles.subtitle}>Your secret connections</Text>
-          </View>
-
           {/* Info Card */}
           <View style={styles.infoCard}>
             <LinearGradient
@@ -549,5 +558,23 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: "center",
     paddingHorizontal: 40,
+  },
+  roundedHeader: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+  },
+  headerInnerLeft: {
+    flexDirection: "column",
+  },
+  headerSpacer: {
+    width: 44,
   },
 });

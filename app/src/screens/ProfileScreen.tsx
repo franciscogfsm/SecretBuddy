@@ -431,17 +431,19 @@ export const ProfileScreen = () => {
             },
           ]}
         >
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={handleSignOut}
-            disabled={authLoading}
-          >
-            <Ionicons
-              name="log-out-outline"
-              size={20}
-              color={colors.accentPink}
-            />
-          </TouchableOpacity>
+          {!isSmallScreen && (
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={handleSignOut}
+              disabled={authLoading}
+            >
+              <Ionicons
+                name="log-out-outline"
+                size={20}
+                color={colors.accentPink}
+              />
+            </TouchableOpacity>
+          )}
 
           <View style={styles.profileContent}>
             {/* Avatar on the left */}
