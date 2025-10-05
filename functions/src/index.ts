@@ -12,96 +12,100 @@ function initAdmin() {
 
 // ==================== PHOTO CLEANUP ====================
 
-// Shared cleanup logic
+/**
+ * PHOTO CLEANUP OPTIMIZATION
+ * - Storage: Handled by GCS Lifecycle Rules (auto-delete after 24h)
+ * - Firestore: Uses TTL Index on photoChallenge.expireAt field (auto-delete)
+ * - This function only handles soft-delete for unviewed 4h+ photos
+ *
+ * GCS Lifecycle Rule (set via console or gcloud):
+ * {
+ *   "lifecycle": {
+ *     "rule": [{
+ *       "action": {"type": "Delete"},
+ *       "condition": {"age": 1, "matchesPrefix": ["photoChallenge/"]}
+ *     }]
+ *   }
+ * }
+ *
+ * Firestore TTL Index (set via console):
+ * Collection: photoChallenge
+ * Field: expireAt
+ * Query Scope: Collection
+ */
+
+// Shared cleanup logic (simplified - only soft deletes)
 async function performCleanup() {
   initAdmin();
   const db = admin.firestore();
-  const storage = admin.storage();
-  const bucket = storage.bucket();
 
   const now = Date.now();
   const FOUR_HOURS = 4 * 60 * 60 * 1000;
-  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
   const photosRef = db.collection("photoChallenge");
-  const snapshot = await photosRef.get();
+  const snapshot = await photosRef
+    .where("viewed", "==", false)
+    .where(
+      "timestamp",
+      "<",
+      admin.firestore.Timestamp.fromMillis(now - FOUR_HOURS)
+    )
+    .get();
 
-  let deletedFromFirestore = 0;
-  let deletedFromStorage = 0;
-  let errors = 0;
-
-  const tasks: Promise<any>[] = [];
+  let softDeleted = 0;
+  const batch = db.batch();
 
   snapshot.forEach((doc) => {
-    tasks.push(
-      (async () => {
-        try {
-          const photoData = doc.data();
-          if (!photoData.timestamp || photoData.deleted) return;
-
-          const photoTimestamp =
-            photoData.timestamp.toMillis?.() ??
-            new Date(photoData.timestamp).getTime();
-          const age = now - photoTimestamp;
-
-          // Full cleanup: older than 24h
-          if (age > TWENTY_FOUR_HOURS) {
-            // Delete from storage using storagePath
-            if (photoData.storagePath) {
-              try {
-                const file = bucket.file(photoData.storagePath);
-                const [exists] = await file.exists();
-                if (exists) {
-                  await file.delete();
-                  deletedFromStorage++;
-                  console.log(
-                    `🗑️ Deleted from storage: ${photoData.storagePath}`
-                  );
-                } else {
-                  console.log(
-                    `⚠️ File not found in storage: ${photoData.storagePath}`
-                  );
-                }
-              } catch (e) {
-                console.warn(
-                  `⚠️ Storage deletion error: ${photoData.storagePath}`,
-                  e
-                );
-              }
-            } else {
-              console.warn(`⚠️ No storagePath for photo: ${doc.id}`);
-            }
-
-            // Delete Firestore document
-            await doc.ref.delete();
-            deletedFromFirestore++;
-          }
-          // Expire unviewed 4h+ photos (soft delete)
-          else if (age > FOUR_HOURS && !photoData.viewed) {
-            await doc.ref.update({
-              deleted: true,
-              deletedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-            deletedFromFirestore++;
-          }
-        } catch (e) {
-          console.error(`❌ Error processing ${doc.id}:`, e);
-          errors++;
-        }
-      })()
-    );
+    // Soft delete unviewed 4h+ photos
+    batch.update(doc.ref, {
+      deleted: true,
+      deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    softDeleted++;
   });
 
-  await Promise.all(tasks);
+  if (softDeleted > 0) {
+    await batch.commit();
+  }
+
+  // Also clean up per-user photoChallenges subcollections (created under users/{uid}/photoChallenges)
+  // Use collectionGroup to find expired challenges by expiresAt
+  let softDeletedSub = 0;
+  try {
+    const expiredSnapshot = await db
+      .collectionGroup("photoChallenges")
+      .where("expiresAt", "<", admin.firestore.Timestamp.now())
+      .get();
+
+    if (!expiredSnapshot.empty) {
+      const docs = expiredSnapshot.docs;
+
+      // Commit in batches to avoid exceeding 500 writes
+      for (let i = 0; i < docs.length; i += 450) {
+        const chunk = docs.slice(i, i + 450);
+        const subBatch = db.batch();
+        chunk.forEach((d) => {
+          subBatch.update(d.ref, {
+            deleted: true,
+            deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: "expired",
+          });
+          softDeletedSub++;
+        });
+        await subBatch.commit();
+      }
+    }
+  } catch (e) {
+    console.warn("⚠️ Error cleaning user photoChallenges collectionGroup:", e);
+  }
 
   console.log("✅ Cleanup complete", {
-    deletedFromFirestore,
-    deletedFromStorage,
-    errors,
+    softDeleted,
+    softDeletedSub,
     totalProcessed: snapshot.size,
   });
 
-  return { deletedFromFirestore, deletedFromStorage, errors };
+  return { softDeleted, softDeletedSub };
 }
 
 // Scheduled function - runs every 4 hours automatically
@@ -151,7 +155,6 @@ export const dailyCleanup = functions
   .onRun(async () => {
     initAdmin();
     const db = admin.firestore();
-    const storage = admin.storage();
 
     const now = new Date();
     const yesterday = new Date(now);
@@ -209,58 +212,126 @@ export const dailyCleanup = functions
       console.log("⚠️ Today's pools don't exist yet, keeping previous pools");
     }
 
-    // 3. Delete messages older than 2 days
+    // 3. Delete messages older than 2 days (using date-partitioned collections)
     console.log("🗑️ Deleting messages older than 2 days...");
-    const messagesSnapshot = await db
-      .collection("messages")
-      .where("timestamp", "<", admin.firestore.Timestamp.fromDate(twoDaysAgo))
-      .get();
+    const twoDaysAgoStr = twoDaysAgo.toISOString().split("T")[0];
 
-    const messagesBatch = db.batch();
-    messagesSnapshot.forEach((doc) => {
-      messagesBatch.delete(doc.ref);
-      messagesDeleted++;
-    });
-    await messagesBatch.commit();
+    // Delete entire message collection for 2 days ago
+    const messageCollectionName = `messages_${twoDaysAgoStr.replace(
+      /-/g,
+      "_"
+    )}`;
+    const messagesCollectionRef = db.collection(messageCollectionName);
 
-    // 4. Delete photo challenges older than 1 day
-    console.log("🗑️ Deleting photo challenges older than 1 day...");
-    const photoChallengeSnapshot = await db
-      .collection("photoChallenge")
-      .where("timestamp", "<", admin.firestore.Timestamp.fromDate(yesterday))
-      .get();
-
-    const photoBatch = db.batch();
-    const storageDeleteTasks: Promise<any>[] = [];
-
-    photoChallengeSnapshot.forEach((doc) => {
-      const data = doc.data();
-
-      // Delete from storage if storagePath exists
-      if (data.storagePath) {
-        storageDeleteTasks.push(
-          (async () => {
-            try {
-              const bucket = storage.bucket();
-              const file = bucket.file(data.storagePath);
-              const [exists] = await file.exists();
-              if (exists) {
-                await file.delete();
-                photosDeletedFromStorage++;
-                console.log(`🗑️ Deleted from storage: ${data.storagePath}`);
-              }
-            } catch (e) {
-              console.warn(`⚠️ Storage deletion error: ${data.storagePath}`, e);
-            }
-          })()
+    try {
+      // Use bulk delete for efficiency
+      const messagesSnapshot = await messagesCollectionRef.limit(500).get();
+      if (!messagesSnapshot.empty) {
+        const bulkWriter = db.bulkWriter();
+        messagesSnapshot.docs.forEach((doc) => {
+          bulkWriter.delete(doc.ref);
+          messagesDeleted++;
+        });
+        await bulkWriter.close();
+        console.log(
+          `✅ Deleted ${messagesDeleted} messages from ${messageCollectionName}`
         );
+      } else {
+        console.log(`⚠️ No messages found in ${messageCollectionName}`);
+      }
+    } catch (e) {
+      console.warn(`⚠️ Error deleting ${messageCollectionName}:`, e);
+    }
+
+    // 4. Photo challenges auto-deleted by Firestore TTL (expireAt field)
+    // Note: GCS storage also auto-deleted by lifecycle rules (24h)
+    // Run additional cleanup to ensure expired top-level photoChallenge docs
+    // and per-user photoChallenges are soft-deleted and storage files removed.
+    console.log(
+      "ℹ️ Running additional photoChallenge cleanup (top-level + per-user)"
+    );
+
+    // Call shared cleanup first (handles unviewed 4h+ and per-user collectionGroup)
+    try {
+      const shared = await performCleanup();
+      photoChallengesDeleted =
+        (shared.softDeleted || 0) + (shared.softDeletedSub || 0);
+    } catch (e) {
+      console.warn("⚠️ performCleanup() failed:", e);
+      photoChallengesDeleted = 0;
+    }
+
+    // Now clean top-level `photoChallenge` collection for expired documents
+    try {
+      const expiredSnap = await db
+        .collection("photoChallenge")
+        .where("expireAt", "<", admin.firestore.Timestamp.now())
+        .get();
+
+      let topDeleted = 0;
+      let storageDeleted = 0;
+
+      if (!expiredSnap.empty) {
+        const docs = expiredSnap.docs;
+
+        // Process in chunks to avoid large batches
+        for (let i = 0; i < docs.length; i += 450) {
+          const chunk = docs.slice(i, i + 450);
+          const batch = db.batch();
+
+          // Delete storage files in parallel for this chunk (if storagePath available)
+          const deletePromises: Promise<any>[] = [];
+          for (const d of chunk) {
+            const data: any = d.data();
+            if (data?.storagePath) {
+              try {
+                const file = admin.storage().bucket().file(data.storagePath);
+                deletePromises.push(
+                  file
+                    .delete()
+                    .then(() => {
+                      storageDeleted++;
+                    })
+                    .catch((err: any) => {
+                      console.warn(
+                        "⚠️ Failed to delete storage file:",
+                        data.storagePath,
+                        err
+                      );
+                    })
+                );
+              } catch (err) {
+                console.warn(
+                  "⚠️ Storage deletion error for",
+                  data.storagePath,
+                  err
+                );
+              }
+            }
+          }
+
+          // Await deletions for this chunk
+          await Promise.all(deletePromises);
+
+          // Soft-delete the Firestore documents in this chunk
+          for (const d of chunk) {
+            batch.update(d.ref, {
+              deleted: true,
+              deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+              status: "expired",
+            });
+            topDeleted++;
+          }
+
+          await batch.commit();
+        }
       }
 
-      photoBatch.delete(doc.ref);
-      photoChallengesDeleted++;
-    });
-
-    await Promise.all([photoBatch.commit(), ...storageDeleteTasks]);
+      photoChallengesDeleted = photoChallengesDeleted + topDeleted;
+      photosDeletedFromStorage = storageDeleted; // Note: best-effort
+    } catch (e) {
+      console.warn("⚠️ Error cleaning top-level photoChallenge collection:", e);
+    }
 
     console.log("✅ Daily cleanup complete", {
       poolUsersDeleted,
@@ -284,6 +355,106 @@ export const dailyCleanup = functions
 // ==================== POOL SYSTEM ====================
 
 /**
+ * POOL SHARDING SYSTEM
+ * Each pool is sharded to handle high-scale (100k+ users):
+ * - Structure: /pools/{poolId}/shards/{shardId}/poolUsers/{userId}
+ * - Each shard holds max 10k users
+ * - Shards are created dynamically as users join
+ * - Queries and rollovers are contained per shard
+ */
+
+const MAX_USERS_PER_SHARD = 10000;
+
+/**
+ * Get or create a shard for a user joining a pool
+ * Returns the shard ID with available capacity
+ */
+async function getAvailableShard(
+  poolId: string,
+  db: admin.firestore.Firestore
+): Promise<string> {
+  // Get pool metadata to track shard counts
+  const poolRef = db.collection("pools").doc(poolId);
+  const poolDoc = await poolRef.get();
+
+  if (!poolDoc.exists) {
+    throw new Error(`Pool ${poolId} not found`);
+  }
+
+  const poolData = poolDoc.data();
+  const currentShard = poolData?.currentShard || 0;
+  const shardUserCount = poolData?.shardUserCounts || {};
+
+  // Check if current shard has capacity
+  const currentShardCount = shardUserCount[currentShard] || 0;
+
+  if (currentShardCount < MAX_USERS_PER_SHARD) {
+    return `shard_${currentShard}`;
+  }
+
+  // Current shard is full, move to next shard
+  const nextShard = currentShard + 1;
+  await poolRef.update({
+    currentShard: nextShard,
+    [`shardUserCounts.${nextShard}`]: 0,
+  });
+
+  return `shard_${nextShard}`;
+}
+
+/**
+ * Add user to a pool shard
+ */
+async function addUserToPoolShard(
+  poolId: string,
+  userId: string,
+  userData: any,
+  db: admin.firestore.Firestore
+): Promise<string> {
+  const shardId = await getAvailableShard(poolId, db);
+
+  const userRef = db
+    .collection("pools")
+    .doc(poolId)
+    .collection("shards")
+    .doc(shardId)
+    .collection("poolUsers")
+    .doc(userId);
+
+  await userRef.set({
+    userId,
+    joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...userData,
+  });
+
+  // Ensure the shard document exists (so .collection('shards').get() will return this shard)
+  const shardRef = db
+    .collection("pools")
+    .doc(poolId)
+    .collection("shards")
+    .doc(shardId);
+  await shardRef.set(
+    {
+      shardId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  // Increment shard user count
+  await db
+    .collection("pools")
+    .doc(poolId)
+    .update({
+      [`shardUserCounts.${shardId.replace("shard_", "")}`]:
+        admin.firestore.FieldValue.increment(1),
+      userCount: admin.firestore.FieldValue.increment(1),
+    });
+
+  return shardId;
+}
+
+/**
  * Create daily hourly pools at midnight (00:00 UTC)
  * ✅ UPDATED: Creates 8 hourly pools: 09:00-16:00 UTC (10:00-17:00 Portugal)
  * Each pool:
@@ -291,6 +462,7 @@ export const dailyCleanup = functions
  * - Closes and pairs at the next hour (e.g., 10:00 UTC = 11:00 Portugal)
  * - Users get 2 photo notifications between join time and 21:00 UTC (22:00 Portugal)
  * - Reveal is always between 21:00-21:59 UTC (22:00-22:59 Portugal)
+ * - Uses sharding system to handle 100k+ users per pool
  */
 export const createDailyPools = functions
   .runWith({ timeoutSeconds: 60, memory: "256MB" })
@@ -398,6 +570,21 @@ export const createDailyPools = functions
         status: "open",
         userCount: 0,
         pairsCount: 0,
+        // Sharding metadata
+        currentShard: 0,
+        shardUserCounts: { 0: 0 },
+      });
+
+      // Also create initial shard document (shard_0) so shards collection exists
+      const shardRef = db
+        .collection("pools")
+        .doc(poolId)
+        .collection("shards")
+        .doc("shard_0");
+      batch.set(shardRef, {
+        shardId: "shard_0",
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        userCount: 0,
       });
 
       console.log(
@@ -495,6 +682,7 @@ export const closePool16h = functions
 
 /**
  * Shared logic to close and pair an hourly pool
+ * Now handles sharded pool structure
  */
 async function closeHourlyPool(hour: number): Promise<any> {
   initAdmin();
@@ -517,36 +705,65 @@ async function closeHourlyPool(hour: number): Promise<any> {
     status: "pairing",
   });
 
-  // Get all users in this pool (OPTIMIZED: only queries users who joined)
-  const poolUsersSnapshot = await db
-    .collection("poolUsers")
-    .where("poolId", "==", poolId)
+  // Get all shards for this pool
+  const shardsSnapshot = await db
+    .collection("pools")
+    .doc(poolId)
+    .collection("shards")
     .get();
 
-  console.log(`👥 Found ${poolUsersSnapshot.size} users in pool ${poolId}`);
-
-  if (poolUsersSnapshot.empty) {
-    console.log("⚠️ No users to pair");
+  if (shardsSnapshot.empty) {
+    console.log("⚠️ No shards found (no users joined)");
     await db.collection("pools").doc(poolId).update({ status: "closed" });
-    return { success: true, pairs: 0 };
+    return { success: true, pairs: 0, rolledOver: 0 };
   }
 
-  // Match users and get unpaired users
-  const { pairsCreated, unpairedUserIds } = await matchUsers(
-    poolId,
-    poolUsersSnapshot.docs,
-    db
-  );
+  console.log(`� Found ${shardsSnapshot.size} shard(s) in pool ${poolId}`);
+
+  let totalPairs = 0;
+  const allUnpairedUserIds: string[] = [];
+
+  // Process each shard
+  for (const shardDoc of shardsSnapshot.docs) {
+    const shardId = shardDoc.id;
+    console.log(`🔄 Processing shard: ${shardId}`);
+
+    // Get all users in this shard
+    const poolUsersSnapshot = await db
+      .collection("pools")
+      .doc(poolId)
+      .collection("shards")
+      .doc(shardId)
+      .collection("poolUsers")
+      .get();
+
+    if (poolUsersSnapshot.empty) {
+      console.log(`⚠️ Shard ${shardId} is empty`);
+      continue;
+    }
+
+    console.log(`👥 Found ${poolUsersSnapshot.size} users in shard ${shardId}`);
+
+    // Match users within this shard
+    const { pairsCreated, unpairedUserIds } = await matchUsers(
+      poolId,
+      poolUsersSnapshot.docs,
+      db
+    );
+
+    totalPairs += pairsCreated;
+    allUnpairedUserIds.push(...unpairedUserIds);
+  }
 
   await db.collection("pools").doc(poolId).update({
     status: "closed",
-    pairsCount: pairsCreated,
+    pairsCount: totalPairs,
   });
 
-  console.log(`✅ Pool ${poolId} closed. Created ${pairsCreated} pairs`);
+  console.log(`✅ Pool ${poolId} closed. Created ${totalPairs} pairs`);
 
   // ROLLOVER: Move unpaired users to next pool (if exists and open)
-  if (unpairedUserIds.length > 0) {
+  if (allUnpairedUserIds.length > 0) {
     const nextHour = hour + 1;
 
     // Only rollover if next hour is within valid pool range (9-16)
@@ -556,38 +773,47 @@ async function closeHourlyPool(hour: number): Promise<any> {
 
       if (nextPoolDoc.exists && nextPoolDoc.data()?.status === "open") {
         console.log(
-          `🔄 Rolling over ${unpairedUserIds.length} unpaired users to next pool: ${nextPoolId}`
+          `🔄 Rolling over ${allUnpairedUserIds.length} unpaired users to next pool: ${nextPoolId}`
         );
 
-        const batch = db.batch();
-        for (const userId of unpairedUserIds) {
-          // Get original user data from poolUsers to preserve priority/country
-          const originalPoolUserDoc = await db
-            .collection("poolUsers")
-            .doc(`${poolId}-${userId}`)
-            .get();
+        // Add unpaired users to next pool's shards
+        for (const userId of allUnpairedUserIds) {
+          // Find user data from any shard in current pool
+          let userData = null;
+          for (const shardDoc of shardsSnapshot.docs) {
+            const userDoc = await db
+              .collection("pools")
+              .doc(poolId)
+              .collection("shards")
+              .doc(shardDoc.id)
+              .collection("poolUsers")
+              .doc(userId)
+              .get();
 
-          const userData = originalPoolUserDoc.data();
+            if (userDoc.exists) {
+              userData = userDoc.data();
+              break;
+            }
+          }
 
-          // Add user to next pool
-          const nextPoolUserRef = db
-            .collection("poolUsers")
-            .doc(`${nextPoolId}-${userId}`);
-
-          batch.set(nextPoolUserRef, {
-            poolId: nextPoolId,
-            userId,
-            joinedAt: admin.firestore.FieldValue.serverTimestamp(),
-            priority: userData?.priority || "world",
-            country: userData?.country,
-            rolledOver: true, // Flag to track this was a rollover
-            originalPoolId: poolId,
-          });
+          if (userData) {
+            // Add to next pool using sharding system
+            await addUserToPoolShard(
+              nextPoolId,
+              userId,
+              {
+                priority: userData.priority || "world",
+                country: userData.country,
+                rolledOver: true,
+                originalPoolId: poolId,
+              },
+              db
+            );
+          }
         }
 
-        await batch.commit();
         console.log(
-          `✅ Rolled over ${unpairedUserIds.length} users to ${nextPoolId}`
+          `✅ Rolled over ${allUnpairedUserIds.length} users to ${nextPoolId}`
         );
       } else {
         console.log(
@@ -603,8 +829,8 @@ async function closeHourlyPool(hour: number): Promise<any> {
 
   return {
     success: true,
-    pairs: pairsCreated,
-    rolledOver: unpairedUserIds.length,
+    pairs: totalPairs,
+    rolledOver: allUnpairedUserIds.length,
   };
 }
 
@@ -612,6 +838,7 @@ async function closeHourlyPool(hour: number): Promise<any> {
  * Match users in a pool
  * Priority: Friends > Same Country > Random
  * Returns: { pairsCreated, unpairedUserIds }
+ * OPTIMIZED: Uses friends array in user docs instead of querying friendships collection
  */
 async function matchUsers(
   poolId: string,
@@ -637,26 +864,34 @@ async function matchUsers(
   const matched = new Set<string>();
   let pairsCreated = 0;
 
-  // Helper: Check if two users are friends
-  const areFriends = async (
-    userId1: string,
-    userId2: string
-  ): Promise<boolean> => {
-    const friendshipsSnapshot = await db
-      .collection("friendships")
-      .where("status", "==", "accepted")
-      .get();
+  // OPTIMIZATION: Load friends lists for all users in batch
+  const userIds = users.map((u) => u.id);
+  const userRefsChunks: admin.firestore.DocumentReference[][] = [];
 
-    for (const doc of friendshipsSnapshot.docs) {
+  // Split into chunks of 10 (Firestore getAll limit)
+  for (let i = 0; i < userIds.length; i += 10) {
+    const chunk = userIds.slice(i, i + 10);
+    userRefsChunks.push(chunk.map((id) => db.collection("users").doc(id)));
+  }
+
+  // Fetch all user docs to get friends arrays
+  const friendsMap = new Map<string, Set<string>>();
+  for (const refs of userRefsChunks) {
+    const userDocs = await db.getAll(...refs);
+    userDocs.forEach((doc) => {
       const data = doc.data();
-      if (
-        (data.userId1 === userId1 && data.userId2 === userId2) ||
-        (data.userId1 === userId2 && data.userId2 === userId1)
-      ) {
-        return true;
+      if (data?.friends && Array.isArray(data.friends)) {
+        friendsMap.set(doc.id, new Set(data.friends));
+      } else {
+        friendsMap.set(doc.id, new Set());
       }
-    }
-    return false;
+    });
+  }
+
+  // Helper: Check if two users are friends (O(1) lookup instead of query)
+  const areFriends = (userId1: string, userId2: string): boolean => {
+    const user1Friends = friendsMap.get(userId1);
+    return user1Friends ? user1Friends.has(userId2) : false;
   };
 
   // Step 1: Match friends first
@@ -667,7 +902,7 @@ async function matchUsers(
     for (const otherUser of users) {
       if (matched.has(otherUser.id) || user.id === otherUser.id) continue;
 
-      if (await areFriends(user.id, otherUser.id)) {
+      if (areFriends(user.id, otherUser.id)) {
         await createPair(user.id, otherUser.id, poolId, poolData, db);
         matched.add(user.id);
         matched.add(otherUser.id);
@@ -775,6 +1010,7 @@ async function createPair(
  * Can work in two modes:
  * 1. With poolId: Pairs only users who joined that pool
  * 2. With allUsers=true: Creates fake pool entries for ALL users and pairs them
+ * UPDATED: Works with sharded pool structure
  */
 export const manualCreatePairs = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
@@ -797,8 +1033,6 @@ export const manualCreatePairs = functions
         return;
       }
 
-      let poolUsersSnapshot;
-
       // MODE 1: Pair ALL users (for testing)
       if (allUsers === true) {
         console.log("🧪 TEST MODE: Creating pairs with ALL users");
@@ -813,64 +1047,207 @@ export const manualCreatePairs = functions
 
         console.log(`📊 Found ${allUsersSnapshot.size} total users`);
 
-        // Create fake poolUsers entries for all users
-        const batch = db.batch();
-        const userIds: string[] = [];
+        // Add all users to pool shards (with country data for matching)
+        const shardIds = new Set<string>(); // Track created shards
+        for (const userDoc of allUsersSnapshot.docs) {
+          const userData = userDoc.data();
 
-        allUsersSnapshot.forEach((userDoc) => {
-          const userId = userDoc.id;
-          userIds.push(userId);
-
-          const poolUserRef = db
-            .collection("poolUsers")
-            .doc(`${poolId}-${userId}`);
-          batch.set(poolUserRef, {
+          const shardId = await addUserToPoolShard(
             poolId,
-            userId,
-            joinedAt: admin.firestore.FieldValue.serverTimestamp(),
-            priority: "world",
-          });
-        });
+            userDoc.id,
+            {
+              priority: "world",
+              country: userData.country || undefined, // Include country for matching
+            },
+            db
+          );
+          shardIds.add(shardId); // Collect shard IDs
+        }
 
-        await batch.commit();
-        console.log(
-          `✅ Created ${userIds.length} poolUsers entries for testing`
-        );
+        console.log(`✅ Added ${allUsersSnapshot.size} users to pool shards`);
+        console.log(`📊 Shards created: ${Array.from(shardIds).join(", ")}`);
 
-        // Get the created poolUsers
-        poolUsersSnapshot = await db
-          .collection("poolUsers")
-          .where("poolId", "==", poolId)
-          .get();
+        // ✅ FIX: Longer delay to ensure Firestore writes are visible
+        // Firestore has eventual consistency, so we need to wait
+        console.log("⏳ Waiting 3 seconds for Firestore consistency...");
+        await new Promise((resolve) => setTimeout(resolve, 3000));
       }
-      // MODE 2: Pair only users who joined the pool
-      else {
-        console.log("👥 NORMAL MODE: Pairing users who joined the pool");
 
-        poolUsersSnapshot = await db
-          .collection("poolUsers")
-          .where("poolId", "==", poolId)
-          .get();
+      // Get all shards and process them (retry a few times to handle eventual consistency)
+      let shardsSnapshot: admin.firestore.QuerySnapshot = await db
+        .collection("pools")
+        .doc(poolId)
+        .collection("shards")
+        .get();
 
-        if (poolUsersSnapshot.empty) {
-          res.status(404).json({
-            error: "No users in pool. Use allUsers=true to pair all users.",
-          });
-          return;
+      if (shardsSnapshot.empty) {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          console.log(
+            `⏳ Shards empty (initial). Waiting 1s and retrying (attempt ${attempt}/2)...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          shardsSnapshot = await db
+            .collection("pools")
+            .doc(poolId)
+            .collection("shards")
+            .get();
+          if (!shardsSnapshot.empty) break;
         }
       }
 
-      const result = await matchUsers(poolId, poolUsersSnapshot.docs, db);
+      if (shardsSnapshot.empty) {
+        console.error("❌ No shards found after adding users!");
+
+        // Debug: Check pool metadata
+        const poolDoc = await db.collection("pools").doc(poolId).get();
+        const poolData = poolDoc.data();
+        console.log("🔍 Pool metadata:", {
+          currentShard: poolData?.currentShard,
+          shardUserCounts: poolData?.shardUserCounts,
+          userCount: poolData?.userCount,
+        });
+
+        res.status(404).json({
+          error:
+            "No users in pool. Use allUsers=true to pair all users. If allUsers=true was used, this is a Firestore consistency issue - try again in a few seconds.",
+          debug: {
+            poolMetadata: {
+              currentShard: poolData?.currentShard,
+              shardUserCounts: poolData?.shardUserCounts,
+              userCount: poolData?.userCount,
+            },
+          },
+        });
+        return;
+      }
+
+      console.log(`📊 Found ${shardsSnapshot.size} shards to process`);
+
+      let totalPairs = 0;
+      let totalUnpaired = 0;
+
+      for (const shardDoc of shardsSnapshot.docs) {
+        const poolUsersSnapshot = await db
+          .collection("pools")
+          .doc(poolId)
+          .collection("shards")
+          .doc(shardDoc.id)
+          .collection("poolUsers")
+          .get();
+
+        console.log(
+          `📊 Shard ${shardDoc.id} has ${poolUsersSnapshot.size} users`
+        );
+
+        if (poolUsersSnapshot.empty) {
+          console.warn(`⚠️ Shard ${shardDoc.id} is empty, skipping`);
+          continue;
+        }
+
+        const result = await matchUsers(poolId, poolUsersSnapshot.docs, db);
+        totalPairs += result.pairsCreated;
+        totalUnpaired += result.unpairedUserIds.length;
+      }
 
       res.status(200).json({
         success: true,
-        message: `Created ${result.pairsCreated} pairs`,
-        pairs: result.pairsCreated,
-        unpaired: result.unpairedUserIds.length,
+        message: `Created ${totalPairs} pairs`,
+        pairs: totalPairs,
+        unpaired: totalUnpaired,
         mode: allUsers ? "all-users" : "pool-only",
       });
     } catch (error: any) {
       console.error("Error creating pairs:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+/**
+ * Migration function: Populate friends array in user docs
+ * Run once to migrate from friendships collection to friends array
+ * GET https://us-central1-secretbuddy-5637d.cloudfunctions.net/migrateFriendships
+ */
+export const migrateFriendships = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .https.onRequest(async (req, res) => {
+    try {
+      initAdmin();
+      const db = admin.firestore();
+
+      console.log("🔄 Starting friendships migration...");
+
+      // Get all accepted friendships
+      const friendshipsSnapshot = await db
+        .collection("friendships")
+        .where("status", "==", "accepted")
+        .get();
+
+      if (friendshipsSnapshot.empty) {
+        res.status(200).json({
+          success: true,
+          message: "No friendships to migrate",
+        });
+        return;
+      }
+
+      console.log(`📊 Found ${friendshipsSnapshot.size} accepted friendships`);
+
+      // Build friends map
+      const friendsMap = new Map<string, Set<string>>();
+
+      friendshipsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        const userId1 = data.userId1;
+        const userId2 = data.userId2;
+
+        if (!friendsMap.has(userId1)) {
+          friendsMap.set(userId1, new Set());
+        }
+        if (!friendsMap.has(userId2)) {
+          friendsMap.set(userId2, new Set());
+        }
+
+        friendsMap.get(userId1)!.add(userId2);
+        friendsMap.get(userId2)!.add(userId1);
+      });
+
+      console.log(`👥 Updating ${friendsMap.size} user documents...`);
+
+      // Update user documents with friends arrays
+      const batch = db.batch();
+      let updates = 0;
+
+      for (const [userId, friendsSet] of friendsMap.entries()) {
+        const userRef = db.collection("users").doc(userId);
+        batch.update(userRef, {
+          friends: Array.from(friendsSet),
+        });
+        updates++;
+
+        // Commit in batches of 500 (Firestore limit)
+        if (updates % 500 === 0) {
+          await batch.commit();
+          console.log(`✅ Committed ${updates} updates...`);
+        }
+      }
+
+      // Commit remaining
+      if (updates % 500 !== 0) {
+        await batch.commit();
+      }
+
+      console.log(`✅ Migration complete: Updated ${updates} users`);
+
+      res.status(200).json({
+        success: true,
+        message: `Migrated friendships for ${updates} users`,
+        updates,
+      });
+    } catch (error: any) {
+      console.error("Migration error:", error);
       res.status(500).json({
         success: false,
         error: error.message,
@@ -1381,6 +1758,20 @@ export const manualCreatePools = functions
           status: "open",
           userCount: 0,
           pairsCount: 0,
+          // Sharding metadata (IMPORTANT: needed for sharded pool system)
+          currentShard: 0,
+          shardUserCounts: { 0: 0 },
+        });
+        // Also create initial shard document (shard_0) so shards collection exists
+        const shardRef = db
+          .collection("pools")
+          .doc(poolId)
+          .collection("shards")
+          .doc("shard_0");
+        batch.set(shardRef, {
+          shardId: "shard_0",
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          userCount: 0,
         });
       }
 
