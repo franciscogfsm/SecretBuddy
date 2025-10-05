@@ -2,6 +2,7 @@ export type RootStackParamList = {
   Splash: undefined;
   AuthOptions: undefined;
   Onboarding: { mode?: "signup" | "signin" };
+  ForgotPassword: undefined;
   MainTabs: undefined;
   Settings: { scrollTo?: "notifications" | "appSettings" } | undefined;
   SafetyGuidelines: undefined;

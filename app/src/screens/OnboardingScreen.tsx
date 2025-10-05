@@ -156,6 +156,51 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     setErrorModal((prev) => ({ ...prev, visible: false }));
   };
 
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  const handleForgotPassword = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!normalizedEmail) {
+      showCustomError(
+        "Email required",
+        "Please enter your email address.",
+        "warning"
+      );
+      return;
+    }
+
+    if (!emailPattern.test(normalizedEmail)) {
+      showCustomError(
+        "Invalid Email",
+        "Please enter a valid email address.",
+        "warning"
+      );
+      return;
+    }
+
+    try {
+      setForgotLoading(true);
+      // import from firebaseAuth wrapper
+      const { sendPasswordResetEmail } = await import("../lib/firebaseAuth");
+      const { auth } = await import("../config/firebase");
+
+      await sendPasswordResetEmail(auth, normalizedEmail);
+
+      showCustomError(
+        "Reset Email Sent",
+        "Check your inbox for password reset instructions. If you don't see it, check your spam folder.",
+        "info"
+      );
+    } catch (err) {
+      const errorInfo = getCustomErrorMessage(err);
+      showCustomError(errorInfo.title, errorInfo.message);
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
   // Format Firebase errors into user-friendly messages
   const getCustomErrorMessage = (error: any) => {
     if (error?.code) {
@@ -844,13 +889,8 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                       </Text>
                       <TouchableOpacity
                         style={styles.forgotLink}
-                        onPress={() =>
-                          showCustomError(
-                            "Forgot Password?",
-                            "Contact support@secretbuddy.app for help resetting your password.",
-                            "info"
-                          )
-                        }
+                        onPress={() => navigation.navigate("ForgotPassword")}
+                        activeOpacity={0.7}
                       >
                         <Text style={styles.forgotLinkLabel}>
                           Forgot password?

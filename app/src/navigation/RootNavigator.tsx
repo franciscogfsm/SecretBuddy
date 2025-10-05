@@ -7,6 +7,7 @@ import { SplashScreen } from "../screens/SplashScreen";
 import { RevealScreen } from "../screens/RevealScreen";
 import { OnboardingScreen } from "../screens/OnboardingScreen";
 import { AuthOptionsScreen } from "../screens/AuthOptionsScreen";
+import { ForgotPasswordScreen } from "../screens/ForgotPasswordScreen";
 import { ChatScreen } from "../screens/ChatScreen";
 import { FriendsScreen } from "../screens/FriendsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
@@ -68,6 +69,10 @@ export const RootNavigator = () => {
           <Stack.Screen name="Splash" component={SplashScreen} />
           <Stack.Screen name="AuthOptions" component={AuthOptionsScreen} />
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+          <Stack.Screen
+            name="ForgotPassword"
+            component={ForgotPasswordScreen}
+          />
         </>
       )}
       <Stack.Screen name="MainTabs" component={HomeTabs} />

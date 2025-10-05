@@ -10,11 +10,13 @@ export const {
   GoogleAuthProvider,
   OAuthProvider,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   onAuthStateChanged,
   signInWithCredential,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
+  deleteUser,
   initializeAuth,
   getAuth,
 } = webAuthModule;

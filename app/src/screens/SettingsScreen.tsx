@@ -21,6 +21,8 @@ import { useAuth } from "../context/AuthContext";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
+import { deleteUser } from "../lib/firebaseAuth";
+import { auth } from "../config/firebase";
 
 export const SettingsScreen = () => {
   const insets = useSafeAreaInsets();
@@ -449,11 +451,15 @@ export const SettingsScreen = () => {
                     style: "destructive",
                     onPress: async () => {
                       try {
-                        // Delete profile from Firestore
+                        // Delete profile from Firestore first
                         await deleteProfile();
 
-                        // Sign out and clear local state
-                        await signOut();
+                        // Delete the Firebase Auth user account
+                        if (auth.currentUser) {
+                          await deleteUser(auth.currentUser);
+                        }
+
+                        // Clear local state
                         setProfile(null);
 
                         // Navigate to onboarding
