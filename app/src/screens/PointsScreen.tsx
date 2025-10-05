@@ -20,6 +20,12 @@ import {
   ALL_BADGES,
   Badge,
 } from "../services/badgeService";
+import {
+  getGlobalLeaderboard,
+  getCountryLeaderboard,
+  getFriendsLeaderboard,
+  LeaderboardEntry,
+} from "../services/leaderboardService";
 
 export const PointsScreen = () => {
   const { user } = useAuth();
@@ -31,6 +37,15 @@ export const PointsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [unlockedBadges, setUnlockedBadges] = useState<Badge[]>([]);
   const [totalBadgesCount, setTotalBadgesCount] = useState(0);
+
+  // Leaderboard state
+  const [friendsLeaderboard, setFriendsLeaderboard] = useState<
+    LeaderboardEntry[]
+  >([]);
+  const [countryLeaderboard, setCountryLeaderboard] = useState<
+    LeaderboardEntry[]
+  >([]);
+  const [loadingLeaderboards, setLoadingLeaderboards] = useState(true);
 
   // Load user badges from database
   useEffect(() => {
@@ -54,6 +69,49 @@ export const PointsScreen = () => {
 
     loadBadges();
   }, [user?.uid]);
+
+  // Load leaderboards
+  useEffect(() => {
+    if (!user) {
+      setLoadingLeaderboards(false);
+      return;
+    }
+
+    const loadLeaderboards = async () => {
+      try {
+        setLoadingLeaderboards(true);
+
+        // Load both leaderboards in parallel
+        const [friendsData, countryData] = await Promise.all([
+          getFriendsLeaderboard(user.uid).catch((err) => {
+            console.error("Error loading friends leaderboard:", err);
+            return {
+              success: false,
+              type: "friends" as const,
+              leaderboard: [],
+            };
+          }),
+          getCountryLeaderboard(user.uid, 10).catch((err) => {
+            console.error("Error loading country leaderboard:", err);
+            return {
+              success: false,
+              type: "country" as const,
+              leaderboard: [],
+            };
+          }),
+        ]);
+
+        setFriendsLeaderboard(friendsData.leaderboard || []);
+        setCountryLeaderboard(countryData.leaderboard || []);
+      } catch (error) {
+        console.error("Error loading leaderboards:", error);
+      } finally {
+        setLoadingLeaderboards(false);
+      }
+    };
+
+    loadLeaderboards();
+  }, [user?.uid, isFocused]); // Reload when screen is focused
 
   // Calculate level based on points
   const level = Math.floor(points / 50) + 1;
@@ -88,18 +146,28 @@ export const PointsScreen = () => {
     },
   ];
 
-  // Mock leaderboards (can be enhanced with real data later)
+  // Leaderboards with real data
   const leaderboards = {
-    friends: [
-      { name: "You", points: points },
-      { name: "Lumi", points: Math.max(0, points - 25) },
-      { name: "Kai", points: Math.max(0, points - 60) },
-    ],
-    country: [
-      { name: "Nova", points: points + 460 },
-      { name: "You", points: points },
-      { name: "Rune", points: Math.max(0, points - 30) },
-    ],
+    friends:
+      friendsLeaderboard.length > 0
+        ? friendsLeaderboard.slice(0, 3).map((entry) => ({
+            displayName:
+              entry.userId === user?.uid ? "You" : entry.displayName || "User",
+            username: entry.username || undefined,
+            points: entry.points,
+            userId: entry.userId,
+          }))
+        : [{ displayName: "No friends yet", points: 0, userId: "" }],
+    country:
+      countryLeaderboard.length > 0
+        ? countryLeaderboard.slice(0, 3).map((entry) => ({
+            displayName:
+              entry.userId === user?.uid ? "You" : entry.displayName || "User",
+            username: entry.username || undefined,
+            points: entry.points,
+            userId: entry.userId,
+          }))
+        : [{ displayName: "No data", points: 0, userId: "" }],
   };
 
   useFocusEffect(
@@ -120,21 +188,6 @@ export const PointsScreen = () => {
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="automatic"
       >
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>Points &amp; Badges</Text>
-            <Text style={styles.subtitle}>
-              Stay consistent to unlock new gradients, frames, and special
-              prompts.
-            </Text>
-          </View>
-          <View style={styles.pill}>
-            <Text style={styles.pillLabel}>
-              Lvl {level} • {levelName}
-            </Text>
-          </View>
-        </View>
-
         <View style={styles.highlightWrapper}>
           <LinearGradient
             colors={["rgba(156, 107, 255, 0.65)", "rgba(255, 79, 183, 0.35)"]}
@@ -245,7 +298,7 @@ export const PointsScreen = () => {
               <Text style={styles.boardTitle}>{label.toUpperCase()}</Text>
               {data.map((item, index) => (
                 <View
-                  key={item.name}
+                  key={`${label}-${item.userId || item.displayName}-${index}`}
                   style={[
                     styles.boardRow,
                     index === 0 && styles.boardRowActive,
@@ -255,9 +308,29 @@ export const PointsScreen = () => {
                     <View style={styles.rankPill}>
                       <Text style={styles.rankText}>{index + 1}</Text>
                     </View>
-                    <Text style={styles.boardName}>{item.name}</Text>
+                    <View style={styles.nameWrap}>
+                      <Text
+                        style={styles.boardName}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {item.displayName}
+                      </Text>
+                      {"username" in item && item.username ? (
+                        <Text
+                          style={styles.boardUsername}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          @{item.username}
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.pointsBadge}>
+                      <Text style={styles.boardPoints}>{item.points} pts</Text>
+                    </View>
                   </View>
-                  <Text style={styles.boardPoints}>{item.points} pts</Text>
                 </View>
               ))}
             </View>
@@ -455,7 +528,7 @@ const styles = StyleSheet.create({
   boardRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     paddingVertical: 8,
     borderRadius: 16,
     paddingHorizontal: 12,
@@ -467,6 +540,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+  },
+  nameWrap: {
+    flex: 1,
+    minWidth: 0, // allow text to shrink
   },
   rankPill: {
     width: 26,
@@ -488,6 +565,24 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textPrimary,
     fontWeight: "600",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  pointsBadge: {
+    marginLeft: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.04)",
+    alignSelf: "center",
+  },
+  boardUsername: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+    fontSize: 12,
   },
   loadingContainer: {
     flex: 1,

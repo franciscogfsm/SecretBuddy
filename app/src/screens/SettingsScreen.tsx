@@ -7,6 +7,8 @@ import {
   Switch,
   Alert,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +23,10 @@ import { colors, typography } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
 
 export const SettingsScreen = () => {
+  const insets = useSafeAreaInsets();
+  const headerPaddingTop = Math.max(insets.top - 12, 12);
+  const HEADER_HEIGHT = 110; // approximate header height including padding
+  const contentTopPadding = HEADER_HEIGHT + insets.top;
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute();
@@ -123,19 +129,27 @@ export const SettingsScreen = () => {
   };
 
   return (
-    <GradientBackground gradient="midnight">
-      {/* Header - Fixed at top */}
-      <View style={styles.header}>
+    <GradientBackground gradient="midnight" noPadding>
+      {/* Header - Rounded gradient matching TopHeader */}
+      <LinearGradient
+        colors={["rgba(0,0,0,0.9)", "#070319", "#1C0E3C"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.header, { paddingTop: 12 + headerPaddingTop }]}
+      >
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
         <View style={styles.headerSpacer} />
-      </View>
+      </LinearGradient>
 
       <ScrollView
         ref={scrollViewRef}
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[
+          styles.container,
+          { paddingTop: contentTopPadding },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Security Badge - Prominent and standalone */}
@@ -539,11 +553,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingTop: 70,
-    paddingBottom: 20,
-    backgroundColor: "rgba(6, 0, 18, 0.95)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.05)",
+    paddingBottom: 12,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
   },
 
   backButton: {

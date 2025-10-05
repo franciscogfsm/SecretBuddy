@@ -109,6 +109,22 @@ service firebase.storage {
     }
     
     // ============================================
+    // REPORTED PHOTOS
+    // ============================================
+    match /reported-photos/{fileName} {
+      // Read: Authenticated users can view reported photos (for moderation)
+      allow read: if isSignedIn();
+      
+      // Write: Authenticated users can upload reported photos, must be image under 5MB
+      allow write: if isSignedIn()
+        && isImage()
+        && isUnder5MB();
+      
+      // Delete: Authenticated users can delete reported photos
+      allow delete: if isSignedIn();
+    }
+    
+    // ============================================
     // DEFAULT DENY ALL
     // ============================================
     match /{allPaths=**} {

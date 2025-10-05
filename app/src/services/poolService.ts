@@ -42,7 +42,6 @@ export const getServerTimeOffset = async (): Promise<number> => {
 
       // Check if cache is still valid (less than 1 hour old)
       if (now - cache.cachedAt < SERVER_TIME_CACHE_DURATION) {
-        console.log("✅ Using cached server time offset:", cache.offset);
         return cache.offset;
       }
     }
@@ -195,9 +194,6 @@ export const getCurrentPool = async (): Promise<Pool | null> => {
     if (currentPoolCache) {
       const cacheAge = Date.now() - currentPoolCache.cachedAt;
       if (currentPoolCache.hour === hour && cacheAge < POOL_CACHE_DURATION) {
-        console.log(
-          `✅ Using cached pool (age: ${Math.round(cacheAge / 1000)}s)`
-        );
         return currentPoolCache.pool;
       }
     }

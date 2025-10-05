@@ -57,6 +57,17 @@ export const createUserProfile = async (
   try {
     // Check if username is already taken
     if (data.username) {
+      // Sanitize and validate username server-side as well
+      const candidate = data.username.trim().toLowerCase();
+      if (candidate.length < 3 || candidate.length > 20) {
+        throw new Error("Username must be between 3 and 20 characters.");
+      }
+      if (!/^[a-z0-9_]+$/.test(candidate)) {
+        throw new Error(
+          "Username can only contain lowercase letters, numbers, and underscores."
+        );
+      }
+
       const usernameAvailable = await isUsernameAvailable(data.username);
       if (!usernameAvailable) {
         throw new Error(

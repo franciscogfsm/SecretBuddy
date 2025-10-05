@@ -50,8 +50,12 @@ export const HomeScreen = () => {
 
   // Pre-load user profile immediately when entering HomeScreen
   // This ensures profile data is ready when user navigates to ProfileScreen
-  const { profile: firestoreProfile, loading: profileLoading } =
-    useUserProfile();
+  const {
+    profile: firestoreProfile,
+    loading: profileLoading,
+    points,
+    streak,
+  } = useUserProfile();
 
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -76,11 +80,6 @@ export const HomeScreen = () => {
 
         setTimeOffset(offset);
         setServerTime(new Date(Date.now() + offset));
-
-        console.log(
-          `⏱️  Server time offset: ${offset}ms (${Math.round(offset / 1000)}s)`
-        );
-        console.log(`✅ Using cached server time - no Firestore read needed`);
       } catch (error) {
         console.error("❌ Failed to fetch server time offset:", error);
       }
@@ -1333,7 +1332,6 @@ export const HomeScreen = () => {
             {/* Prompt Container */}
             <View style={styles.photoChallengePromptContainer}>
               <View style={styles.promptLabelRow}>
-                <Ionicons name="bulb" size={16} color={colors.accentYellow} />
                 <Text style={styles.photoChallengePromptLabel}>
                   Today's Prompt
                 </Text>
@@ -1353,7 +1351,7 @@ export const HomeScreen = () => {
 
             {/* Helper text */}
             <Text style={styles.photoChallengeHelperText}>
-              💡 Use back camera only • No selfies allowed
+              Use back camera only • No selfies allowed
             </Text>
           </View>
         )}
@@ -1573,11 +1571,11 @@ export const HomeScreen = () => {
         <View style={styles.metaSection}>
           <View style={styles.metaCard}>
             <Text style={styles.metaTitle}>Streak</Text>
-            <Text style={styles.metaValue}>5 days 🔥</Text>
+            <Text style={styles.metaValue}>{streak} days 🔥</Text>
           </View>
           <View style={styles.metaCard}>
             <Text style={styles.metaTitle}>Points</Text>
-            <Text style={styles.metaValue}>420 pts</Text>
+            <Text style={styles.metaValue}>{points} pts</Text>
           </View>
         </View>
       </ScrollView>
@@ -1786,10 +1784,10 @@ const styles = StyleSheet.create({
   // Photo Challenge Card (integrated in HomeScreen)
   photoChallengeCard: {
     backgroundColor: colors.surface,
-    borderRadius: 24,
-    marginHorizontal: 8,
-    marginVertical: 12,
-    padding: 20,
+    borderRadius: isSmallScreen ? 20 : 24,
+    marginHorizontal: isSmallScreen ? 12 : 8,
+    marginVertical: isSmallScreen ? 8 : 12,
+    padding: isSmallScreen ? 16 : 20,
     borderWidth: 2,
     borderColor: colors.accentPurple + "30",
     shadowColor: colors.accentPurple,
@@ -1817,23 +1815,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 20,
+    marginBottom: isSmallScreen ? 16 : 20,
   },
 
   photoChallengeHeaderLeft: {
-    flexDirection: "row",
+    flexDirection: isSmallScreen ? "column" : "row",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: isSmallScreen ? 16 : 20,
+    gap: isSmallScreen ? 12 : 0,
   },
 
   photoChallengeIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
+    width: isSmallScreen ? 50 : 60,
+    height: isSmallScreen ? 50 : 60,
+    borderRadius: isSmallScreen ? 16 : 18,
     backgroundColor: colors.accentPurple + "20",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 16,
+    marginRight: isSmallScreen ? 0 : 16,
     borderWidth: 2,
     borderColor: colors.accentPurple + "40",
     position: "relative",
@@ -1851,9 +1850,10 @@ const styles = StyleSheet.create({
   photoChallengeTitle: {
     ...typography.title,
     color: colors.textPrimary,
-    fontSize: 22,
+    fontSize: isSmallScreen ? 18 : 22,
     fontWeight: "700",
     marginBottom: 2,
+    textAlign: "center",
   },
 
   photoChallengeSubtitle: {
@@ -1866,14 +1866,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: isSmallScreen ? 12 : 14,
+    paddingVertical: isSmallScreen ? 6 : 8,
     borderRadius: 20,
     borderWidth: 1.5,
     backgroundColor: colors.accentPurple + "20",
     borderColor: colors.accentPurple + "50",
     gap: 6,
-    marginBottom: 24,
+    marginBottom: isSmallScreen ? 20 : 24,
   },
 
   photoChallengeTimerUrgent: {
@@ -1895,9 +1895,9 @@ const styles = StyleSheet.create({
 
   photoChallengePromptContainer: {
     backgroundColor: "rgba(255, 255, 255, 0.04)",
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: isSmallScreen ? 16 : 20,
+    padding: isSmallScreen ? 16 : 20,
+    marginBottom: isSmallScreen ? 16 : 20,
     borderWidth: 1,
     borderColor: colors.accentPurple + "20",
   },
@@ -1922,8 +1922,8 @@ const styles = StyleSheet.create({
   photoChallengePromptText: {
     ...typography.subtitle,
     color: colors.textPrimary,
-    fontSize: 18,
-    lineHeight: 26,
+    fontSize: isSmallScreen ? 16 : 18,
+    lineHeight: isSmallScreen ? 24 : 26,
     textAlign: "center",
     fontWeight: "600",
   },
@@ -1993,9 +1993,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.accentPurple,
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
+    borderRadius: isSmallScreen ? 14 : 16,
+    paddingVertical: isSmallScreen ? 14 : 16,
+    paddingHorizontal: isSmallScreen ? 20 : 24,
     gap: 12,
     shadowColor: colors.accentPurple,
     shadowOffset: {
@@ -2005,22 +2005,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 12,
     elevation: 8,
-    marginBottom: 16,
+    marginBottom: isSmallScreen ? 14 : 16,
   },
 
   photoChallengeActionText: {
     ...typography.subtitle,
     color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: isSmallScreen ? 16 : 18,
     fontWeight: "700",
   },
 
   photoChallengeHelperText: {
     ...typography.caption,
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: isSmallScreen ? 12 : 13,
     textAlign: "center",
-    lineHeight: 18,
+    lineHeight: isSmallScreen ? 16 : 18,
   },
 
   photoChallengeSecondaryButtonText: {

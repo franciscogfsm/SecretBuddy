@@ -195,11 +195,6 @@ export const getUnviewedPhotos = async (
     ) {
       const cacheAge = Date.now() - unviewedPhotosCache.cachedAt;
       if (cacheAge < PHOTOS_CACHE_DURATION) {
-        console.log(
-          `✅ Using cached unviewed photos (age: ${Math.round(
-            cacheAge / 1000
-          )}s)`
-        );
         return unviewedPhotosCache.photos;
       }
     }

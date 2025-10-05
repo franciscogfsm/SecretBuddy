@@ -631,12 +631,20 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                 <InputField
                   label="Username"
                   value={username}
-                  onChangeText={setUsername}
+                  onChangeText={(text) => {
+                    // enforce lowercase, allowed chars, and max length
+                    const sanitized = text
+                      .toLowerCase()
+                      .replace(/[^a-z0-9_]/g, "")
+                      .slice(0, 20);
+                    setUsername(sanitized);
+                  }}
                   placeholder="@johndoe123"
                   autoComplete="username"
                   textContentType="username"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  maxLength={20}
                 />
                 <Text style={styles.usernameHint}>
                   Your unique @username (3-20 characters, lowercase letters,
