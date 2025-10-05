@@ -82,6 +82,8 @@ export const PhotoViewModal: React.FC<PhotoViewModalProps> = ({
         transparent
         animationType="fade"
         onRequestClose={onClose}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
       >
         <View style={styles.overlay}>
           {/* Full screen image container */}
@@ -123,6 +125,7 @@ export const PhotoViewModal: React.FC<PhotoViewModalProps> = ({
                   style={styles.reportButton}
                   onPress={handleReport}
                   activeOpacity={0.8}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 >
                   <Ionicons name="flag" size={20} color={colors.danger} />
                   <Text style={styles.reportButtonText}>Report</Text>
