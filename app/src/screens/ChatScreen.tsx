@@ -55,6 +55,9 @@ export const ChatScreen = () => {
   const [partnerPhoto, setPartnerPhoto] = useState<string | null>(null);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [partnerProfileData, setPartnerProfileData] = useState<any>(null);
+  const [partnerEndedModalVisible, setPartnerEndedModalVisible] =
+    useState(false);
+  const partnerEndedTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [currentPair, setCurrentPair] = useState<poolService.Pair | null>(null);
 
   const flatListRef = useRef<FlatList<MessageType>>(null);
@@ -91,6 +94,15 @@ export const ChatScreen = () => {
       clearTimeout(timer);
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Cleanup partner-ended auto-close timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (partnerEndedTimeoutRef.current) {
+        clearTimeout(partnerEndedTimeoutRef.current);
       }
     };
   }, []);
@@ -516,9 +528,37 @@ export const ChatScreen = () => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 300);
     } catch (error: any) {
-      console.error("Error sending message:", error);
+      // Avoid noisy console.error for expected conversation-end errors (handled by UI modal)
+      const errMsg = ((error && (error.message || String(error))) || "")
+        .toString()
+        .toLowerCase();
+      if (
+        !errMsg.includes("conversation has ended") &&
+        !errMsg.includes("conversation has expired")
+      ) {
+        console.error("Error sending message:", error);
+      }
+      // If the error indicates the conversation has ended/expired, show the
+      // in-app partner-ended modal (handle race condition) and avoid the native Alert.
+      const isEndedError =
+        error?.message?.toLowerCase().includes("conversation has ended") ||
+        error?.message?.toLowerCase().includes("conversation has expired");
 
-      // Show error message
+      if (isEndedError) {
+        setConversationEnded(true);
+        setPartnerEndedModalVisible(true);
+
+        if (partnerEndedTimeoutRef.current)
+          clearTimeout(partnerEndedTimeoutRef.current);
+        partnerEndedTimeoutRef.current = setTimeout(() => {
+          setPartnerEndedModalVisible(false);
+          navigation.goBack();
+        }, 2200);
+
+        return;
+      }
+
+      // Generic error fallback (network / other issues)
       Alert.alert(
         "Message Failed",
         error.message?.includes("offline") || error.message?.includes("network")
@@ -957,6 +997,33 @@ export const ChatScreen = () => {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Partner Ended Modal */}
+      <Modal
+        visible={partnerEndedModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPartnerEndedModalVisible(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setPartnerEndedModalVisible(false)}
+        >
+          <Pressable
+            style={styles.partnerEndedModalContent}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.partnerEndedHeader}>
+              <Ionicons name="warning" size={28} color={colors.accentPurple} />
+            </View>
+            <Text style={styles.partnerEndedTitle}>Oops — chat closed</Text>
+            <Text style={styles.partnerEndedText}>
+              Your chat partner ended the conversation. You'll be taken back to
+              the previous screen.
+            </Text>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -1291,5 +1358,38 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14,
     textAlign: "center",
+  },
+  partnerEndedModalContent: {
+    backgroundColor: colors.overlay,
+    borderRadius: 18,
+    padding: 20,
+    width: "100%",
+    maxWidth: 360,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+  },
+  partnerEndedHeader: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(156, 107, 255, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  partnerEndedTitle: {
+    ...typography.title,
+    color: colors.textPrimary,
+    fontSize: 20,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  partnerEndedText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
   },
 });

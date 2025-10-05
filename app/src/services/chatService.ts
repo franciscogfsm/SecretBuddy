@@ -204,7 +204,18 @@ export const sendMessage = async (
     console.log(`✅ Message sent to ${messagesCollection}:`, messageDoc.id);
     return messageDoc.id;
   } catch (error) {
-    console.error("❌ Error sending message:", error);
+    // Avoid noisy logs for expected conversation-end errors which are
+    // handled by the UI. Only log unexpected errors.
+    const errAny: any = error;
+    const msg = (errAny && (errAny.message || String(errAny)))
+      .toString()
+      .toLowerCase();
+    if (
+      !msg.includes("conversation has ended") &&
+      !msg.includes("conversation has expired")
+    ) {
+      console.error("❌ Error sending message:", error);
+    }
     throw error;
   }
 };
