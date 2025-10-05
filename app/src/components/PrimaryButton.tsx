@@ -32,10 +32,10 @@ export const PrimaryButton = ({
   >
     {variant === "primary" && (
       <LinearGradient
-        colors={[colors.accentTeal, colors.accentPurple]}
+        colors={[colors.accentPurple, "#a855f7", "#8b5cf6"]}
         style={[StyleSheet.absoluteFill, { borderRadius: 28 }]}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        end={{ x: 1, y: 0 }}
       />
     )}
     {loading ? (
@@ -65,11 +65,11 @@ const styles = StyleSheet.create({
   },
   primary: {
     backgroundColor: "transparent",
-    shadowColor: "rgba(168, 85, 247, 0.45)",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    elevation: 8,
+    shadowColor: colors.accentPurple,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   ghost: {
     backgroundColor: "rgba(255, 255, 255, 0.08)",
