@@ -782,11 +782,11 @@ export const ProfileScreen = () => {
               onPress={handleRemovePhoto}
               disabled={uploadingPhoto}
             >
-              <View style={styles.privacyCardContent}>
+              <View style={styles.removePhotoContent}>
                 <View style={styles.removePhotoIconContainer}>
                   <Ionicons
                     name="trash-outline"
-                    size={24}
+                    size={18}
                     color={colors.accentPink}
                   />
                 </View>
@@ -800,7 +800,7 @@ export const ProfileScreen = () => {
                 </View>
                 <Ionicons
                   name="chevron-forward"
-                  size={20}
+                  size={16}
                   color={colors.textSecondary}
                 />
               </View>
@@ -1510,10 +1510,10 @@ const styles = StyleSheet.create({
   },
 
   removePhotoIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: "rgba(255, 79, 183, 0.1)",
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 79, 183, 0.08)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1521,8 +1521,17 @@ const styles = StyleSheet.create({
   removePhotoLabel: {
     ...typography.subtitle,
     color: colors.accentPink,
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "600",
+  },
+
+  // Compact content layout for remove photo card (keeps other privacy cards untouched)
+  removePhotoContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 12,
   },
 
   // Footer Space
