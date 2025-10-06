@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.title,
     color: colors.textPrimary,
-    fontSize: isSmallScreen ? 20 : 22,
+    fontSize: isSmallScreen ? 25 : 30,
     fontWeight: "800",
     marginTop: 12,
     marginBottom: 8,
