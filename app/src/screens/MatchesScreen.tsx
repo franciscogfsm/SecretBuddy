@@ -10,7 +10,7 @@ import {
 } from "react-native";
 
 import { useNavigation, useIsFocused } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
+import Icon from "../components/Icon";
 import { LinearGradient } from "expo-linear-gradient";
 import { GradientBackground } from "../components/GradientBackground";
 import { TopHeader } from "../components/TopHeader";
@@ -178,11 +178,11 @@ export const MatchesScreen = () => {
             </Text>
             {isRevealed && (
               <View style={styles.revealedBadge}>
-                <Ionicons
-                  name="eye"
-                  size={10}
+                <Icon
+                  name="Eye"
+                  size={12}
                   color="#8B5CF6"
-                  style={{ marginRight: 4 }}
+                  style={{ marginRight: 6 }}
                 />
                 <Text style={styles.revealedBadgeText}>REVEALED</Text>
               </View>
@@ -197,11 +197,11 @@ export const MatchesScreen = () => {
 
           {/* Status Row */}
           <View style={styles.statusRow}>
-            <Ionicons
-              name={isRevealed ? "time" : "checkmark-done"}
-              size={14}
-              color={isRevealed ? colors.accentTeal : colors.textSecondary}
-            />
+            {isRevealed ? (
+              <Icon name="Clock" size={14} color={colors.accentTeal} />
+            ) : (
+              <Icon name="Check" size={14} color={colors.textSecondary} />
+            )}
             <Text
               style={[styles.statusText, isRevealed && styles.statusTextActive]}
             >
@@ -215,8 +215,8 @@ export const MatchesScreen = () => {
         {/* Right Indicator */}
         <View style={styles.rightIndicator}>
           {isRevealed && <View style={styles.notificationDot} />}
-          <Ionicons
-            name="chevron-forward"
+          <Icon
+            name="ChevronRight"
             size={20}
             color={
               isRevealed ? colors.accentPurple : "rgba(255, 255, 255, 0.3)"
@@ -254,7 +254,7 @@ export const MatchesScreen = () => {
             >
               <View style={styles.infoRow}>
                 <View style={styles.infoIconWrapper}>
-                  <Ionicons name="timer-outline" size={20} color="#8B5CF6" />
+                  <Icon name="Clock" size={20} color="#8B5CF6" />
                 </View>
                 <View style={styles.infoTextContainer}>
                   <Text style={styles.infoTitle}>How it works</Text>
@@ -273,8 +273,8 @@ export const MatchesScreen = () => {
             </View>
           ) : visibleChats.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Ionicons
-                name="chatbubbles-outline"
+              <Icon
+                name="ChatBubbleLeftEllipsis"
                 size={64}
                 color={colors.textSecondary}
               />
@@ -553,10 +553,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
+    // Do not center vertically for empty state — keep it near the top under the header
+    flex: 0,
+    justifyContent: "flex-start",
     alignItems: "center",
-    paddingVertical: 60,
+    paddingTop: 60,
+    paddingBottom: 24,
     gap: 16,
   },
   emptyTitle: {

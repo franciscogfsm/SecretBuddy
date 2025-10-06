@@ -104,6 +104,16 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
   // Slightly larger top padding and reduced sizing for Android devices
   const topPadding = insets.top + (Platform.OS === "android" ? 36 : 20);
   const topPaddingCompact = insets.top + (Platform.OS === "android" ? 28 : 12);
+  const NAME_MAX = 20; // maximum allowed characters for display name
+
+  // Normalize and truncate name input to prevent very long values
+  const handleNameChange = (text: string) => {
+    if (!text) return setName("");
+    // collapse multiple spaces, trim ends, and enforce max length
+    const collapsed = text.replace(/\s+/g, " ").replace(/^\s/, "");
+    const truncated = collapsed.slice(0, NAME_MAX);
+    setName(truncated);
+  };
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -270,7 +280,8 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       return;
     }
     if (user.displayName && !name) {
-      setName(user.displayName);
+      // Ensure pre-filled displayName is truncated to NAME_MAX
+      setName(user.displayName.slice(0, NAME_MAX));
     }
     if (user.email && !email) {
       setEmail(user.email);
@@ -294,6 +305,15 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       showCustomError(
         "Missing Details",
         "Your name and country help friends know it's really you.",
+        "warning"
+      );
+      return null;
+    }
+
+    if (trimmedName.length > NAME_MAX) {
+      showCustomError(
+        "Name Too Long",
+        `Name must be no more than ${NAME_MAX} characters.`,
         "warning"
       );
       return null;
@@ -388,9 +408,10 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
   };
 
   const enterApp = async (details?: PersonaDetails | null) => {
-    const derivedName = details?.trimmedName?.length
+    const rawDerivedName = details?.trimmedName?.length
       ? details.trimmedName
       : profile?.name ?? user?.displayName ?? "New member";
+    const derivedName = rawDerivedName.slice(0, NAME_MAX);
     const derivedUsername =
       details?.trimmedUsername ?? profile?.username ?? `user${Date.now()}`;
     const derivedAge = details?.numericAge ?? profile?.age ?? 18;
@@ -667,12 +688,22 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                 <InputField
                   label="Name"
                   value={name}
-                  onChangeText={setName}
+                  onChangeText={handleNameChange}
                   placeholder="John Doe"
                   autoComplete="name"
                   textContentType="name"
                   autoCapitalize="words"
+                  maxLength={NAME_MAX}
                 />
+                <Text
+                  style={{
+                    alignSelf: "flex-end",
+                    color: "rgba(201,192,255,0.6)",
+                    fontSize: 12,
+                  }}
+                >
+                  {name.length}/{NAME_MAX}
+                </Text>
                 <InputField
                   label="Username"
                   value={username}
