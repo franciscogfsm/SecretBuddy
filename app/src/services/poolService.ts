@@ -505,9 +505,16 @@ export const getPartnerIdFromPair = (pair: Pair, myUserId: string): string => {
 
 /**
  * Check if it's photo window time for my pair
+ * ✅ Uses server time offset to prevent device time manipulation
+ * @param pair - The pair to check
+ * @param serverTimeOffset - Optional offset in ms (server time - device time)
  */
-export const isInPhotoWindow = (pair: Pair): boolean => {
-  const now = new Date();
+export const isInPhotoWindow = (
+  pair: Pair,
+  serverTimeOffset: number = 0
+): boolean => {
+  // Use server-adjusted time instead of device time
+  const now = new Date(Date.now() + serverTimeOffset);
   const start = pair.photoWindowStart.toDate();
   const end = pair.photoWindowEnd.toDate();
 
@@ -542,12 +549,6 @@ export const isRevealTime = (
 
   // Reveal card shows from revealAt until midnight
   const isBeforeMidnight = now < midnight;
-
-  console.log(`🎭 Reveal check:
-    Server time: ${now.toISOString()}
-    Reveal at: ${revealTime.toISOString()}
-    Midnight: ${midnight.toISOString()}
-    Is reveal time: ${isBeforeMidnight}`);
 
   return isBeforeMidnight;
 };

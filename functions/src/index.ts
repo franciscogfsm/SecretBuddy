@@ -23,7 +23,11 @@ function getTasksClient(): CloudTasksClient {
 
 // Get configuration from Firebase functions config
 const config = functions.config();
-const PROJECT = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
+const PROJECT =
+  process.env.GCP_PROJECT ||
+  process.env.GCLOUD_PROJECT ||
+  functions.config().firebase?.projectId ||
+  admin.app().options.projectId;
 const LOCATION = config?.tasks?.location || "us-central1";
 const QUEUE = config?.tasks?.queue || "reveal-queue-now";
 const REVEAL_HANDLER_URL =
@@ -32,6 +36,14 @@ const REVEAL_HANDLER_URL =
 const PHOTO_HANDLER_URL =
   config?.tasks?.photo_handler_url ||
   `https://${LOCATION}-${PROJECT}.cloudfunctions.net/sendPhotoForPool`;
+const SINGLE_REVEAL_HANDLER_URL =
+  config?.tasks?.single_reveal_handler_url ||
+  `https://${LOCATION}-${PROJECT}.cloudfunctions.net/sendSingleRevealNotification`;
+
+// Log configuration for debugging
+console.log(
+  `🔧 Cloud Tasks Config: Project=${PROJECT}, Location=${LOCATION}, Queue=${QUEUE}`
+);
 
 // ==================== PHOTO CLEANUP ====================
 
@@ -163,17 +175,20 @@ export const manualCleanupPhotos = functions
 // ==================== DAILY CLEANUP ====================
 
 /**
- * Daily cleanup at 00:01 UTC (1 minute after new pools are created)
+ * Daily cleanup at 00:01 UTC (runs after all daily activities are complete)
+ * Since it runs at 1:01 AM UTC (after pools close, reveals happen, etc.),
+ * we can safely delete ALL data from previous day without checking expiration status.
  * Deletes:
  * 1. poolUsers from previous day
- * 2. pools from previous day (only if today's pools exist)
- * 3. messages older than 2 days
- * 4. photo challenges older than 1 day
- * 5. photos from storage older than 1 day
+ * 2. pools from previous day
+ * 3. pairs from previous day
+ * 4. messages older than 2 days
+ * 5. ALL photo challenges from previous day (hard delete)
+ * 6. photos from storage older than 1 day
  */
 export const dailyCleanup = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("1 0 * * *") // Every day at 00:01 UTC
+  .pubsub.schedule("0 0 * * *") // Every day at midnight UTC
   .timeZone("UTC")
   .onRun(async () => {
     initAdmin();
@@ -203,38 +218,60 @@ export const dailyCleanup = functions
       .where("poolId", "<", `${yesterdayStr}~`) // ~ is after all numbers/letters
       .get();
 
-    const poolUsersBatch = db.batch();
-    poolUsersSnapshot.forEach((doc) => {
-      poolUsersBatch.delete(doc.ref);
-      poolUsersDeleted++;
-    });
+    if (!poolUsersSnapshot.empty) {
+      const docs = poolUsersSnapshot.docs;
+      for (let i = 0; i < docs.length; i += 450) {
+        const chunk = docs.slice(i, i + 450);
+        const poolUsersBatch = db.batch();
+        chunk.forEach((doc) => {
+          poolUsersBatch.delete(doc.ref);
+          poolUsersDeleted++;
+        });
+        await poolUsersBatch.commit();
+      }
+    }
 
-    // end of dailyCleanup's inline code block
-    await poolUsersBatch.commit();
-
-    // 2. Delete pools from previous day (only if today's pools exist)
-    console.log("🗑️ Checking if today's pools exist...");
-    const todayStr = now.toISOString().split("T")[0];
-    const todayPoolsSnapshot = await db
+    // 2. Delete pools from previous day (always delete, not conditional)
+    console.log("🗑️ Deleting pools from previous day...");
+    const yesterdayPoolsSnapshot = await db
       .collection("pools")
-      .where("date", "==", todayStr)
+      .where("date", "==", yesterdayStr)
       .get();
 
-    if (!todayPoolsSnapshot.empty) {
-      console.log("✅ Today's pools exist, deleting previous day's pools...");
-      const yesterdayPoolsSnapshot = await db
-        .collection("pools")
-        .where("date", "==", yesterdayStr)
-        .get();
+    if (!yesterdayPoolsSnapshot.empty) {
+      const docs = yesterdayPoolsSnapshot.docs;
+      for (let i = 0; i < docs.length; i += 450) {
+        const chunk = docs.slice(i, i + 450);
+        const poolsBatch = db.batch();
+        chunk.forEach((doc) => {
+          poolsBatch.delete(doc.ref);
+          poolsDeleted++;
+        });
+        await poolsBatch.commit();
+      }
+    }
 
-      const poolsBatch = db.batch();
-      yesterdayPoolsSnapshot.forEach((doc) => {
-        poolsBatch.delete(doc.ref);
-        poolsDeleted++;
-      });
-      await poolsBatch.commit();
-    } else {
-      console.log("⚠️ Today's pools don't exist yet, keeping previous pools");
+    // 3. Delete pairs from previous day
+    console.log("🗑️ Deleting pairs from previous day...");
+    const pairsRef = db.collection("pairs");
+    const pairsQuery = pairsRef
+      .where("poolId", ">=", `${yesterdayStr}-0`)
+      .where("poolId", "<", `${yesterdayStr}~`);
+
+    const pairsSnapshot = await pairsQuery.get();
+    let pairsDeleted = 0;
+
+    if (!pairsSnapshot.empty) {
+      const docs = pairsSnapshot.docs;
+      for (let i = 0; i < docs.length; i += 450) {
+        const chunk = docs.slice(i, i + 450);
+        const pairsBatch = db.batch();
+        chunk.forEach((d) => {
+          pairsBatch.delete(d.ref);
+          pairsDeleted++;
+        });
+        await pairsBatch.commit();
+      }
     }
 
     // 3. Delete messages older than 2 days (using date-partitioned collections)
@@ -249,15 +286,19 @@ export const dailyCleanup = functions
     const messagesCollectionRef = db.collection(messageCollectionName);
 
     try {
-      // Use bulk delete for efficiency
-      const messagesSnapshot = await messagesCollectionRef.limit(500).get();
+      // Get all messages and delete in chunks
+      const messagesSnapshot = await messagesCollectionRef.get();
       if (!messagesSnapshot.empty) {
-        const bulkWriter = db.bulkWriter();
-        messagesSnapshot.docs.forEach((doc) => {
-          bulkWriter.delete(doc.ref);
-          messagesDeleted++;
-        });
-        await bulkWriter.close();
+        const docs = messagesSnapshot.docs;
+        for (let i = 0; i < docs.length; i += 450) {
+          const chunk = docs.slice(i, i + 450);
+          const messagesBatch = db.batch();
+          chunk.forEach((doc) => {
+            messagesBatch.delete(doc.ref);
+            messagesDeleted++;
+          });
+          await messagesBatch.commit();
+        }
         console.log(
           `✅ Deleted ${messagesDeleted} messages from ${messageCollectionName}`
         );
@@ -268,36 +309,20 @@ export const dailyCleanup = functions
       console.warn(`⚠️ Error deleting ${messageCollectionName}:`, e);
     }
 
-    // 4. Photo challenges auto-deleted by Firestore TTL (expireAt field)
-    // Note: GCS storage also auto-deleted by lifecycle rules (24h)
-    // Run additional cleanup to ensure expired top-level photoChallenge docs
-    // and per-user photoChallenges are soft-deleted and storage files removed.
-    console.log(
-      "ℹ️ Running additional photoChallenge cleanup (top-level + per-user)"
-    );
-
-    // Call shared cleanup first (handles unviewed 4h+ and per-user collectionGroup)
+    // 4. Photo challenges: Hard delete ALL from previous day (no expiration check needed)
+    console.log("🗑️ Hard deleting ALL photo challenges from previous day...");
     try {
-      const shared = await performCleanup();
-      photoChallengesDeleted =
-        (shared.softDeleted || 0) + (shared.softDeletedSub || 0);
-    } catch (e) {
-      console.warn("⚠️ performCleanup() failed:", e);
-      photoChallengesDeleted = 0;
-    }
-
-    // Now clean top-level `photoChallenge` collection for expired documents
-    try {
-      const expiredSnap = await db
+      const yesterdayPhotoChallengesSnapshot = await db
         .collection("photoChallenge")
-        .where("expireAt", "<", admin.firestore.Timestamp.now())
+        .where("poolId", ">=", `${yesterdayStr}-0`)
+        .where("poolId", "<", `${yesterdayStr}~`)
         .get();
 
-      let topDeleted = 0;
+      let photoChallengesDeleted = 0;
       let storageDeleted = 0;
 
-      if (!expiredSnap.empty) {
-        const docs = expiredSnap.docs;
+      if (!yesterdayPhotoChallengesSnapshot.empty) {
+        const docs = yesterdayPhotoChallengesSnapshot.docs;
 
         // Process in chunks to avoid large batches
         for (let i = 0; i < docs.length; i += 450) {
@@ -338,29 +363,27 @@ export const dailyCleanup = functions
           // Await deletions for this chunk
           await Promise.all(deletePromises);
 
-          // Soft-delete the Firestore documents in this chunk
+          // Hard delete the Firestore documents in this chunk
           for (const d of chunk) {
-            batch.update(d.ref, {
-              deleted: true,
-              deletedAt: admin.firestore.FieldValue.serverTimestamp(),
-              status: "expired",
-            });
-            topDeleted++;
+            batch.delete(d.ref);
+            photoChallengesDeleted++;
           }
 
           await batch.commit();
         }
       }
 
-      photoChallengesDeleted = photoChallengesDeleted + topDeleted;
-      photosDeletedFromStorage = storageDeleted; // Note: best-effort
+      console.log(
+        `✅ Hard deleted ${photoChallengesDeleted} photo challenges from ${yesterdayStr}`
+      );
     } catch (e) {
-      console.warn("⚠️ Error cleaning top-level photoChallenge collection:", e);
+      console.warn("⚠️ Error hard deleting photoChallenge collection:", e);
     }
 
     console.log("✅ Daily cleanup complete", {
       poolUsersDeleted,
       poolsDeleted,
+      pairsDeleted,
       messagesDeleted,
       photoChallengesDeleted,
       photosDeletedFromStorage,
@@ -371,62 +394,12 @@ export const dailyCleanup = functions
       success: true,
       poolUsersDeleted,
       poolsDeleted,
+      pairsDeleted,
       messagesDeleted,
       photoChallengesDeleted,
       photosDeletedFromStorage,
     };
   });
-// Scheduled cleanup: At 01:00 UTC delete/expire yesterday's pairs
-export const cleanupYesterdayPairs = functions
-  .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 1 * * *") // 01:00 UTC every day
-  .timeZone("UTC")
-  .onRun(async () => {
-    initAdmin();
-    const db = admin.firestore();
-
-    const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const dateStr = yesterday.toISOString().split("T")[0]; // YYYY-MM-DD
-
-    console.log(`🧹 Cleaning pairs from ${dateStr}`);
-
-    // Query pairs that reference yesterday's pools
-    // Pool IDs are in format `${dateStr}-${hour}h`
-    const pairsRef = db.collection("pairs");
-    const query = pairsRef
-      .where("poolId", ">=", `${dateStr}-0`)
-      .where("poolId", "<", `${dateStr}~`);
-
-    const snapshot = await query.get();
-    if (snapshot.empty) {
-      console.log("⚠️ No pairs found for yesterday");
-      return { success: true, processed: 0 };
-    }
-
-    let processed = 0;
-    // Process in chunks to avoid large batches
-    const docs = snapshot.docs;
-    for (let i = 0; i < docs.length; i += 450) {
-      const chunk = docs.slice(i, i + 450);
-      const batch = db.batch();
-      chunk.forEach((d) => {
-        // Soft-delete/expire the pair
-        batch.update(d.ref, {
-          status: "expired",
-          deleted: true,
-          deletedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        processed++;
-      });
-      await batch.commit();
-    }
-
-    console.log(`✅ Expired ${processed} pairs from ${dateStr}`);
-    return { success: true, processed };
-  });
-
 // ==================== POOL SYSTEM ====================
 
 /**
@@ -531,17 +504,17 @@ async function addUserToPoolShard(
 
 /**
  * Create daily hourly pools at midnight (00:00 UTC)
- * ✅ UPDATED: Creates 8 hourly pools: 09:00-16:00 UTC (10:00-17:00 Portugal)
+ * ✅ UPDATED: Creates 8 hourly pools: 08:00-15:00 UTC (09:00-16:00 Portugal)
  * Each pool:
- * - Opens at the hour (e.g., 09:00 UTC = 10:00 Portugal)
- * - Closes and pairs at the next hour (e.g., 10:00 UTC = 11:00 Portugal)
- * - Users get 2 photo notifications between join time and 21:00 UTC (22:00 Portugal)
- * - Reveal is always between 21:00-21:59 UTC (22:00-22:59 Portugal)
+ * - Opens at the hour (e.g., 08:00 UTC = 09:00 Portugal)
+ * - Closes and pairs at the next hour (e.g., 09:00 UTC = 10:00 Portugal)
+ * - Users get 2 photo notifications between join time and 19:45 UTC (20:45 Portugal)
+ * - Reveal is always between 20:00-20:59 UTC (21:00-21:59 Portugal)
  * - Uses sharding system to handle 100k+ users per pool
  */
 export const createDailyPools = functions
   .runWith({ timeoutSeconds: 60, memory: "256MB" })
-  .pubsub.schedule("0 0 * * *") // Every day at midnight UTC
+  .pubsub.schedule("1 0 * * *") // Every day at 00:01 UTC
   .timeZone("UTC")
   .onRun(async () => {
     initAdmin();
@@ -552,59 +525,66 @@ export const createDailyPools = functions
 
     console.log(`📅 Creating hourly pools for ${dateStr}`);
 
-    // ✅ Create 8 hourly pools: 9h-16h UTC (10h-17h Portugal)
+    // ✅ Create 8 hourly pools: 8h-15h UTC (9h-16h Portugal)
     const poolHours = [9, 10, 11, 12, 13, 14, 15, 16];
     const batch = db.batch();
 
-    // Random reveal time between 21:00-22:00 (same for all pools)
-    // ✅ FIX: Reveal only 21:00-21:59 (not 22:xx)
-    const revealHour = 21;
+    // Random reveal time between 21:00-22:00 Portugal time (20:00-21:00 UTC)
+    const revealHour = 20; // 20:00 UTC = 21:00 Portugal
     const revealMin = Math.floor(Math.random() * 60); // 0-59 minutes
     const revealAt = new Date(now);
     revealAt.setHours(revealHour, revealMin, 0, 0);
 
+    // SAFETY CHECK: Ensure reveal time is never 21:xx or later (should be 20:00-20:59 UTC)
+    if (revealAt.getHours() >= 21) {
+      console.error(
+        `🚨 CRITICAL: Reveal time calculated as ${revealAt.getHours()}:${revealAt.getMinutes()} - clamping to 20:59`
+      );
+      revealAt.setHours(20, 59, 0, 0);
+    }
+
     for (const hour of poolHours) {
       const poolId = `${dateStr}-${hour}h`;
 
-      // Join window: From hour:00 to (hour+1):00
+      // Join window: From (hour-1):00 to hour:00
       const joinWindowStart = new Date(now);
-      joinWindowStart.setHours(hour, 0, 0, 0);
+      joinWindowStart.setHours(hour - 1, 0, 0, 0);
 
       const joinWindowEnd = new Date(now);
-      joinWindowEnd.setHours(hour + 1, 0, 0, 0);
+      joinWindowEnd.setHours(hour, 0, 0, 0);
 
-      // Photo notification window: From hour:00 to 21:00 (2 photos)
+      // Photo notification window: From (hour-1):00 to 19:45 (2 photos)
       const photoWindowStart = new Date(now);
-      photoWindowStart.setHours(hour, 0, 0, 0);
+      photoWindowStart.setHours(hour - 1, 0, 0, 0);
 
       const photoWindowEnd = new Date(now);
-      photoWindowEnd.setHours(21, 0, 0, 0);
+      photoWindowEnd.setHours(19, 45, 0, 0);
 
-      // Calculate 2 photo times evenly spaced between hour and 21:00
-      // Only if there's time (hour < 21)
-      // ✅ FIX: Last photo must be max 20:45 (not later)
+      // Calculate 2 photo times evenly spaced between hour and 19:45
+      // Only if there's time (hour < 20)
+      // ✅ FIX: Last photo must be max 19:45 (not later)
       const photoTimes: Date[] = [];
-      if (hour < 21) {
-        const hoursAvailable = 21 - hour;
+      if (hour < 20) {
+        const hoursAvailable = 19.75 - (hour - 1);
 
         if (hoursAvailable >= 2) {
           // Space 2 photos evenly
           const spacing = hoursAvailable / 2;
 
           // First photo: hour + spacing/2
-          const photo1Hour = hour + Math.floor(spacing / 2);
+          const photo1Hour = hour - 1 + Math.floor(spacing / 2);
           const photo1Min = Math.floor(Math.random() * 60);
           const photo1 = new Date(now);
           photo1.setHours(photo1Hour, photo1Min, 0, 0);
           photoTimes.push(photo1);
 
-          // Second photo: hour + spacing + spacing/2 (but max 20:45)
-          let photo2Hour = hour + Math.floor(spacing * 1.5);
+          // Second photo: hour + spacing + spacing/2 (but max 19:45)
+          let photo2Hour = hour - 1 + Math.floor(spacing * 1.5);
           let photo2Min = Math.floor(Math.random() * 60);
 
-          // ✅ Enforce max 20:45
-          if (photo2Hour > 20 || (photo2Hour === 20 && photo2Min > 45)) {
-            photo2Hour = 20;
+          // ✅ Enforce max 19:45
+          if (photo2Hour > 19 || (photo2Hour === 19 && photo2Min > 45)) {
+            photo2Hour = 19;
             photo2Min = Math.min(45, Math.floor(Math.random() * 46)); // 0-45
           }
 
@@ -612,12 +592,12 @@ export const createDailyPools = functions
           photo2.setHours(photo2Hour, photo2Min, 0, 0);
           photoTimes.push(photo2);
         } else if (hoursAvailable === 1) {
-          // Only 1 hour left, send 1 photo at random time (but max 20:45)
-          let photoHour = hour;
+          // Only 1 hour left, send 1 photo at random time (but max 19:45)
+          let photoHour = hour - 1;
           let photoMin = Math.floor(Math.random() * 60);
 
-          // ✅ Enforce max 20:45 if hour is 20
-          if (photoHour === 20) {
+          // ✅ Enforce max 19:45 if hour is 20
+          if (photoHour === 19) {
             photoMin = Math.min(45, Math.floor(Math.random() * 46)); // 0-45
           }
 
@@ -625,12 +605,17 @@ export const createDailyPools = functions
           photo.setHours(photoHour, photoMin, 0, 0);
           photoTimes.push(photo);
         }
-        // If hour >= 20, no photos (too close to reveal)
+        // If hour >= 19, no photos (too close to reveal)
       }
 
       // Schedule Cloud Tasks for each photo time instead of storing in Firestore
       for (const photoTime of photoTimes) {
-        await schedulePhotoTask(poolId, photoTime);
+        const taskName = await schedulePhotoTask(poolId, photoTime);
+        if (!taskName) {
+          console.error(
+            `❌ Failed to schedule photo task for pool ${poolId} at ${photoTime.toISOString()}`
+          );
+        }
       }
 
       const poolRef = db.collection("pools").doc(poolId);
@@ -665,15 +650,29 @@ export const createDailyPools = functions
         userCount: 0,
       });
 
+      // Log photo times for debugging
+      const photoTimesStr = photoTimes.map((pt) => pt.toISOString()).join(", ");
       console.log(
-        `✅ Pool ${poolId} created: Join ${hour}:00-${hour + 1}:00, Photos: ${
+        `✅ Pool ${poolId} created: Join ${hour - 1}:00-${hour}:00, Photos: ${
           photoTimes.length
-        }, Reveal ${revealHour}:${revealMin.toString().padStart(2, "0")}`
+        } [${photoTimesStr}], Reveal ${revealHour}:${revealMin
+          .toString()
+          .padStart(2, "0")} UTC (${revealHour + 1}:${revealMin
+          .toString()
+          .padStart(2, "0")} Portugal)`
       );
     }
 
     await batch.commit();
     console.log(`✅ Created ${poolHours.length} hourly pools for ${dateStr}`);
+
+    // Schedule ONE reveal task for all pools (since they all have the same reveal time)
+    const revealTaskName = await scheduleSingleRevealTask(revealAt);
+    if (!revealTaskName) {
+      console.error(
+        `❌ Failed to schedule reveal task at ${revealAt.toISOString()}`
+      );
+    }
 
     return { success: true, date: dateStr, pools: poolHours.length };
   });
@@ -681,78 +680,78 @@ export const createDailyPools = functions
 /**
  * Close and pair hourly pools
  * ✅ UPDATED: Functions run at the END of each pool's window
- * Pool 9h UTC (10h PT): Opens 09:00, closes 10:00 → Function runs at 10:00
- * Pool 10h UTC (11h PT): Opens 10:00, closes 11:00 → Function runs at 11:00
+ * Pool 9h UTC (10h PT): Opens 08:00, closes 09:00 → Function runs at 09:00
+ * Pool 10h UTC (11h PT): Opens 09:00, closes 10:00 → Function runs at 10:00
  * etc.
  */
 
-// 10:00 UTC - Pair users from 9h pool (09:00-10:00 UTC = 10:00-11:00 Portugal)
+// 09:00 UTC - Pair users from 9h pool (08:00-09:00 UTC = 09:00-10:00 Portugal)
 export const closePool9h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 10 * * *")
+  .pubsub.schedule("0 9 * * *")
   .timeZone("UTC")
   .onRun(async () => {
     return await closeHourlyPool(9);
   });
 
-// 11:00 UTC - Pair users from 10h pool (10:00-11:00 UTC = 11:00-12:00 Portugal)
+// 10:00 UTC - Pair users from 10h pool (09:00-10:00 UTC = 10:00-11:00 Portugal)
 export const closePool10h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 11 * * *")
+  .pubsub.schedule("0 10 * * *")
   .timeZone("UTC")
   .onRun(async () => {
     return await closeHourlyPool(10);
   });
 
-// 12:00 UTC - Pair users from 11h pool (11:00-12:00 UTC = 12:00-13:00 Portugal)
+// 11:00 UTC - Pair users from 11h pool (10:00-11:00 UTC = 11:00-12:00 Portugal)
 export const closePool11h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 12 * * *")
+  .pubsub.schedule("0 11 * * *")
   .timeZone("UTC")
   .onRun(async () => {
     return await closeHourlyPool(11);
   });
 
-// 13:00 UTC - Pair users from 12h pool (12:00-13:00 UTC = 13:00-14:00 Portugal)
+// 12:00 UTC - Pair users from 12h pool (11:00-12:00 UTC = 12:00-13:00 Portugal)
 export const closePool12h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 13 * * *")
+  .pubsub.schedule("0 12 * * *")
   .timeZone("UTC")
   .onRun(async () => {
     return await closeHourlyPool(12);
   });
 
-// 14:00 UTC - Pair users from 13h pool (13:00-14:00 UTC = 14:00-15:00 Portugal)
+// 13:00 UTC - Pair users from 13h pool (12:00-13:00 UTC = 13:00-14:00 Portugal)
 export const closePool13h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 14 * * *")
+  .pubsub.schedule("0 13 * * *")
   .timeZone("UTC")
   .onRun(async () => {
     return await closeHourlyPool(13);
   });
 
-// 15:00 UTC - Pair users from 14h pool (14:00-15:00 UTC = 15:00-16:00 Portugal)
+// 14:00 UTC - Pair users from 14h pool (13:00-14:00 UTC = 14:00-15:00 Portugal)
 export const closePool14h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 15 * * *")
+  .pubsub.schedule("0 14 * * *")
   .timeZone("UTC")
   .onRun(async () => {
     return await closeHourlyPool(14);
   });
 
-// 16:00 UTC - Pair users from 15h pool (15:00-16:00 UTC = 16:00-17:00 Portugal)
+// 15:00 UTC - Pair users from 15h pool (14:00-15:00 UTC = 15:00-16:00 Portugal)
 export const closePool15h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 16 * * *")
+  .pubsub.schedule("0 15 * * *")
   .timeZone("UTC")
   .onRun(async () => {
     return await closeHourlyPool(15);
   });
 
-// 17:00 UTC - Pair users from 16h pool (16:00-17:00 UTC = 17:00-18:00 Portugal)
+// 16:00 UTC - Pair users from 16h pool (15:00-16:00 UTC = 16:00-17:00 Portugal)
 export const closePool16h = functions
   .runWith({ timeoutSeconds: 540, memory: "512MB" })
-  .pubsub.schedule("0 17 * * *")
+  .pubsub.schedule("0 16 * * *")
   .timeZone("UTC")
   .onRun(async () => {
     return await closeHourlyPool(16);
@@ -1108,10 +1107,6 @@ async function createPair(
 
     status: "active",
   });
-
-  // Schedule reveal notification task
-  const revealAtDate = poolData.revealAt.toDate();
-  await scheduleRevealTask(pairId, revealAtDate);
 
   return pairId; // Return for batch notification
 }
@@ -1587,10 +1582,8 @@ async function sendPhotoNotificationToPool(
           // AUTOMATIC: Create photo challenge data in Firestore
           // This data will be read by the app to restore the card state
           const challengeRef = db
-            .collection("users")
-            .doc(doc.id)
-            .collection("photoChallenges")
-            .doc(`${poolId}-${timestamp}`);
+            .collection("photoChallenge")
+            .doc(`${poolId}-${doc.id}-${timestamp}`);
 
           firestoreBatch.set(challengeRef, {
             prompt: randomPrompt,
@@ -1775,16 +1768,21 @@ async function sendRevealNotifications(db: admin.firestore.Firestore) {
 /**
  * Schedule a Cloud Task to send reveal notification at revealAt time
  */
-async function scheduleRevealTask(pairId: string, revealAt: Date) {
+async function scheduleRevealTask(poolId: string, revealAt: Date) {
   if (!PROJECT) {
+    console.error("❌ PROJECT environment variable not set");
     throw new Error("PROJECT environment variable not set");
   }
 
   try {
     const tasksClient = getTasksClient();
     const parent = tasksClient.queuePath(PROJECT, LOCATION, QUEUE);
-    const payload = { pairId };
+    const payload = { poolId };
     const scheduleTime = { seconds: Math.floor(revealAt.getTime() / 1000) };
+
+    console.log(
+      `📋 Scheduling reveal task - Queue: ${QUEUE}, Location: ${LOCATION}, Project: ${PROJECT}`
+    );
 
     const task = {
       httpRequest: {
@@ -1801,11 +1799,64 @@ async function scheduleRevealTask(pairId: string, revealAt: Date) {
 
     const response = await tasksClient.createTask({ parent, task });
     console.log(
-      `✅ Scheduled reveal task for pair ${pairId} at ${revealAt.toISOString()}`
+      `✅ Scheduled reveal task for pool ${poolId} at ${revealAt.toISOString()}`
     );
     return response[0].name;
-  } catch (error) {
-    console.error("❌ Error scheduling reveal task:", error);
+  } catch (error: any) {
+    console.error(`❌ Error scheduling reveal task for pool ${poolId}:`, {
+      error: error.message,
+      stack: error.stack,
+      queue: QUEUE,
+      location: LOCATION,
+      project: PROJECT,
+    });
+    return null;
+  }
+}
+
+/**
+ * Schedule a single Cloud Task to send reveal notifications to all pools at revealAt time
+ */
+async function scheduleSingleRevealTask(revealAt: Date) {
+  if (!PROJECT) {
+    console.error("❌ PROJECT environment variable not set");
+    throw new Error("PROJECT environment variable not set");
+  }
+
+  try {
+    const tasksClient = getTasksClient();
+    const parent = tasksClient.queuePath(PROJECT, LOCATION, QUEUE);
+    const payload = {}; // No poolId needed for single reveal task
+    const scheduleTime = { seconds: Math.floor(revealAt.getTime() / 1000) };
+
+    console.log(
+      `📋 Scheduling single reveal task - Queue: ${QUEUE}, Location: ${LOCATION}, Project: ${PROJECT}`
+    );
+
+    const task = {
+      httpRequest: {
+        httpMethod: "POST" as const,
+        url: SINGLE_REVEAL_HANDLER_URL,
+        headers: { "Content-Type": "application/json" },
+        body: Buffer.from(JSON.stringify(payload)).toString("base64"),
+        oidcToken: {
+          serviceAccountEmail: `${PROJECT}@appspot.gserviceaccount.com`,
+        },
+      },
+      scheduleTime,
+    };
+
+    const response = await tasksClient.createTask({ parent, task });
+    console.log(`✅ Scheduled single reveal task at ${revealAt.toISOString()}`);
+    return response[0].name;
+  } catch (error: any) {
+    console.error(`❌ Error scheduling single reveal task:`, {
+      error: error.message,
+      stack: error.stack,
+      queue: QUEUE,
+      location: LOCATION,
+      project: PROJECT,
+    });
     return null;
   }
 }
@@ -1815,6 +1866,7 @@ async function scheduleRevealTask(pairId: string, revealAt: Date) {
  */
 async function schedulePhotoTask(poolId: string, photoAt: Date) {
   if (!PROJECT) {
+    console.error("❌ PROJECT environment variable not set");
     throw new Error("PROJECT environment variable not set");
   }
 
@@ -1823,6 +1875,10 @@ async function schedulePhotoTask(poolId: string, photoAt: Date) {
     const parent = tasksClient.queuePath(PROJECT, LOCATION, QUEUE);
     const payload = { poolId };
     const scheduleTime = { seconds: Math.floor(photoAt.getTime() / 1000) };
+
+    console.log(
+      `📋 Scheduling photo task - Queue: ${QUEUE}, Location: ${LOCATION}, Project: ${PROJECT}`
+    );
 
     const task = {
       httpRequest: {
@@ -1842,8 +1898,14 @@ async function schedulePhotoTask(poolId: string, photoAt: Date) {
       `✅ Scheduled photo task for pool ${poolId} at ${photoAt.toISOString()}`
     );
     return response[0].name;
-  } catch (error) {
-    console.error("❌ Error scheduling photo task:", error);
+  } catch (error: any) {
+    console.error(`❌ Error scheduling photo task for pool ${poolId}:`, {
+      error: error.message,
+      stack: error.stack,
+      queue: QUEUE,
+      location: LOCATION,
+      project: PROJECT,
+    });
     return null;
   }
 }
@@ -1897,7 +1959,7 @@ export const manualTestRevealNotification = functions
   });
 
 /**
- * HTTP handler called by Cloud Tasks to send reveal notification for a pair
+ * HTTP handler called by Cloud Tasks to send reveal notification for a pool
  */
 export const sendRevealForPair = functions
   .runWith({ timeoutSeconds: 60, memory: "128MB" })
@@ -1905,27 +1967,14 @@ export const sendRevealForPair = functions
     try {
       initAdmin();
       const db = admin.firestore();
-      const { pairId } = req.body;
-      if (!pairId) {
-        res.status(400).json({ error: "pairId required" });
-        return;
-      }
-
-      const pairDocRef = db.collection("pairs").doc(pairId);
-      const pairDoc = await pairDocRef.get();
-      if (!pairDoc.exists) {
-        res.status(404).json({ error: "pair not found" });
-        return;
-      }
-
-      const pair = pairDoc.data();
-      if (!pair || pair.revealNotified) {
-        res.status(200).json({ success: true, reason: "already notified" });
+      const { poolId } = req.body;
+      if (!poolId) {
+        res.status(400).json({ error: "poolId required" });
         return;
       }
 
       // Send notifications (reuse existing logic)
-      const sent = await sendRevealNotificationsForPair(pairId, db);
+      const sent = await sendRevealNotificationsForPool(poolId, db);
       res.status(200).json({ success: true, sent });
     } catch (error: any) {
       console.error("Error in sendRevealForPair:", error);
@@ -1958,52 +2007,119 @@ export const sendPhotoForPool = functions
   });
 
 /**
- * Send reveal notifications for a specific pair
+ * HTTP handler called by Cloud Tasks to send single reveal notification to all pairs
  */
-async function sendRevealNotificationsForPair(
-  pairId: string,
+export const sendSingleRevealNotification = functions
+  .runWith({ timeoutSeconds: 60, memory: "128MB" })
+  .https.onRequest(async (req, res) => {
+    try {
+      initAdmin();
+      const db = admin.firestore();
+
+      // Send notifications to all eligible pairs (no poolId needed)
+      const sent = await sendRevealNotifications(db);
+      res.status(200).json({ success: true, sent });
+    } catch (error: any) {
+      console.error("Error in sendSingleRevealNotification:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+/**
+ * Send reveal notifications for all pairs in a pool
+ */
+async function sendRevealNotificationsForPool(
+  poolId: string,
   db: admin.firestore.Firestore
 ) {
   try {
-    const pairDoc = await db.collection("pairs").doc(pairId).get();
-    if (!pairDoc.exists) return 0;
+    const nowTs = admin.firestore.Timestamp.now();
+    const pairsRef = db.collection("pairs");
 
-    const data = pairDoc.data();
-    if (!data || data.revealNotified) return 0;
+    const snapshot = await pairsRef
+      .where("poolId", "==", poolId)
+      .where("status", "==", "active")
+      .get();
+    if (snapshot.empty) return 0;
 
-    // Load user docs
-    const userARef = db.collection("users").doc(data.userA);
-    const userBRef = db.collection("users").doc(data.userB);
-    const [userADoc, userBDoc] = await db.getAll(userARef, userBRef);
+    // Filter pairs that need notification
+    const eligiblePairs: Array<{
+      doc: admin.firestore.DocumentSnapshot;
+      data: any;
+    }> = [];
+    const userIdSet = new Set<string>();
 
-    const userA = userADoc.exists ? userADoc.data() : null;
-    const userB = userBDoc.exists ? userBDoc.data() : null;
+    for (const doc of snapshot.docs) {
+      const data: any = doc.data();
+      if (!data.revealAt || data.revealNotified) continue;
+
+      const revealAt: admin.firestore.Timestamp = data.revealAt;
+      if (revealAt.toMillis() > nowTs.toMillis()) continue;
+
+      eligiblePairs.push({ doc, data });
+      userIdSet.add(data.userA);
+      userIdSet.add(data.userB);
+    }
+
+    if (eligiblePairs.length === 0) return 0;
+
+    console.log(
+      `📤 Sending reveal notifications for ${eligiblePairs.length} pairs in pool ${poolId}...`
+    );
+
+    // Batch fetch all unique users (chunks of 10)
+    const userIds = Array.from(userIdSet);
+    const userRefs = userIds.map((id) => db.collection("users").doc(id));
+    const userChunks: admin.firestore.DocumentReference[][] = [];
+    for (let i = 0; i < userRefs.length; i += 10) {
+      userChunks.push(userRefs.slice(i, i + 10));
+    }
+
+    const userDocsMap = new Map<string, any>();
+    for (const chunk of userChunks) {
+      const docs = await db.getAll(...chunk);
+      docs.forEach((doc) => {
+        if (doc.exists) {
+          userDocsMap.set(doc.id, doc.data());
+        }
+      });
+    }
+
+    // Build messages for all eligible pairs
+    const messages: any[] = [];
+    const pairsToUpdate: admin.firestore.DocumentReference[] = [];
 
     const title = "🎉 Reveal Time!";
     const body = "It's reveal time — see who your mystery buddy is now!";
-    const messages: any[] = [];
 
-    if (userA?.expoPushToken) {
-      messages.push({
-        to: userA.expoPushToken,
-        sound: "default",
-        title,
-        body,
-        data: { type: "reveal", pairId },
-      });
+    for (const { doc, data } of eligiblePairs) {
+      const userA = userDocsMap.get(data.userA);
+      const userB = userDocsMap.get(data.userB);
+
+      if (userA?.expoPushToken) {
+        messages.push({
+          to: userA.expoPushToken,
+          sound: "default",
+          title,
+          body,
+          data: { type: "reveal", pairId: doc.id },
+        });
+      }
+
+      if (userB?.expoPushToken) {
+        messages.push({
+          to: userB.expoPushToken,
+          sound: "default",
+          title,
+          body,
+          data: { type: "reveal", pairId: doc.id },
+        });
+      }
+
+      pairsToUpdate.push(doc.ref);
     }
 
-    if (userB?.expoPushToken) {
-      messages.push({
-        to: userB.expoPushToken,
-        sound: "default",
-        title,
-        body,
-        data: { type: "reveal", pairId },
-      });
-    }
-
-    // Send messages
+    // Send in batches (Expo allows 100 per request)
     let totalSent = 0;
     for (let i = 0; i < messages.length; i += 100) {
       const batch = messages.slice(i, i + 100);
@@ -2019,12 +2135,20 @@ async function sendRevealNotificationsForPair(
       else console.error("❌ Expo push batch failed:", await resp.text());
     }
 
-    // Mark as notified
-    await pairDoc.ref.update({ revealNotified: true });
-    console.log(`✅ Sent ${totalSent} reveal notifications for pair ${pairId}`);
+    // Mark pairs as notified in batches (500 write limit)
+    for (let i = 0; i < pairsToUpdate.length; i += 450) {
+      const chunk = pairsToUpdate.slice(i, i + 450);
+      const updateBatch = db.batch();
+      chunk.forEach((ref) => updateBatch.update(ref, { revealNotified: true }));
+      await updateBatch.commit();
+    }
+
+    console.log(
+      `✅ Sent ${totalSent} reveal notifications for ${eligiblePairs.length} pairs in pool ${poolId}`
+    );
     return totalSent;
   } catch (error) {
-    console.error("❌ Error sending reveal notifications for pair:", error);
+    console.error("❌ Error sending reveal notifications for pool:", error);
     return 0;
   }
 }
@@ -2325,46 +2449,54 @@ export const manualCreatePools = functions
       const poolHours = [9, 10, 11, 12, 13, 14, 15, 16];
       const batch = db.batch();
 
-      const revealHour = 21;
+      const revealHour = 20;
       const revealMin = Math.floor(Math.random() * 60);
       const revealAt = new Date(now);
       revealAt.setHours(revealHour, revealMin, 0, 0);
+
+      // SAFETY CHECK: Ensure reveal time is never 21:xx or later
+      if (revealAt.getHours() >= 21) {
+        console.error(
+          `🚨 CRITICAL: Reveal time calculated as ${revealAt.getHours()}:${revealAt.getMinutes()} - clamping to 20:59`
+        );
+        revealAt.setHours(20, 59, 0, 0);
+      }
 
       for (const hour of poolHours) {
         const poolId = `${dateStr}-${hour}h`;
 
         const joinWindowStart = new Date(now);
-        joinWindowStart.setHours(hour, 0, 0, 0);
+        joinWindowStart.setHours(hour - 1, 0, 0, 0);
 
         const joinWindowEnd = new Date(now);
-        joinWindowEnd.setHours(hour + 1, 0, 0, 0);
+        joinWindowEnd.setHours(hour, 0, 0, 0);
 
         const photoWindowStart = new Date(now);
-        photoWindowStart.setHours(hour, 0, 0, 0);
+        photoWindowStart.setHours(hour - 1, 0, 0, 0);
 
         const photoWindowEnd = new Date(now);
-        photoWindowEnd.setHours(21, 0, 0, 0);
+        photoWindowEnd.setHours(19, 45, 0, 0);
 
         const photoTimes: Date[] = [];
-        if (hour < 21) {
-          const hoursAvailable = 21 - hour;
+        if (hour < 20) {
+          const hoursAvailable = 19.75 - (hour - 1);
 
           if (hoursAvailable >= 2) {
             const spacing = hoursAvailable / 2;
 
-            const photo1Hour = hour + Math.floor(spacing / 2);
+            const photo1Hour = hour - 1 + Math.floor(spacing / 2);
             const photo1Min = Math.floor(Math.random() * 60);
             const photo1 = new Date(now);
             photo1.setHours(photo1Hour, photo1Min, 0, 0);
             photoTimes.push(photo1);
 
-            const photo2Hour = hour + Math.floor(spacing * 1.5);
+            const photo2Hour = hour - 1 + Math.floor(spacing * 1.5);
             const photo2Min = Math.floor(Math.random() * 60);
             const photo2 = new Date(now);
             photo2.setHours(photo2Hour, photo2Min, 0, 0);
             photoTimes.push(photo2);
           } else if (hoursAvailable === 1) {
-            const photoHour = hour;
+            const photoHour = hour - 1;
             const photoMin = Math.floor(Math.random() * 60);
             const photo = new Date(now);
             photo.setHours(photoHour, photoMin, 0, 0);
@@ -2408,9 +2540,25 @@ export const manualCreatePools = functions
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           userCount: 0,
         });
+
+        // Schedule reveal task for the pool
+        const revealTaskName = await scheduleRevealTask(poolId, revealAt);
+        if (!revealTaskName) {
+          console.error(
+            `❌ Failed to schedule reveal task for pool ${poolId} at ${revealAt.toISOString()}`
+          );
+        }
       }
 
       await batch.commit();
+
+      // Schedule ONE reveal task for all pools (since they all have the same reveal time)
+      const singleRevealTaskName = await scheduleSingleRevealTask(revealAt);
+      if (!singleRevealTaskName) {
+        console.error(
+          `❌ Failed to schedule single reveal task at ${revealAt.toISOString()}`
+        );
+      }
 
       res.status(200).json({
         success: true,

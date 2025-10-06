@@ -18,9 +18,17 @@ const formatRemaining = (target: Date) => {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
-  // If 60 seconds or less remaining, show only seconds
-  if (totalSeconds <= 60) {
+  // If 90 seconds or less remaining, show only seconds
+  if (totalSeconds <= 90) {
     return { text: `${seconds}s`, isUrgent: true };
+  }
+
+  // If between 90 seconds and 2 minutes, show readable format like "1m 30s"
+  if (totalSeconds <= 120) {
+    return {
+      text: `${minutes}m ${String(seconds).padStart(2, "0")}s`,
+      isUrgent: false,
+    };
   }
 
   // Otherwise show minutes and seconds

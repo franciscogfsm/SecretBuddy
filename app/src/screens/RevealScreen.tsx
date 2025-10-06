@@ -10,6 +10,8 @@ import {
   Text,
   View,
   ActivityIndicator,
+  ScrollView,
+  Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +23,7 @@ import type { RootStackParamList } from "../navigation/types";
 import { useAppState } from "../store/AppStateContext";
 import { colors, typography } from "../theme";
 import { useAuth } from "../context/AuthContext";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as chatService from "../services/chatService";
 import * as poolService from "../services/poolService";
 import { getUserProfile } from "../services/userService";
@@ -36,6 +39,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Reveal">;
 export const RevealScreen = ({ navigation, route }: Props) => {
   const { buddy } = useAppState();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [decision, setDecision] = useState<"continue" | "pass" | null>(null);
 
   // Real pair system
@@ -101,6 +105,14 @@ export const RevealScreen = ({ navigation, route }: Props) => {
 
   // Check if both people can reveal (both sent >= 1 photo)
   const bothCanReveal = pair ? pair.canRevealA && pair.canRevealB : false;
+
+  // Check if current user has already revealed this pair
+  const hasAlreadyRevealed =
+    pair && user
+      ? pair.userA === user.uid
+        ? pair.revealedA
+        : pair.revealedB
+      : false;
 
   // Professional reveal animation system
   const [animationStage, setAnimationStage] = useState<
@@ -328,6 +340,40 @@ export const RevealScreen = ({ navigation, route }: Props) => {
     }
   }, [animationStage, isRevealed, tapIndicatorPulse, tapHintBounce]);
 
+  // Compute reveal progress and derived values here so hooks (useMemo) are
+  // always executed regardless of early returns below. This prevents the
+  // "Rendered more hooks than during the previous render" error.
+  const tapRemaining = Math.max(totalTapsNeeded - tapCount, 0);
+  const revealProgress = Math.min(tapCount / totalTapsNeeded, 1);
+
+  const cardBorderColors = useMemo<[string, string]>(
+    () =>
+      revealProgress >= 1
+        ? ["#FF6B9D", "#C084FC"] // Pink to purple when revealed
+        : ["#60A5FA", "#A78BFA"], // Blue to purple while tapping
+    [revealProgress]
+  );
+
+  const cardSurfaceColors = useMemo<[string, string]>(
+    () =>
+      revealProgress >= 1
+        ? ["rgba(17, 24, 39, 0.95)", "rgba(55, 65, 81, 0.85)"] // Dark elegant when revealed
+        : ["rgba(15, 23, 42, 0.92)", "rgba(30, 41, 59, 0.88)"], // Dark blue while tapping
+    [revealProgress]
+  );
+
+  // Professional animation interpolations (keep here so they're always
+  // defined before conditional returns)
+  const sparkleScale = sparkleEffect.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.8, 1.2],
+  });
+
+  const sparkleOpacity = sparkleEffect.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.3, 1, 0.3],
+  });
+
   // Interactive tap-to-reveal handler with epic unveiling animation
   const handleTapToReveal = () => {
     if (animationStage !== "waitingTap" || isRevealed) return;
@@ -469,16 +515,32 @@ export const RevealScreen = ({ navigation, route }: Props) => {
 
     if (choice === "continue" && pair && partnerProfile && user) {
       try {
+        console.log("🚀 Starting conversation creation...");
+
         // Create conversation when user chooses to continue chatting
         const partnerId = poolService.getPartnerIdFromPair(pair, user.uid);
         const matchId = pair.id;
 
-        // Create the conversation in Firestore
-        const conversationId = await chatService.createConversation(
-          user.uid,
-          partnerId,
-          matchId
-        );
+        console.log("📝 Partner ID:", partnerId, "Match ID:", matchId);
+
+        // Wrap createConversation with a timeout so UI doesn't stay stuck
+        const createConversationWithTimeout = (
+          timeoutMs: number
+        ): Promise<string> => {
+          const timeoutPromise = new Promise<string>((_, reject) => {
+            const id = setTimeout(() => {
+              clearTimeout(id);
+              reject(new Error("createConversation timeout"));
+            }, timeoutMs);
+          });
+
+          return Promise.race([
+            chatService.createConversation(user.uid, partnerId, matchId),
+            timeoutPromise,
+          ]);
+        };
+
+        const conversationId = await createConversationWithTimeout(10000); // 10s
 
         console.log("✅ Conversation created:", conversationId);
 
@@ -489,22 +551,40 @@ export const RevealScreen = ({ navigation, route }: Props) => {
           [pair.userA === user.uid ? "revealedA" : "revealedB"]: true,
         });
 
-        // Navigate to chat with the conversation ID
-        setTimeout(() => {
-          navigation.navigate("Chat", {
-            conversationId,
-            matchedUserId: partnerId,
-            matchedUserName:
-              partnerProfile.username ||
-              partnerProfile.displayName ||
-              "Anonymous",
-          });
-        }, 300);
+        console.log("✅ Pair updated with conversation ID");
+
+        // Close the modal first, then navigate to Chat
+        // Since Reveal is a transparentModal, we need to go back first
+        console.log("🧭 Closing modal and navigating to Chat screen...");
+
+        // Use replace to close modal and open chat in one action
+        navigation.replace("Chat", {
+          conversationId,
+          matchedUserId: partnerId,
+          matchedUserName:
+            partnerProfile.username ||
+            partnerProfile.displayName ||
+            "Anonymous",
+        });
+
+        console.log("✅ Navigation command sent");
+
+        // Reset decision state after navigation
+        setDecision(null);
       } catch (error) {
-        console.error("❌ Error creating conversation:", error);
-        Alert.alert("Error", "Failed to start chat. Please try again.", [
-          { text: "OK" },
-        ]);
+        // If a timeout or other error happened, show friendly message and clear state
+        const errAny: any = error;
+        console.error(
+          "❌ Error creating conversation:",
+          errAny?.message || errAny
+        );
+        Alert.alert(
+          "Error",
+          errAny?.message === "createConversation timeout"
+            ? "Server is taking too long to respond. Please try again in a moment."
+            : "Failed to start chat. Please try again.",
+          [{ text: "OK" }]
+        );
         setDecision(null);
       }
     } else {
@@ -561,36 +641,102 @@ export const RevealScreen = ({ navigation, route }: Props) => {
     );
   }
 
-  const tapRemaining = Math.max(totalTapsNeeded - tapCount, 0);
-  const revealProgress = Math.min(tapCount / totalTapsNeeded, 1);
-  const cardBorderColors = useMemo<[string, string]>(
-    () =>
-      revealProgress >= 1
-        ? ["#FF6B9D", "#C084FC"] // Pink to purple when revealed
-        : ["#60A5FA", "#A78BFA"], // Blue to purple while tapping
-    [revealProgress]
-  );
-  const cardSurfaceColors = useMemo<[string, string]>(
-    () =>
-      revealProgress >= 1
-        ? ["rgba(17, 24, 39, 0.95)", "rgba(55, 65, 81, 0.85)"] // Dark elegant when revealed
-        : ["rgba(15, 23, 42, 0.92)", "rgba(30, 41, 59, 0.88)"], // Dark blue while tapping
-    [revealProgress]
-  );
+  // If user has already revealed, show simple "Continue to Chat" screen
+  if (hasAlreadyRevealed && pair.conversationId) {
+    const partnerId = poolService.getPartnerIdFromPair(pair, user!.uid);
 
-  // Professional animation interpolations
-  const sparkleScale = sparkleEffect.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.8, 1.2],
-  });
+    return (
+      <View
+        style={[
+          styles.container,
+          { justifyContent: "center", alignItems: "center", padding: 20 },
+        ]}
+      >
+        <LinearGradient
+          colors={["#0A0A0A", "#1A1A2E", "#16213E", "#1A237E"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
 
-  const sparkleOpacity = sparkleEffect.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0.3, 1, 0.3],
-  });
+        <View style={{ alignItems: "center" }}>
+          {partnerProfile.profilePhotoUrl ? (
+            <Image
+              source={{ uri: partnerProfile.profilePhotoUrl }}
+              style={{
+                width: 100,
+                height: 100,
+                borderRadius: 50,
+                marginBottom: 20,
+              }}
+            />
+          ) : (
+            <View style={[styles.profileAvatar, { marginBottom: 20 }]}>
+              <Text style={styles.profileAvatarText}>
+                {(partnerProfile.username || partnerProfile.displayName || "U")
+                  .charAt(0)
+                  .toUpperCase()}
+              </Text>
+            </View>
+          )}
+
+          <Text style={[styles.profileName, { marginBottom: 8 }]}>
+            {partnerProfile.username ||
+              partnerProfile.displayName ||
+              "Anonymous"}
+          </Text>
+
+          <Text style={[styles.profileDetail, { marginBottom: 24 }]}>
+            Age: {partnerProfile.age || "??"} • Location:{" "}
+            {partnerProfile.country || "???"}
+          </Text>
+
+          <PrimaryButton
+            label="Continue to Chat"
+            onPress={() => {
+              navigation.replace("Chat", {
+                conversationId: pair.conversationId,
+                matchedUserId: partnerId,
+                matchedUserName:
+                  partnerProfile.username ||
+                  partnerProfile.displayName ||
+                  "Anonymous",
+              });
+            }}
+            leadingIcon={
+              <Ionicons
+                name="chatbubbles"
+                size={20}
+                color={colors.textPrimary}
+              />
+            }
+          />
+
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={{ marginTop: 16, padding: 8 }}
+          >
+            <Text
+              style={[
+                styles.profileDetail,
+                { textDecorationLine: "underline" },
+              ]}
+            >
+              Go Back
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // (Deduped) derived values, color memos, and sparkle interpolations are
+  // declared earlier in the component to guarantee a stable hooks order.
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[styles.container, { paddingTop: Math.max(28, insets.top + 30) }]}
+    >
       {/* Professional gradient background */}
       <Animated.View
         style={[StyleSheet.absoluteFill, { opacity: backgroundFade }]}
@@ -641,7 +787,7 @@ export const RevealScreen = ({ navigation, route }: Props) => {
               ]}
             >
               <View style={styles.iconContainer}>
-                <Ionicons name="eye" size={32} color="#4F46E5" />
+                <Ionicons name="eye" size={24} color="#4F46E5" />
               </View>
               <Text style={styles.revealTitle}>Identity Revealed</Text>
               <Text style={styles.revealSubtitle}>
@@ -768,32 +914,56 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                       ]}
                     >
                       <View style={styles.profileAvatar}>
-                        <Animated.Text
-                          style={[
-                            styles.profileAvatarText,
-                            {
+                        {isRevealed && partnerProfile.profilePhotoUrl ? (
+                          <Animated.View
+                            style={{
                               opacity: isRevealed ? 1 : 0.4,
                               transform: [
                                 {
                                   scale: isRevealed ? 1 : 0.9,
                                 },
                               ],
-                            },
-                          ]}
-                        >
-                          {isRevealed
-                            ? (
-                                partnerProfile.username ||
-                                partnerProfile.displayName ||
-                                "User"
-                              )
-                                .charAt(0)
-                                .toUpperCase()
-                            : "?"}
-                        </Animated.Text>
+                            }}
+                          >
+                            <Image
+                              source={{ uri: partnerProfile.profilePhotoUrl }}
+                              style={{
+                                width: 70,
+                                height: 70,
+                                borderRadius: 35,
+                              }}
+                            />
+                          </Animated.View>
+                        ) : (
+                          <Animated.Text
+                            style={[
+                              styles.profileAvatarText,
+                              {
+                                opacity: isRevealed ? 1 : 0.4,
+                                transform: [
+                                  {
+                                    scale: isRevealed ? 1 : 0.9,
+                                  },
+                                ],
+                              },
+                            ]}
+                          >
+                            {isRevealed
+                              ? (
+                                  partnerProfile.username ||
+                                  partnerProfile.displayName ||
+                                  "User"
+                                )
+                                  .charAt(0)
+                                  .toUpperCase()
+                              : "?"}
+                          </Animated.Text>
+                        )}
                       </View>
                       <View style={styles.profileInfo}>
                         <Animated.Text
+                          numberOfLines={2}
+                          ellipsizeMode="tail"
                           style={[
                             styles.profileName,
                             {
@@ -826,25 +996,10 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                           ]}
                         >
                           {isRevealed
-                            ? "Age: 25 • Location: Lisbon"
+                            ? `Age: ${partnerProfile.age || "??"} • Location: ${
+                                partnerProfile.country || "???"
+                              }`
                             : "Age: ?? • Location: ???"}
-                        </Animated.Text>
-                        <Animated.Text
-                          style={[
-                            styles.profileDetail,
-                            {
-                              opacity: isRevealed ? 1 : 0.4,
-                              transform: [
-                                {
-                                  translateY: isRevealed ? 0 : 5,
-                                },
-                              ],
-                            },
-                          ]}
-                        >
-                          {isRevealed
-                            ? "Interests: Photography, Travel, Music"
-                            : "Interests: ???, ???, ???"}
                         </Animated.Text>
                       </View>
                     </Animated.View>
@@ -971,11 +1126,19 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                         },
                       ]}
                     >
-                      <Text style={styles.profileBioText}>
-                        {isRevealed
-                          ? '"Love capturing moments and exploring new places. Always up for an adventure!"'
-                          : '"????? ????? ??????? ??? ??????? ??? ??????. ?????? ?? ??? ?? ???????!"'}
-                      </Text>
+                      <ScrollView
+                        style={{ maxHeight: 160 }}
+                        contentContainerStyle={{ paddingRight: 6 }}
+                        showsVerticalScrollIndicator={false}
+                      >
+                        <Text style={styles.profileBioText}>
+                          {isRevealed && partnerProfile.bio
+                            ? `"${partnerProfile.bio}"`
+                            : isRevealed
+                            ? '"No bio yet"'
+                            : '"????? ????? ??????? ??? ??????? ??? ??????. ?????? ?? ??? ?? ???????!"'}
+                        </Text>
+                      </ScrollView>
                     </Animated.View>
 
                     {/* Internal connection message */}
@@ -1018,6 +1181,7 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                 styles.actionContainer,
                 {
                   opacity: actionButtonsReveal,
+                  marginBottom: insets.bottom ? insets.bottom + 18 : 24,
                   transform: [
                     {
                       translateY: actionButtonsReveal.interpolate({
@@ -1513,28 +1677,31 @@ const styles = StyleSheet.create({
   },
   // Profile Card Styles - Modern glassmorphism design
   profileCardContainer: {
-    width: "100%",
-    maxWidth: 380,
-    marginHorizontal: 16,
+    width: width * 0.92,
+    maxWidth: 600,
+    marginHorizontal: "auto",
     marginVertical: 20,
     shadowColor: "rgba(99, 102, 241, 0.8)",
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.55,
-    shadowRadius: 40,
-    elevation: 20,
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.6,
+    shadowRadius: 44,
+    elevation: 22,
+    alignSelf: "center",
   },
   profileCardBorder: {
-    borderRadius: 32,
-    padding: 1.5,
+    borderRadius: 38,
+    padding: 2,
   },
   profileCard: {
     position: "relative",
-    borderRadius: 28,
-    padding: 32,
+    borderRadius: 36,
+    padding: 20,
+    paddingVertical: 22,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.16)",
-    backgroundColor: "rgba(6, 11, 38, 0.88)",
+    backgroundColor: "rgba(6, 11, 38, 0.92)",
+    minHeight: Math.max(260, height * 0.42),
   },
   profileCardSurface: {
     position: "absolute",
@@ -1548,16 +1715,16 @@ const styles = StyleSheet.create({
   profileHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 24,
   },
   profileAvatar: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     backgroundColor: colors.accentPurple,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 18,
+    marginRight: 12,
     shadowColor: colors.accentPurple,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -1566,11 +1733,13 @@ const styles = StyleSheet.create({
   },
   profileAvatarText: {
     fontSize: 28,
-    fontWeight: "700",
+    fontWeight: "800",
     color: colors.textPrimary,
   },
   profileInfo: {
     flex: 1,
+    justifyContent: "center",
+    minHeight: 100,
   },
   profileName: {
     ...typography.title,
@@ -1578,28 +1747,33 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     marginBottom: 6,
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
+    flexWrap: "wrap",
+    flexShrink: 1,
   },
   profileDetail: {
     ...typography.caption,
     color: colors.textSecondary,
-    fontSize: 15,
-    marginBottom: 3,
+    fontSize: 17,
+    marginBottom: 4,
     fontWeight: "500",
+    lineHeight: 24,
   },
   profileBio: {
     backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 18,
-    marginTop: 4,
+    marginTop: 12,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.08)",
+    maxHeight: 160,
+    overflow: "hidden",
   },
   profileBioText: {
     ...typography.body,
     color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
     fontStyle: "italic",
   },
 
@@ -1636,31 +1810,31 @@ const styles = StyleSheet.create({
     marginBottom: Math.max(24, height * 0.03),
   },
   iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: "rgba(79, 70, 229, 0.2)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
-    borderWidth: 2,
+    marginBottom: 12,
+    borderWidth: 1,
     borderColor: "rgba(79, 70, 229, 0.3)",
   },
   revealTitle: {
     ...typography.display,
-    fontSize: Math.max(28, width * 0.07),
+    fontSize: Math.max(20, width * 0.055),
     fontWeight: "900",
     color: "#FFFFFF",
     textAlign: "center",
-    letterSpacing: -0.5,
-    marginBottom: 8,
+    letterSpacing: -0.4,
+    marginBottom: 6,
   },
   revealSubtitle: {
     ...typography.body,
-    fontSize: Math.max(16, width * 0.04),
-    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: Math.max(14, width * 0.035),
+    color: "rgba(255, 255, 255, 0.78)",
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: 20,
   },
   statusBanner: {
     flexDirection: "row",
@@ -1697,7 +1871,9 @@ const styles = StyleSheet.create({
   actionContainer: {
     width: "100%",
     maxWidth: 320,
-    marginTop: Math.max(32, height * 0.04),
+    marginTop: Math.max(12, height * 0.02),
+    // pull the action slightly higher so the button sits closer to the card
+    transform: [{ translateY: -8 }],
   },
   buttonHalo: {
     position: "absolute",

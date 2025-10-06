@@ -165,7 +165,7 @@ export const SplashScreen = ({ navigation }: Props) => {
               <View style={styles.logoGradient}>
                 <View style={styles.logoInset}>
                   <Image
-                    source={require("../../assets/icon1.png")}
+                    source={require("../../assets/icon.png")}
                     style={styles.logoImage}
                     resizeMode="cover"
                   />

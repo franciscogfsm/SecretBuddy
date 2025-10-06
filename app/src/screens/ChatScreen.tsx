@@ -987,7 +987,7 @@ export const ChatScreen = () => {
                   </View>
                   <View style={styles.statItem}>
                     <Text style={styles.statValue}>
-                      {partnerProfileData.streakDays || 0}
+                      {partnerProfileData.streak || 0}
                     </Text>
                     <Text style={styles.statLabel}>Day Streak</Text>
                   </View>

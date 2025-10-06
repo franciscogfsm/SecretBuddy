@@ -123,13 +123,21 @@ export const HomeScreen = () => {
   const getCurrentPhase = () => {
     // Use server-adjusted time instead of device time
     const now = getAdjustedTime();
-    const currentHour = now.getUTCHours(); // ✅ USE UTC TIME
+    const utcHour = now.getUTCHours(); // keep UTC-based checks
+    const localHour = now.getHours(); // local hour for user-facing phase rules
 
-    // Hourly pools from 10:00 to 17:00
-    if (currentHour >= 10 && currentHour < 18) {
+    // If it's midday-to-evening in user's local time, show waiting phase (matched phase)
+    // (User requested that after 12:00 PM local time the UI enter waiting mode)
+    if (localHour >= 12 && localHour < 21) {
+      return "waiting";
+    }
+
+    // Otherwise fall back to UTC-based pool/reveal windows
+    // Hourly pools from 10:00 to 17:00 UTC
+    if (utcHour >= 10 && utcHour < 18) {
       return "pool-open"; // Pool open (current hour's pool)
-    } else if (currentHour >= 21 && currentHour < 22) {
-      return "reveal-window"; // 9 PM - 10 PM: Identity reveal window for all paired users
+    } else if (utcHour >= 21 && utcHour < 22) {
+      return "reveal-window"; // 21:00-22:00 UTC: Identity reveal window
     } else {
       return "waiting"; // Outside pool hours
     }
@@ -164,17 +172,25 @@ export const HomeScreen = () => {
       case "reveal-window":
         return "Identity reveal window is open! Discover your mystery buddy.";
       case "waiting":
-        // Use server-adjusted time
+        // Use server-adjusted time but evaluate user-facing phase by local hour
         const now = getAdjustedTime();
-        const currentHour = now.getUTCHours(); // ✅ USE UTC TIME
-        if (currentHour < 10) {
-          const localStartHour = utcToLocalHour(10);
+        const localHour = now.getHours(); // local hour for user-facing messages
+        const localStartHour = utcToLocalHour(10);
+
+        if (localHour < 12) {
+          // Before local midday: show pairing start time
           return `Pools open at ${localStartHour}:00. Come back soon!`;
-        } else if (currentHour >= 18 && currentHour < 21) {
+        } else if (localHour >= 12 && localHour < 21) {
+          // After local noon and before evening: show next pairing time
+          return `Pools open at ${localStartHour}:00. Come back soon!`;
+        } else if (localHour >= 21 && localHour < 22) {
           const localRevealHour = utcToLocalHour(21);
-          return `Pools closed for today. Reveal at ${localRevealHour}:00!`;
+          return `Reveal window is open! (${localRevealHour}:00-${(
+            localRevealHour + 1
+          )
+            .toString()
+            .padStart(2, "0")}:00)`;
         } else {
-          const localStartHour = utcToLocalHour(10);
           return `Pools closed. Next pool opens at ${localStartHour}:00.`;
         }
       default:
@@ -753,7 +769,7 @@ export const HomeScreen = () => {
     let anim: Animated.CompositeAnimation | null = null;
 
     const photosRemaining =
-      currentPair && poolService.isInPhotoWindow(currentPair)
+      currentPair && poolService.isInPhotoWindow(currentPair, timeOffset)
         ? currentPair.maxPhotos -
           poolService.getMyPhotoCount(currentPair, user?.uid || "")
         : 1;
@@ -1098,11 +1114,16 @@ export const HomeScreen = () => {
   };
 
   const getStatusText = () => {
+    // Server-adjusted time
+    const now = getAdjustedTime();
+    const localHour = now.getHours();
+    const localStartHour = utcToLocalHour(10);
+
     if (currentPair) {
       if (poolService.isRevealTime(currentPair)) {
         return "🎉 Reveal time! See who your buddy is.";
       }
-      if (poolService.isInPhotoWindow(currentPair)) {
+      if (poolService.isInPhotoWindow(currentPair, timeOffset)) {
         const photosRemaining =
           currentPair.maxPhotos -
           poolService.getMyPhotoCount(currentPair, user?.uid || "");
@@ -1114,11 +1135,12 @@ export const HomeScreen = () => {
         } during photo window.`;
       }
 
-      // If pair exists but no pool (outside pool hours)
-      if (!currentPool) {
-        return "You're paired! Photo window and reveal will happen at scheduled times.";
+      // If pair exists but we're after reveal window (waiting for next day)
+      if (localHour >= 12) {
+        return `Pools open at ${localStartHour}:00. Come back soon!`;
       }
 
+      // Before photo window
       return "Paired! Photo window opens soon.";
     }
 
@@ -1133,6 +1155,11 @@ export const HomeScreen = () => {
       return `Join Pool ${poolHour} to find a buddy!`;
     }
 
+    // Default waiting message after 12 PM
+    if (localHour >= 12) {
+      return `Pools open at ${localStartHour}:00. Come back soon!`;
+    }
+
     return "Pools open 8AM-1PM and 1PM-5PM daily.";
   };
 
@@ -1141,8 +1168,12 @@ export const HomeScreen = () => {
       return "Loading...";
     }
 
-    if (currentPair && poolService.isRevealTime(currentPair)) {
-      return "Reveal Identity";
+    // Only show "Reveal Identity" during actual reveal window (21:00-22:00 UTC)
+    if (currentPair && poolService.isRevealTime(currentPair, timeOffset)) {
+      // Only if reveal window is actually open
+      if (poolService.isRevealWindowOpen(timeOffset)) {
+        return "Reveal Identity";
+      }
     }
 
     // If user has a pair, show waiting message (don't show "Leave Pool")
@@ -1165,7 +1196,7 @@ export const HomeScreen = () => {
   // Determine if user has sent all photos and is waiting for reveal
   let excitedForReveal = false;
   let statusMessage = getStatusText();
-  if (currentPair && poolService.isInPhotoWindow(currentPair)) {
+  if (currentPair && poolService.isInPhotoWindow(currentPair, timeOffset)) {
     const photosRemaining =
       currentPair.maxPhotos -
       poolService.getMyPhotoCount(currentPair, user?.uid || "");
@@ -1173,6 +1204,18 @@ export const HomeScreen = () => {
       excitedForReveal = true;
     }
   }
+
+  // Detect if current time is after today's reveal window (UTC)
+  const isAfterReveal = (() => {
+    try {
+      const now = getAdjustedTime();
+      const hour = now.getUTCHours();
+      // Reveal window is 21:00-22:00 UTC; after reveal = >=22 or before pairing next day (<9)
+      return hour >= 22 || hour < 9;
+    } catch (e) {
+      return false;
+    }
+  })();
 
   return (
     <GradientBackground gradient="midnight">
@@ -1436,9 +1479,13 @@ export const HomeScreen = () => {
                     <TouchableOpacity
                       style={[
                         styles.revealTimeButton,
-                        { backgroundColor: colors.accentTeal },
+                        { backgroundColor: colors.accentPink },
                       ]}
-                      onPress={() => navigation.navigate("Chat" as never)}
+                      onPress={() =>
+                        (navigation as any).navigate("MainTabs", {
+                          screen: "Matches",
+                        })
+                      }
                     >
                       <Ionicons name="chatbubbles" size={20} color="#FFFFFF" />
                       <Text style={styles.revealTimeButtonText}>Open Chat</Text>
@@ -1480,7 +1527,9 @@ export const HomeScreen = () => {
             />
           </View>
           {!excitedForReveal && (
-            <Text style={styles.statusText}>{statusMessage}</Text>
+            <Text style={styles.statusText}>
+              {isAfterReveal && currentPair ? timeUntilWindow : statusMessage}
+            </Text>
           )}
 
           {excitedForReveal && currentPair && (
@@ -1516,18 +1565,18 @@ export const HomeScreen = () => {
           {/* Show countdown timers if paired (hidden when excited for reveal) */}
           {currentPair && !excitedForReveal && (
             <View style={styles.timersContainer}>
-              {!poolService.isInPhotoWindow(currentPair) && (
-                <View style={styles.timerCard}>
-                  <Text style={styles.timerLabel}>Photo Window Opens In:</Text>
-                  <Text style={styles.timerValue}>
-                    {poolService.formatTimeRemaining(
-                      poolService.getTimeUntilPhotoWindow(currentPair)
-                    )}
-                  </Text>
-                </View>
-              )}
+              <View style={styles.timerCard}>
+                <Text style={styles.timerLabel}>Photo Window</Text>
+                <Text style={styles.timerValue}>
+                  {poolService.isInPhotoWindow(currentPair, timeOffset)
+                    ? "Now!"
+                    : poolService.formatTimeRemaining(
+                        poolService.getTimeUntilPhotoWindow(currentPair)
+                      )}
+                </Text>
+              </View>
 
-              {poolService.isInPhotoWindow(currentPair) &&
+              {poolService.isInPhotoWindow(currentPair, timeOffset) &&
                 !poolService.isRevealTime(currentPair) && (
                   <View style={styles.timerCard}>
                     <Text style={styles.timerLabel}>Reveal Time In:</Text>
@@ -1541,18 +1590,14 @@ export const HomeScreen = () => {
             </View>
           )}
 
-          {!excitedForReveal && (
+          {/* Hide the pairing CTA when reveal window is open - reveal interaction is handled by the Reveal Time card above */}
+          {/* Only show pairing CTA when the user is NOT currently paired */}
+          {!currentPair && !excitedForReveal && (
             <PrimaryButton
               label={getButtonText()}
               onPress={handlePairingPress}
-              variant={
-                currentPair && poolService.isRevealTime(currentPair)
-                  ? "primary"
-                  : currentPool
-                  ? "primary"
-                  : "ghost"
-              }
-              disabled={(!currentPool && !currentPair) || poolLoading}
+              variant={currentPool ? "primary" : "ghost"}
+              disabled={poolLoading}
             />
           )}
 
@@ -1581,7 +1626,7 @@ export const HomeScreen = () => {
 
         {/* Info Card - How Photo Challenges Work */}
         {currentPair &&
-          poolService.isInPhotoWindow(currentPair) &&
+          poolService.isInPhotoWindow(currentPair, timeOffset) &&
           !excitedForReveal && (
             <View style={styles.infoCard}>
               <View style={styles.infoCardHeader}>
@@ -1651,93 +1696,6 @@ export const HomeScreen = () => {
       />
 
       {/* Simple Camera Reminder Modal */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={showCameraModal}
-        onRequestClose={() => setShowCameraModal(false)}
-      >
-        <View style={styles.simpleModalOverlay}>
-          <View style={styles.simpleCameraModal}>
-            {/* Close button */}
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowCameraModal(false)}
-            >
-              <Ionicons name="close" size={20} color="#CBD5E1" />
-            </TouchableOpacity>
-
-            {/* Header with icon */}
-            <View style={styles.modalHeader}>
-              <View style={styles.anonymityIconContainer}>
-                <Ionicons name="eye-off" size={24} color="#6366F1" />
-              </View>
-              <View style={styles.modalHeaderText}>
-                <Text style={styles.simpleCameraTitle}>No selfies</Text>
-                <Text style={styles.simpleCameraSubtitle}>
-                  Please use back camera only to maintain anonymity
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.continueButton}
-              onPress={handleCameraConfirm}
-            >
-              <Text style={styles.continueButtonText}>Continue</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Pairing Success Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={showPairingSuccess}
-        onRequestClose={() => setShowPairingSuccess(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.successIconContainer}>
-              <Ionicons
-                name="checkmark-circle"
-                size={80}
-                color={colors.accentTeal}
-              />
-            </View>
-            <Text style={styles.successTitle}>🎉 Pairing Successful!</Text>
-            <Text style={styles.successMessage}>
-              You've been matched with a mystery buddy! Wait for random photo
-              prompts throughout the day.
-            </Text>
-            <View style={styles.successInfoBox}>
-              <Text style={styles.successInfo}>
-                • Photo prompts will arrive randomly between 12 PM - 9 PM{"\n"}•
-                No selfies allowed - keep it mysterious!{"\n"}• Identity reveals
-                at 9 PM - 10 PM
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.successButton}
-              onPress={() => setShowPairingSuccess(false)}
-            >
-              <Text style={styles.successButtonText}>Got it!</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Photo Viewer Modal - Real photos from backend */}
-      <PhotoViewModal
-        visible={showPhotoViewer}
-        photo={selectedPhoto}
-        onClose={handleClosePhotoModal}
-        onView={handleViewPhoto}
-        currentUserId={user?.uid || ""}
-      />
-
-      {/* Priority Selection Modal */}
       <Modal
         animationType="slide"
         transparent={true}

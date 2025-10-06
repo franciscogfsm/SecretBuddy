@@ -232,29 +232,19 @@ export const MatchesScreen = () => {
       <GradientBackground gradient="midnight">
         <TopHeader />
         {/* Header - Rounded gradient matching Settings */}
-        <LinearGradient
-          colors={["rgba(0,0,0,0.9)", "#070319", "#1C0E3C"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.roundedHeader, { paddingTop: insets.top + 12 }]}
-        >
-          <View style={styles.headerInnerLeft}>
-            <Text style={styles.title}>Matches</Text>
-            <Text style={styles.subtitle}>Your secret connections</Text>
-          </View>
-          <View style={styles.headerSpacer} />
-        </LinearGradient>
 
         <View
           style={[
             styles.container,
             {
-              paddingTop: (insets.top || 0) + 110,
+              // Lift content up a bit so matches appear higher on the screen
+              paddingTop: (insets.top || 0) + 30,
               paddingHorizontal: Math.max(16, insets.left + 4),
             },
           ]}
         >
           {/* Info Card */}
+          <Text style={styles.sectionTitle}>Matches</Text>
           <View style={styles.infoCard}>
             <LinearGradient
               colors={["rgba(139, 92, 246, 0.12)", "rgba(236, 72, 153, 0.12)"]}
@@ -331,16 +321,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   listContainer: {
-    paddingBottom: 100,
+    paddingBottom: 80,
   },
   infoCard: {
     marginBottom: 20,
+    alignItems: "center",
+  },
+  sectionTitle: {
+    ...typography.title,
+    color: colors.textPrimary,
+    fontSize: isSmallScreen ? 20 : 22,
+    fontWeight: "800",
+    marginTop: 12,
+    marginBottom: 8,
+    alignSelf: "center",
+    letterSpacing: -0.4,
   },
   infoGradient: {
     borderRadius: 16,
-    padding: isSmallScreen ? 14 : 16,
+    padding: isSmallScreen ? 16 : 18,
     borderWidth: 1,
-    borderColor: "rgba(139, 92, 246, 0.25)",
+    borderColor: "rgba(139, 92, 246, 0.18)",
+    width: "100%",
+    maxWidth: 760,
+    backgroundColor: "rgba(10, 6, 20, 0.48)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 6,
   },
   infoRow: {
     flexDirection: "row",
@@ -348,37 +357,39 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   infoIconWrapper: {
-    width: isSmallScreen ? 36 : 40,
-    height: isSmallScreen ? 36 : 40,
-    borderRadius: isSmallScreen ? 10 : 12,
-    backgroundColor: "rgba(139, 92, 246, 0.18)",
+    width: isSmallScreen ? 44 : 50,
+    height: isSmallScreen ? 44 : 50,
+    borderRadius: isSmallScreen ? 12 : 14,
+    backgroundColor: "rgba(139, 92, 246, 0.22)",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(139, 92, 246, 0.3)",
+    borderColor: "rgba(139, 92, 246, 0.28)",
+    marginRight: 12,
   },
   infoTextContainer: {
     flex: 1,
+    justifyContent: "center",
   },
   infoTitle: {
     ...typography.subtitle,
     color: colors.textPrimary,
-    fontSize: isSmallScreen ? 14 : 15,
+    fontSize: isSmallScreen ? 16 : 17,
     fontWeight: "700",
-    marginBottom: 4,
+    marginBottom: 6,
     letterSpacing: -0.2,
   },
   infoText: {
     ...typography.caption,
     color: colors.textSecondary,
-    fontSize: isSmallScreen ? 12 : 13,
-    lineHeight: isSmallScreen ? 17 : 18,
+    fontSize: isSmallScreen ? 13 : 14,
+    lineHeight: isSmallScreen ? 18 : 20,
   },
   chatItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: isSmallScreen ? 14 : 16,
-    paddingHorizontal: isSmallScreen ? 16 : 18,
+    paddingVertical: isSmallScreen ? 16 : 20,
+    paddingHorizontal: isSmallScreen ? 18 : 20,
     backgroundColor: "rgba(6, 0, 18, 0.75)",
     borderRadius: 20,
     marginBottom: isSmallScreen ? 10 : 12,
@@ -407,9 +418,9 @@ const styles = StyleSheet.create({
     marginRight: isSmallScreen ? 12 : 14,
   },
   avatar: {
-    width: isSmallScreen ? 52 : 58,
-    height: isSmallScreen ? 52 : 58,
-    borderRadius: isSmallScreen ? 16 : 18,
+    width: isSmallScreen ? 60 : 72,
+    height: isSmallScreen ? 60 : 72,
+    borderRadius: isSmallScreen ? 18 : 22,
     backgroundColor: "rgba(139, 92, 246, 0.25)",
     alignItems: "center",
     justifyContent: "center",
@@ -431,7 +442,7 @@ const styles = StyleSheet.create({
   avatarText: {
     ...typography.subtitle,
     color: colors.textPrimary,
-    fontSize: isSmallScreen ? 18 : 20,
+    fontSize: isSmallScreen ? 22 : 26,
     fontWeight: "700",
   },
   onlineIndicator: {
