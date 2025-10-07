@@ -2,6 +2,15 @@
   "name": "secretbuddy-app",
   "version": "0.1.0",
   "private": true,
+  "expo": {
+    "install": {
+      "exclude": [
+        "react-native-reanimated",
+        "expo",
+        "expo-notifications"
+      ]
+    }
+  },
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
@@ -42,6 +51,7 @@
     "react-native-reanimated": "~2.14.4",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
+    "react-native-svg": "15.12.1",
     "react-native-web": "0.21.1"
   },
   "devDependencies": {
@@ -56,7 +66,6 @@
     "@types/jest": "^29.5.12",
     "@types/node": "^24.6.2",
     "@types/react": "^19.1.0",
-    "@types/react-native": "0.73.0",
     "@types/react-test-renderer": "19.0.0",
     "dotenv": "^17.2.3",
     "eslint": "^8.57.0",

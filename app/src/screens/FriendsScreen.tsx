@@ -79,6 +79,10 @@ export const FriendsScreen = () => {
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [blockModalVisible, setBlockModalVisible] = useState(false);
+  const [selectedReportTarget, setSelectedReportTarget] =
+    useState<FriendProfile | null>(null);
+  const [selectedBlockTarget, setSelectedBlockTarget] =
+    useState<FriendProfile | null>(null);
 
   // Real data from backend
   const [friends, setFriends] = useState<FriendProfile[]>([]);
@@ -566,6 +570,9 @@ export const FriendsScreen = () => {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={
+          !profileModalVisible && !reportModalVisible && !blockModalVisible
+        }
       >
         <View style={styles.container}>
           <View style={styles.header}>
@@ -796,10 +803,15 @@ export const FriendsScreen = () => {
                     <TouchableOpacity
                       style={styles.reportButton}
                       onPress={() => {
+                        // Preserve the current friend as the report target, close the profile modal
+                        // then open the report modal after the profile modal is dismissed to avoid
+                        // modal stacking and touch-blocking issues.
+                        if (selectedFriend) {
+                          setSelectedReportTarget(selectedFriend);
+                        }
                         setProfileModalVisible(false);
-                        setTimeout(() => {
-                          setReportModalVisible(true);
-                        }, 300);
+                        // small delay to ensure the first modal has been dismissed
+                        setTimeout(() => setReportModalVisible(true), 220);
                       }}
                       activeOpacity={0.7}
                     >
@@ -814,10 +826,12 @@ export const FriendsScreen = () => {
                     <TouchableOpacity
                       style={styles.blockButton}
                       onPress={() => {
+                        // Preserve block target then close profile modal before opening block confirm
+                        if (selectedFriend) {
+                          setSelectedBlockTarget(selectedFriend);
+                        }
                         setProfileModalVisible(false);
-                        setTimeout(() => {
-                          setBlockModalVisible(true);
-                        }, 300);
+                        setTimeout(() => setBlockModalVisible(true), 220);
                       }}
                       activeOpacity={0.7}
                     >
@@ -837,32 +851,53 @@ export const FriendsScreen = () => {
       </Modal>
 
       {/* Report Modal */}
-      {selectedFriend && user && (
-        <ReportModal
-          visible={reportModalVisible}
-          onClose={() => setReportModalVisible(false)}
-          reportType="user"
-          targetName={selectedFriend.displayName}
-          reportedUserId={selectedFriend.uid}
-          reportingUserId={user.uid}
-        />
-      )}
+      <ReportModal
+        visible={reportModalVisible}
+        onClose={() => {
+          setReportModalVisible(false);
+          // Clear preserved target after closing so it doesn't linger
+          setSelectedReportTarget(null);
+        }}
+        reportType="user"
+        targetName={
+          selectedReportTarget?.displayName || selectedFriend?.displayName
+        }
+        reportedUserId={selectedReportTarget?.uid || selectedFriend?.uid || ""}
+        reportingUserId={user?.uid || ""}
+      />
 
       {/* Block Confirm Modal */}
       <BlockConfirmModal
         visible={blockModalVisible}
-        onClose={() => setBlockModalVisible(false)}
+        onClose={() => {
+          setBlockModalVisible(false);
+          setSelectedBlockTarget(null);
+        }}
         onConfirm={async () => {
-          // TODO: Implement Firebase block logic
-          if (selectedFriend && user) {
-            await blockUser(user.uid, selectedFriend.uid);
-            // Remove from friends list after blocking
-            setFriends(friends.filter((f) => f.uid !== selectedFriend.uid));
+          // Use preserved block target if available; fall back to selectedFriend
+          const target = selectedBlockTarget || selectedFriend;
+          if (target && user) {
+            try {
+              setActionLoading(true);
+              await blockUser(user.uid, target.uid);
+              // Remove from friends list after blocking
+              setFriends((prev) => prev.filter((f) => f.uid !== target.uid));
+            } catch (error) {
+              console.error("Error blocking user:", error);
+              Alert.alert("Error", "Failed to block user. Please try again.");
+            } finally {
+              setActionLoading(false);
+            }
           }
           setBlockModalVisible(false);
-          closeProfileModal();
+          // ensure we clear preserved block target
+          setSelectedBlockTarget(null);
         }}
-        userName={selectedFriend?.displayName || "User"}
+        userName={
+          selectedBlockTarget?.displayName ||
+          selectedFriend?.displayName ||
+          "User"
+        }
       />
     </GradientBackground>
   );

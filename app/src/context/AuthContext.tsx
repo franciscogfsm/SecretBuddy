@@ -117,21 +117,36 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     return Constants.appOwnership === "expo";
   }, []);
 
-  const redirectUri = useMemo(
+  // Compute native redirect URI (used for dev-client / standalone builds)
+  const nativeRedirectUri = useMemo(
     () =>
       makeRedirectUri({
-        scheme: shouldUseProxy ? undefined : "secretbuddy",
+        scheme: "secretbuddy",
         path: "oauth",
       }),
-    [shouldUseProxy]
+    []
+  );
+
+  // For logging, show the redirect the app will use (native redirect by default)
+  const effectiveRedirectForLog = nativeRedirectUri;
+
+  // Debugging output: help diagnose redirect URI mismatches with Google
+  // Use a distinctive prefix so Metro logs are easy to search
+  // eslint-disable-next-line no-console
+  console.log(
+    "LOG >>> Auth: effectiveRedirect=",
+    effectiveRedirectForLog,
+    "appOwnership=",
+    Constants.appOwnership,
+    "shouldUseProxy=",
+    shouldUseProxy
   );
 
   const [request, , promptAsync] = supportsGoogleSignIn
     ? Google.useAuthRequest({
         ...googleConfig,
-        redirectUri,
-        ...(shouldUseProxy ? { useProxy: true } : {}),
-      } as Parameters<typeof Google.useAuthRequest>[0])
+        redirectUri: nativeRedirectUri,
+      } as unknown as Parameters<typeof Google.useAuthRequest>[0])
     : [
         null,
         null,
@@ -139,6 +154,10 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       ];
 
   useEffect(() => {
+    // Debug: show which Google client IDs are configured at runtime
+    // eslint-disable-next-line no-console
+    console.log("Auth debug: googleConfig=", JSON.stringify(googleConfig));
+
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
       setInitializing(false);
@@ -222,9 +241,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         showInRecents: true,
       } as any;
 
-      if (shouldUseProxy) {
-        (promptOptions as { useProxy?: boolean }).useProxy = true;
-      }
+      // keep default prompt options; do not force proxy
 
       const result = await promptAsync(
         promptOptions as Parameters<typeof promptAsync>[0]

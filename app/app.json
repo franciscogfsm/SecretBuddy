@@ -12,11 +12,14 @@
       "resizeMode": "contain",
       "backgroundColor": "#12002f"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "icon": "./assets/Assets.xcassets/AppIcon.appiconset/180.png",
-      "bundleIdentifier": "com.secretbuddy.app",
+      "bundleIdentifier": "com.secret.secretBuddy",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "usesAppleSignIn": false,
       "infoPlist": {
         "NSCameraUsageDescription": "SecretBuddy needs camera access to take and share photos with your anonymous buddy while keeping your identity hidden."
@@ -43,6 +46,9 @@
       "eas": {
         "projectId": "fce3b08f-a412-435b-b80c-fab92b570c1b"
       }
+    },
+    "android": {
+      "package": "com.secret.secretBuddy"
     }
   }
 }

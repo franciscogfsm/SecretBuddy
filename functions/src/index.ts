@@ -1513,11 +1513,18 @@ async function sendPhotoNotificationToPool(
   db: admin.firestore.Firestore
 ): Promise<number> {
   try {
-    // OPTIMIZATION: Single indexed query for active pairs
+    // Get today's date for filtering pairs created today
+    const today = new Date().toISOString().split("T")[0];
+    const todayStart = new Date(today + "T00:00:00.000Z");
+    const todayEnd = new Date(today + "T23:59:59.999Z");
+
+    // OPTIMIZATION: Single indexed query for active pairs in today's pool
     const pairsSnapshot = await db
       .collection("pairs")
       .where("poolId", "==", poolId)
       .where("status", "==", "active")
+      .where("createdAt", ">=", admin.firestore.Timestamp.fromDate(todayStart))
+      .where("createdAt", "<=", admin.firestore.Timestamp.fromDate(todayEnd))
       .get();
 
     if (pairsSnapshot.empty) {
@@ -1648,10 +1655,15 @@ async function sendPhotoNotificationToPool(
 async function sendRevealNotifications(db: admin.firestore.Firestore) {
   try {
     const nowTs = admin.firestore.Timestamp.now();
-    const pairsRef = db.collection("pairs");
+    const today = new Date().toISOString().split("T")[0];
 
-    // Query active pairs
-    const snapshot = await pairsRef.where("status", "==", "active").get();
+    // Query active pairs from today's pools only
+    const pairsRef = db.collection("pairs");
+    const snapshot = await pairsRef
+      .where("status", "==", "active")
+      .where("poolId", ">=", today)
+      .where("poolId", "<", today + "\uf8ff")
+      .get();
     if (snapshot.empty) return 0;
 
     // Filter pairs that need notification
@@ -2034,6 +2046,14 @@ async function sendRevealNotificationsForPool(
 ) {
   try {
     const nowTs = admin.firestore.Timestamp.now();
+    const today = new Date().toISOString().split("T")[0];
+
+    // Ensure we're only processing today's pools
+    if (!poolId.startsWith(today)) {
+      console.log(`⚠️ Skipping reveal notifications for old pool: ${poolId}`);
+      return 0;
+    }
+
     const pairsRef = db.collection("pairs");
 
     const snapshot = await pairsRef

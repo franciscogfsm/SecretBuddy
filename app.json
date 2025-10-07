@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "fce3b08f-a412-435b-b80c-fab92b570c1b"
+      }
+    },
+    "owner": "inaciobalu",
+    "android": {
+      "package": "com.inaciobalu.secretbuddy"
+    }
+  }
+}
