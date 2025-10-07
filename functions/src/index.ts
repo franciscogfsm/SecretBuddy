@@ -2719,12 +2719,47 @@ export const awardPointsForPhoto = functions
 
       // Award 10 points for sending a photo
       const senderRef = db.collection("users").doc(senderId);
+
+      // Read current user data to update streak based on last activity date
+      const senderDoc = await senderRef.get();
+      const senderData = senderDoc.exists ? senderDoc.data() : {};
+      const lastActivityDate =
+        senderData?.lastActivityDate || senderData?.lastPairedDate;
+      const currentStreak = senderData?.streak || 0;
+
+      const today = new Date().toISOString().split("T")[0];
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+      let newStreak = currentStreak;
+
+      if (lastActivityDate) {
+        if (lastActivityDate === yesterdayStr) {
+          // Consecutive day activity
+          newStreak = currentStreak + 1;
+        } else if (lastActivityDate === today) {
+          // Already active today - keep current streak
+          newStreak = currentStreak || 1;
+        } else {
+          // Missed one or more days - lose streak
+          newStreak = 0;
+        }
+      } else {
+        // First time activity - start streak
+        newStreak = 1;
+      }
+
       await senderRef.update({
         points: admin.firestore.FieldValue.increment(10),
+        streak: newStreak,
+        lastActivityDate: today,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      console.log(`✅ Awarded 10 points to ${senderId} for sending photo`);
+      console.log(
+        `✅ Awarded 10 points to ${senderId} for sending photo, streak: ${newStreak}`
+      );
     } catch (error) {
       console.error("❌ Error in awardPointsForPhoto:", error);
     }
@@ -2797,8 +2832,8 @@ async function updateUserPairingStats(
       // Consecutive day - increment streak
       newStreak = currentStreak + 1;
     } else if (lastPairedDate !== today) {
-      // Streak broken - reset to 1
-      newStreak = 1;
+      // Streak broken - reset to 0 (user loses their streak and won't receive streak bonus)
+      newStreak = 0;
     }
     // If lastPairedDate === today, keep current streak (already paired today)
   } else {
