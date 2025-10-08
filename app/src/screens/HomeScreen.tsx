@@ -966,6 +966,38 @@ export const HomeScreen = () => {
     };
   }, [isInPool, currentPair, user?.uid]);
 
+  // Auto-leave pool if past pool hours (after 17h Portugal time) and not paired
+  useEffect(() => {
+    if (!user?.uid || !isInPool || currentPair) return;
+
+    const checkPoolHours = async () => {
+      try {
+        const now = getAdjustedTime();
+        const portugalTime = new Date(now.getTime() + 1 * 60 * 60 * 1000);
+        const hour = portugalTime.getUTCHours();
+
+        // If past pool hours (17h or later) and still in pool without pair
+        if (hour >= 17 && isInPool && !currentPair && currentPool) {
+          console.log("⏰ Past pool hours - auto-leaving pool");
+          await poolService.leavePool(user.uid, currentPool.id);
+          setIsInPool(false);
+          setSelectedPriority(null);
+          setCurrentPool(null);
+        }
+      } catch (error) {
+        console.error("❌ Error checking pool hours:", error);
+      }
+    };
+
+    // Check immediately
+    checkPoolHours();
+
+    // Check every minute
+    const interval = setInterval(checkPoolHours, 60000);
+
+    return () => clearInterval(interval);
+  }, [user?.uid, isInPool, currentPair, currentPool, getAdjustedTime]);
+
   // Restore photo challenge from AsyncStorage on mount (ALWAYS, even without login)
   useEffect(() => {
     const restorePhotoChallenge = async () => {
@@ -1100,6 +1132,15 @@ export const HomeScreen = () => {
   };
 
   const handlePairingPress = () => {
+    console.log(
+      "🔘 Button pressed! isInPool:",
+      isInPool,
+      "currentPair:",
+      !!currentPair,
+      "poolLoading:",
+      poolLoading
+    );
+
     if (currentPair && poolService.isRevealTime(currentPair)) {
       // Navigate to reveal screen
       navigation.navigate("Reveal" as never);
@@ -1119,9 +1160,11 @@ export const HomeScreen = () => {
 
     if (isInPool) {
       // Show option to leave pool (only if not paired yet)
+      console.log("📤 Calling handleLeavePool");
       handleLeavePool();
     } else {
       // Show option to join pool
+      console.log("📥 Calling handleStartPairing");
       handleStartPairing();
     }
   };
@@ -1129,8 +1172,14 @@ export const HomeScreen = () => {
   const getStatusText = () => {
     // Server-adjusted time
     const now = getAdjustedTime();
-    const localHour = now.getHours();
-    const localStartHour = utcToLocalHour(10);
+    const portugalTime = new Date(now.getTime() + 1 * 60 * 60 * 1000);
+    const hour = portugalTime.getUTCHours();
+    const localStartHour = 9; // Pools start at 9h Portugal time
+
+    // Check if past pool hours (after 17h)
+    if (hour >= 17 && !currentPair) {
+      return "Pools closed for today. Come back tomorrow at 9:00!";
+    }
 
     if (currentPair) {
       if (poolService.isRevealTime(currentPair)) {
@@ -1149,7 +1198,7 @@ export const HomeScreen = () => {
       }
 
       // If pair exists but we're after reveal window (waiting for next day)
-      if (localHour >= 12) {
+      if (hour >= 12) {
         return `Pools open at ${localStartHour}:00. Come back soon!`;
       }
 
@@ -1159,15 +1208,20 @@ export const HomeScreen = () => {
 
     if (isInPool && currentPool) {
       // Calculate time until pairing (next hour)
-      const now = getAdjustedTime();
-      const currentHour = now.getUTCHours() + 1; // Portugal time
+      const currentHour = hour;
       const nextHour = currentHour + 1;
 
-      // Create date for next hour
-      const nextPairingTime = new Date(now);
-      nextPairingTime.setUTCHours(nextHour - 1, 0, 0, 0); // Set to next hour in UTC
+      // If next hour would be past pool hours, show different message
+      if (nextHour > 17) {
+        return "Pairing window closing soon...";
+      }
 
-      const timeUntilPairing = nextPairingTime.getTime() - now.getTime();
+      // Create date for next hour
+      const nextPairingTime = new Date(portugalTime);
+      nextPairingTime.setUTCHours(nextHour, 0, 0, 0);
+
+      const timeUntilPairing =
+        nextPairingTime.getTime() - portugalTime.getTime();
       const formattedTime = poolService.formatTimeRemaining(timeUntilPairing);
 
       return `Pairing in ${formattedTime}. Relax—we'll notify you!`;
@@ -1177,12 +1231,12 @@ export const HomeScreen = () => {
       return "Ready to find your mystery buddy?";
     }
 
-    // Default waiting message after 12 PM
-    if (localHour >= 12) {
-      return `Pools open at ${localStartHour}:00. Come back soon!`;
+    // Default waiting message after hours or before start
+    if (hour >= 17 || hour < 9) {
+      return `Pools open at ${localStartHour}:00. Come back tomorrow!`;
     }
 
-    return "Pools open 8AM-1PM and 1PM-5PM daily.";
+    return "Pools open 9AM-5PM daily.";
   };
 
   const getButtonText = () => {
@@ -1607,29 +1661,41 @@ export const HomeScreen = () => {
             </Animated.View>
           )}
 
-          {/* Show countdown timer when in pool waiting for pairing */}
-          {isInPool && !currentPair && (
-            <View style={styles.timersContainer}>
-              <View style={styles.timerCard}>
-                <Text style={styles.timerLabel}>Pairing In:</Text>
-                <Text style={styles.timerValue}>
-                  {(() => {
-                    const now = getAdjustedTime();
-                    const currentHour = now.getUTCHours() + 1; // Portugal time
-                    const nextHour = currentHour + 1;
+          {/* Show countdown timer when in pool waiting for pairing (only during pool hours) */}
+          {isInPool &&
+            !currentPair &&
+            (() => {
+              const now = getAdjustedTime();
+              const portugalTime = new Date(now.getTime() + 1 * 60 * 60 * 1000);
+              const hour = portugalTime.getUTCHours();
 
-                    // Create date for next hour
-                    const nextPairingTime = new Date(now);
-                    nextPairingTime.setUTCHours(nextHour - 1, 0, 0, 0);
+              // Don't show countdown if past pool hours
+              if (hour >= 17) return null;
 
-                    const timeUntilPairing =
-                      nextPairingTime.getTime() - now.getTime();
-                    return poolService.formatTimeRemaining(timeUntilPairing);
-                  })()}
-                </Text>
-              </View>
-            </View>
-          )}
+              return (
+                <View style={styles.timersContainer}>
+                  <View style={styles.timerCard}>
+                    <Text style={styles.timerLabel}>Pairing In:</Text>
+                    <Text style={styles.timerValue}>
+                      {(() => {
+                        const currentHour = hour;
+                        const nextHour = currentHour + 1;
+
+                        // Create date for next hour
+                        const nextPairingTime = new Date(portugalTime);
+                        nextPairingTime.setUTCHours(nextHour, 0, 0, 0);
+
+                        const timeUntilPairing =
+                          nextPairingTime.getTime() - portugalTime.getTime();
+                        return poolService.formatTimeRemaining(
+                          timeUntilPairing
+                        );
+                      })()}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
 
           {/* Show only reveal time countdown if paired (simplified) */}
           {currentPair &&
@@ -1653,8 +1719,11 @@ export const HomeScreen = () => {
             <>
               <PrimaryButton
                 label={getButtonText()}
-                onPress={handlePairingPress}
-                variant={currentPool ? "primary" : "ghost"}
+                onPress={() => {
+                  console.log("🖱️ Button onPress called");
+                  handlePairingPress();
+                }}
+                variant={isInPool ? "ghost" : currentPool ? "primary" : "ghost"}
                 disabled={poolLoading}
               />
 
