@@ -232,6 +232,7 @@ export const dailyCleanup = functions
     }
 
     // 2. Delete pools from previous day (always delete, not conditional)
+    // This includes the main pool documents AND all their subcollections (shards, poolUsers)
     console.log("🗑️ Deleting pools from previous day...");
     const yesterdayPoolsSnapshot = await db
       .collection("pools")
@@ -240,14 +241,61 @@ export const dailyCleanup = functions
 
     if (!yesterdayPoolsSnapshot.empty) {
       const docs = yesterdayPoolsSnapshot.docs;
-      for (let i = 0; i < docs.length; i += 450) {
-        const chunk = docs.slice(i, i + 450);
-        const poolsBatch = db.batch();
-        chunk.forEach((doc) => {
-          poolsBatch.delete(doc.ref);
-          poolsDeleted++;
-        });
-        await poolsBatch.commit();
+
+      // Delete each pool and all its subcollections completely
+      for (const poolDoc of docs) {
+        const poolId = poolDoc.id;
+        console.log(`🗑️ Deleting pool ${poolId} and all subcollections...`);
+
+        // Get all shards for this pool
+        const shardsSnapshot = await db
+          .collection("pools")
+          .doc(poolId)
+          .collection("shards")
+          .get();
+
+        if (!shardsSnapshot.empty) {
+          console.log(`  Found ${shardsSnapshot.size} shards to delete`);
+
+          // Delete all poolUsers in each shard, then delete the shard
+          for (const shardDoc of shardsSnapshot.docs) {
+            const shardId = shardDoc.id;
+
+            // Get all poolUsers in this shard
+            const poolUsersSnapshot = await db
+              .collection("pools")
+              .doc(poolId)
+              .collection("shards")
+              .doc(shardId)
+              .collection("poolUsers")
+              .get();
+
+            // Delete poolUsers in batches
+            if (!poolUsersSnapshot.empty) {
+              console.log(
+                `    Deleting ${poolUsersSnapshot.size} poolUsers from ${shardId}`
+              );
+              const poolUsersDocs = poolUsersSnapshot.docs;
+              for (let i = 0; i < poolUsersDocs.length; i += 450) {
+                const chunk = poolUsersDocs.slice(i, i + 450);
+                const poolUsersBatch = db.batch();
+                chunk.forEach((doc) => {
+                  poolUsersBatch.delete(doc.ref);
+                });
+                await poolUsersBatch.commit();
+              }
+            }
+
+            // Delete the shard document itself after all poolUsers are deleted
+            console.log(`    Deleting shard document ${shardId}`);
+            await shardDoc.ref.delete();
+          }
+        }
+
+        // Finally, delete the main pool document (after all subcollections are gone)
+        console.log(`  Deleting main pool document ${poolId}`);
+        await poolDoc.ref.delete();
+        poolsDeleted++;
       }
     }
 
