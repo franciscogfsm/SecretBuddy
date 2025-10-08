@@ -8,6 +8,7 @@ import {
   Dimensions,
   Easing,
   Image,
+  Linking,
   Platform,
   StyleSheet,
   Text,
@@ -380,8 +381,25 @@ export const AuthOptionsScreen = ({ navigation }: Props) => {
             <View style={styles.footerContainer}>
               <Text style={styles.footer}>
                 By continuing, you agree to our{" "}
-                <Text style={styles.footerLink}>Terms of Service</Text> and{" "}
-                <Text style={styles.footerLink}>Privacy Policy</Text>
+                <Text
+                  style={styles.footerLink}
+                  onPress={() =>
+                    Linking.openURL("https://secret-buddy-web.vercel.app/terms")
+                  }
+                >
+                  Terms of Service
+                </Text>{" "}
+                and{" "}
+                <Text
+                  style={styles.footerLink}
+                  onPress={() =>
+                    Linking.openURL(
+                      "https://secret-buddy-web.vercel.app/privacy"
+                    )
+                  }
+                >
+                  Privacy Policy
+                </Text>
               </Text>
             </View>
           </View>

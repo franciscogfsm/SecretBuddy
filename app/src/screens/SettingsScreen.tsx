@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -429,6 +430,67 @@ export const SettingsScreen = () => {
               value={hapticFeedback}
             />
           </View>
+        </View>
+
+        {/* Legal Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Legal</Text>
+
+          <TouchableOpacity
+            style={styles.settingItem}
+            onPress={() =>
+              Linking.openURL("https://secret-buddy-web.vercel.app/terms")
+            }
+          >
+            <View style={styles.settingLeft}>
+              <View style={styles.settingIcon}>
+                <Ionicons
+                  name="document-text-outline"
+                  size={20}
+                  color={colors.accentPurple}
+                />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Terms of Service</Text>
+                <Text style={styles.settingDescription}>
+                  Read our terms and conditions
+                </Text>
+              </View>
+            </View>
+            <Ionicons
+              name="open-outline"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.settingItem, styles.settingItemLast]}
+            onPress={() =>
+              Linking.openURL("https://secret-buddy-web.vercel.app/privacy")
+            }
+          >
+            <View style={styles.settingLeft}>
+              <View style={styles.settingIcon}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={20}
+                  color={colors.accentTeal}
+                />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Privacy Policy</Text>
+                <Text style={styles.settingDescription}>
+                  Learn how we protect your data
+                </Text>
+              </View>
+            </View>
+            <Ionicons
+              name="open-outline"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* Account Section */}
