@@ -206,7 +206,11 @@ export const getCurrentPool = async (): Promise<Pool | null> => {
     // ✅ Get server time offset (cached - no Firestore read)
     const offset = await getServerTimeOffset();
     const serverTime = new Date(Date.now() + offset);
-    const hour = serverTime.getUTCHours();
+
+    // ✅ FIX: Get hour in UTC+1 (Portugal time) since pools are labeled with Portugal hours
+    // Server is in UTC, so we add 1 hour to get Portugal time
+    const portugalTime = new Date(serverTime.getTime() + 1 * 60 * 60 * 1000);
+    const hour = portugalTime.getUTCHours(); // This gives us the Portugal hour
 
     // ⚡ Check cache first (if same hour and less than 5 minutes old)
     if (currentPoolCache) {
@@ -217,14 +221,15 @@ export const getCurrentPool = async (): Promise<Pool | null> => {
     }
 
     // Cache miss or expired - fetch from Firestore
-    const dateStr = serverTime.toISOString().split("T")[0]; // YYYY-MM-DD (always UTC date)
+    const dateStr = portugalTime.toISOString().split("T")[0]; // YYYY-MM-DD (Portugal date)
 
     console.log(`🕐 Server UTC: ${serverTime.toISOString()}`);
-    console.log(`🎯 Checking pool: ${dateStr}-${hour}h (UTC)`);
+    console.log(`🇵🇹 Portugal time: ${portugalTime.toISOString()}`);
+    console.log(`🎯 Checking pool: ${dateStr}-${hour}h (Portugal time UTC+1)`);
 
-    // ✅ Hourly pools from 09:00 to 16:00 UTC (10:00-17:00 Portugal)
+    // ✅ Hourly pools from 09:00 to 16:00 Portugal time (UTC+1)
     if (hour < 9 || hour >= 17) {
-      console.log(`⏰ Outside pool hours (${hour}:00 UTC)`);
+      console.log(`⏰ Outside pool hours (${hour}:00 Portugal time)`);
       currentPoolCache = { pool: null, cachedAt: Date.now(), hour };
       return null; // Outside pool hours
     }

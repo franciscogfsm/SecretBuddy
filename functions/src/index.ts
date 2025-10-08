@@ -2519,55 +2519,112 @@ export const manualCreatePools = functions
 
       const revealHour = 20;
       const revealMin = Math.floor(Math.random() * 60);
-      const revealAt = new Date(now);
-      revealAt.setHours(revealHour, revealMin, 0, 0);
+      const revealAt = new Date(Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        revealHour,
+        revealMin,
+        0,
+        0
+      ));
 
-      // SAFETY CHECK: Ensure reveal time is never 21:xx or later
-      if (revealAt.getHours() >= 21) {
+      // SAFETY CHECK: Ensure reveal time is never 21:xx or later (in UTC)
+      if (revealAt.getUTCHours() >= 21) {
         console.error(
-          `🚨 CRITICAL: Reveal time calculated as ${revealAt.getHours()}:${revealAt.getMinutes()} - clamping to 20:59`
+          `🚨 CRITICAL: Reveal time calculated as ${revealAt.getUTCHours()}:${revealAt.getUTCMinutes()} UTC - clamping to 20:59 UTC`
         );
-        revealAt.setHours(20, 59, 0, 0);
+        revealAt.setUTCHours(20, 59, 0, 0);
       }
 
       for (const hour of poolHours) {
         const poolId = `${dateStr}-${hour}h`;
 
-        const joinWindowStart = new Date(now);
-        joinWindowStart.setHours(hour - 1, 0, 0, 0);
+        // Use UTC methods to ensure consistent timezone handling
+        const joinWindowStart = new Date(Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate(),
+          hour,
+          0,
+          0,
+          0
+        ));
 
-        const joinWindowEnd = new Date(now);
-        joinWindowEnd.setHours(hour, 0, 0, 0);
+        const joinWindowEnd = new Date(Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate(),
+          hour + 1,
+          0,
+          0,
+          0
+        ));
 
-        const photoWindowStart = new Date(now);
-        photoWindowStart.setHours(hour - 1, 0, 0, 0);
+        const photoWindowStart = new Date(Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate(),
+          hour,
+          0,
+          0,
+          0
+        ));
 
-        const photoWindowEnd = new Date(now);
-        photoWindowEnd.setHours(19, 45, 0, 0);
+        const photoWindowEnd = new Date(Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate(),
+          19,
+          45,
+          0,
+          0
+        ));
 
         const photoTimes: Date[] = [];
         if (hour < 20) {
-          const hoursAvailable = 19.75 - (hour - 1);
+          const hoursAvailable = 19.75 - hour; // Changed from (hour - 1) to hour
 
           if (hoursAvailable >= 2) {
             const spacing = hoursAvailable / 2;
 
-            const photo1Hour = hour - 1 + Math.floor(spacing / 2);
+            const photo1Hour = hour + Math.floor(spacing / 2);
             const photo1Min = Math.floor(Math.random() * 60);
-            const photo1 = new Date(now);
-            photo1.setHours(photo1Hour, photo1Min, 0, 0);
+            const photo1 = new Date(Date.UTC(
+              now.getUTCFullYear(),
+              now.getUTCMonth(),
+              now.getUTCDate(),
+              photo1Hour,
+              photo1Min,
+              0,
+              0
+            ));
             photoTimes.push(photo1);
 
-            const photo2Hour = hour - 1 + Math.floor(spacing * 1.5);
+            const photo2Hour = hour + Math.floor(spacing * 1.5);
             const photo2Min = Math.floor(Math.random() * 60);
-            const photo2 = new Date(now);
-            photo2.setHours(photo2Hour, photo2Min, 0, 0);
+            const photo2 = new Date(Date.UTC(
+              now.getUTCFullYear(),
+              now.getUTCMonth(),
+              now.getUTCDate(),
+              photo2Hour,
+              photo2Min,
+              0,
+              0
+            ));
             photoTimes.push(photo2);
           } else if (hoursAvailable === 1) {
-            const photoHour = hour - 1;
+            const photoHour = hour;
             const photoMin = Math.floor(Math.random() * 60);
-            const photo = new Date(now);
-            photo.setHours(photoHour, photoMin, 0, 0);
+            const photo = new Date(Date.UTC(
+              now.getUTCFullYear(),
+              now.getUTCMonth(),
+              now.getUTCDate(),
+              photoHour,
+              photoMin,
+              0,
+              0
+            ));
             photoTimes.push(photo);
           }
         }

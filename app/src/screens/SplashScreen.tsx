@@ -217,20 +217,43 @@ export const SplashScreen = ({ navigation }: Props) => {
 
   return (
     <View style={styles.container}>
-      {/* Modern Minimal Background */}
+      {/* Sophisticated Dark Gradient Background */}
       <LinearGradient
-        colors={["#060318", "#0d0720", "#12092a"]}
+        colors={["#0B0516", "#13071F", "#1A0B2E", "#0F0820"]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
 
-      {/* Subtle Glow Effects */}
+      {/* Subtle Sophisticated Glow Effects */}
       <View style={styles.glowContainer} pointerEvents="none">
-        <View style={[styles.glow, styles.glow1]} />
-        <View style={[styles.glow, styles.glow2]} />
+        {/* Deep ambient glows - very subtle */}
+        <Animated.View
+          style={[
+            styles.glow,
+            styles.glow1,
+            {
+              opacity: fadeAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 0.15],
+              }),
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.glow,
+            styles.glow2,
+            {
+              opacity: fadeAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 0.12],
+              }),
+            },
+          ]}
+        />
 
-        {/* Animated floating orbs for continuous motion (smaller, pastel) */}
+        {/* Subtle animated orbs - elegant and refined */}
         <Animated.View
           style={[
             styles.orb,
@@ -238,31 +261,25 @@ export const SplashScreen = ({ navigation }: Props) => {
             {
               opacity: orb1Anim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0.18, 0.32],
+                outputRange: [0.08, 0.18],
               }),
               transform: [
                 {
                   translateX: orb1Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0, -48, 18],
+                    outputRange: [0, -40, 20],
                   }),
                 },
                 {
                   translateY: orb1Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0, -28, 6],
-                  }),
-                },
-                {
-                  rotate: orb1Anim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: ["-6deg", "0deg", "8deg"],
+                    outputRange: [0, -30, 10],
                   }),
                 },
                 {
                   scale: orb1Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0.96, 1.08, 0.98],
+                    outputRange: [1, 1.08, 1.02],
                   }),
                 },
               ],
@@ -277,31 +294,25 @@ export const SplashScreen = ({ navigation }: Props) => {
             {
               opacity: orb2Anim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0.12, 0.26],
+                outputRange: [0.06, 0.16],
               }),
               transform: [
                 {
                   translateX: orb2Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0, 28, -36],
+                    outputRange: [0, 30, -35],
                   }),
                 },
                 {
                   translateY: orb2Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0, -12, 30],
-                  }),
-                },
-                {
-                  rotate: orb2Anim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: ["-4deg", "2deg", "6deg"],
+                    outputRange: [0, -15, 25],
                   }),
                 },
                 {
                   scale: orb2Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0.94, 1.02, 0.9],
+                    outputRange: [1, 1.06, 0.98],
                   }),
                 },
               ],
@@ -316,31 +327,25 @@ export const SplashScreen = ({ navigation }: Props) => {
             {
               opacity: orb3Anim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0.1, 0.22],
+                outputRange: [0.05, 0.14],
               }),
               transform: [
                 {
                   translateX: orb3Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0, 42, -12],
+                    outputRange: [0, 35, -15],
                   }),
                 },
                 {
                   translateY: orb3Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0, 36, -18],
-                  }),
-                },
-                {
-                  rotate: orb3Anim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: ["-10deg", "4deg", "8deg"],
+                    outputRange: [0, 30, -18],
                   }),
                 },
                 {
                   scale: orb3Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0.92, 1.14, 0.96],
+                    outputRange: [1, 1.1, 0.96],
                   }),
                 },
               ],
@@ -426,73 +431,75 @@ const styles = StyleSheet.create({
   },
   glow: {
     position: "absolute",
-    borderRadius: 300,
-    opacity: 0.15,
+    borderRadius: 600,
   },
   glow1: {
-    width: width * 1.5,
-    height: width * 1.5,
-    top: height * 0.2,
-    left: -width * 0.3,
-    backgroundColor: "#9C6BFF",
+    width: width * 2.2,
+    height: width * 2.2,
+    top: -height * 0.3,
+    left: -width * 0.6,
+    backgroundColor: "#5B21B6",
+    opacity: 0.15,
   },
   glow2: {
-    width: width * 1.2,
-    height: width * 1.2,
-    bottom: -width * 0.2,
-    right: -width * 0.4,
-    backgroundColor: "#FF4FB7",
+    width: width * 1.8,
+    height: width * 1.8,
+    bottom: -height * 0.35,
+    right: -width * 0.5,
+    backgroundColor: "#7E22CE",
+    opacity: 0.12,
   },
   // Animated orb base style
   orb: {
     position: "absolute",
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.08)",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 5,
   },
   orb1: {
-    width: width * 0.44,
-    height: width * 0.44,
-    left: -width * 0.18,
-    top: height * 0.12,
-    backgroundColor: "#7C4DFF",
+    width: width * 0.7,
+    height: width * 0.7,
+    left: -width * 0.35,
+    top: height * 0.1,
+    backgroundColor: "#4C1D95",
   },
   orb2: {
-    width: width * 0.36,
-    height: width * 0.36,
-    right: -width * 0.2,
-    top: height * 0.06,
-    backgroundColor: "#FF6BAC",
+    width: width * 0.6,
+    height: width * 0.6,
+    right: -width * 0.28,
+    top: height * 0.25,
+    backgroundColor: "#6B21A8",
   },
   orb3: {
-    width: width * 0.32,
-    height: width * 0.32,
-    left: width * 0.12,
-    bottom: -width * 0.18,
-    backgroundColor: "#3B82F6",
+    width: width * 0.55,
+    height: width * 0.55,
+    left: width * 0.1,
+    bottom: -width * 0.2,
+    backgroundColor: "#581C87",
   },
   frostCard: {
-    width: 168,
-    height: 168,
-    borderRadius: 36,
+    width: 140,
+    height: 140,
+    borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.02)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 30,
-    elevation: 18,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 15 },
+    shadowOpacity: 0.4,
+    shadowRadius: 35,
+    elevation: 20,
     overflow: "hidden",
   },
   frostOverlay: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.6,
-    borderRadius: 36,
+    opacity: 0.8,
+    borderRadius: 32,
   },
   safeArea: {
     flex: 1,
@@ -513,14 +520,14 @@ const styles = StyleSheet.create({
   logoGradient: {
     width: 140,
     height: 140,
-    borderRadius: 32,
+    borderRadius: 30,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#9C6BFF",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.6,
-    shadowRadius: 30,
-    elevation: 20,
+    shadowColor: "#A78BFA",
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.7,
+    shadowRadius: 40,
+    elevation: 25,
     padding: 8,
     backgroundColor: "transparent",
   },
@@ -530,7 +537,7 @@ const styles = StyleSheet.create({
     right: 8,
     bottom: 8,
     left: 8,
-    borderRadius: 26,
+    borderRadius: 24,
     backgroundColor: "transparent",
     overflow: "hidden",
     alignItems: "center",
