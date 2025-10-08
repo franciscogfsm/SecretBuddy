@@ -1158,14 +1158,23 @@ export const HomeScreen = () => {
     }
 
     if (isInPool && currentPool) {
-      // Show the local hour for pairing (pool closes next hour)
-      const poolHour = getCurrentPool();
-      return `Waiting for pairing at ${poolHour}.`;
+      // Calculate time until pairing (next hour)
+      const now = getAdjustedTime();
+      const currentHour = now.getUTCHours() + 1; // Portugal time
+      const nextHour = currentHour + 1;
+
+      // Create date for next hour
+      const nextPairingTime = new Date(now);
+      nextPairingTime.setUTCHours(nextHour - 1, 0, 0, 0); // Set to next hour in UTC
+
+      const timeUntilPairing = nextPairingTime.getTime() - now.getTime();
+      const formattedTime = poolService.formatTimeRemaining(timeUntilPairing);
+
+      return `Pairing in ${formattedTime}. Relax—we'll notify you!`;
     }
 
     if (currentPool) {
-      const poolHour = getCurrentPool();
-      return `Join Pool ${poolHour} to find a buddy!`;
+      return "Ready to find your mystery buddy?";
     }
 
     // Default waiting message after 12 PM
@@ -1200,7 +1209,7 @@ export const HomeScreen = () => {
     }
 
     if (currentPool) {
-      return `Join Pool ${getCurrentPool()}`;
+      return "Join Pool";
     }
 
     return "No Pool Available";
@@ -1522,8 +1531,8 @@ export const HomeScreen = () => {
             <Text style={styles.statusTitle}>
               {currentPair
                 ? "Paired"
-                : currentPool
-                ? `Pool ${getCurrentPool()}`
+                : isInPool
+                ? "In Pool"
                 : "Daily Connection"}
             </Text>
             <View
@@ -1532,7 +1541,7 @@ export const HomeScreen = () => {
                 {
                   backgroundColor: currentPair
                     ? colors.accentPink
-                    : currentPool
+                    : isInPool
                     ? colors.accentTeal
                     : colors.textSecondary,
                 },
@@ -1598,6 +1607,30 @@ export const HomeScreen = () => {
             </Animated.View>
           )}
 
+          {/* Show countdown timer when in pool waiting for pairing */}
+          {isInPool && !currentPair && (
+            <View style={styles.timersContainer}>
+              <View style={styles.timerCard}>
+                <Text style={styles.timerLabel}>Pairing In:</Text>
+                <Text style={styles.timerValue}>
+                  {(() => {
+                    const now = getAdjustedTime();
+                    const currentHour = now.getUTCHours() + 1; // Portugal time
+                    const nextHour = currentHour + 1;
+
+                    // Create date for next hour
+                    const nextPairingTime = new Date(now);
+                    nextPairingTime.setUTCHours(nextHour - 1, 0, 0, 0);
+
+                    const timeUntilPairing =
+                      nextPairingTime.getTime() - now.getTime();
+                    return poolService.formatTimeRemaining(timeUntilPairing);
+                  })()}
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Show only reveal time countdown if paired (simplified) */}
           {currentPair &&
             !excitedForReveal &&
@@ -1617,12 +1650,28 @@ export const HomeScreen = () => {
           {/* Hide the pairing CTA when reveal window is open - reveal interaction is handled by the Reveal Time card above */}
           {/* Only show pairing CTA when the user is NOT currently paired */}
           {!currentPair && !excitedForReveal && (
-            <PrimaryButton
-              label={getButtonText()}
-              onPress={handlePairingPress}
-              variant={currentPool ? "primary" : "ghost"}
-              disabled={poolLoading}
-            />
+            <>
+              <PrimaryButton
+                label={getButtonText()}
+                onPress={handlePairingPress}
+                variant={currentPool ? "primary" : "ghost"}
+                disabled={poolLoading}
+              />
+
+              {/* Modern button styling indicator */}
+              {isInPool && (
+                <View style={styles.buttonHintContainer}>
+                  <Ionicons
+                    name="exit-outline"
+                    size={14}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={styles.buttonHintText}>
+                    Tap to leave the pool anytime
+                  </Text>
+                </View>
+              )}
+            </>
           )}
 
           {poolLoading && (
@@ -1706,6 +1755,194 @@ export const HomeScreen = () => {
           <View style={styles.metaCard}>
             <Text style={styles.metaTitle}>Points</Text>
             <Text style={styles.metaValue}>{points} pts</Text>
+          </View>
+        </View>
+
+        {/* Notification Reminder - Show when in pool waiting for pairing */}
+        {isInPool && !currentPair && (
+          <View style={styles.notificationReminderCard}>
+            <View style={styles.notificationReminderHeader}>
+              <View style={styles.notificationReminderIconContainer}>
+                <Ionicons
+                  name="notifications-outline"
+                  size={22}
+                  color={colors.accentTeal}
+                />
+              </View>
+              <Text style={styles.notificationReminderTitle}>
+                We'll Notify You
+              </Text>
+            </View>
+            <Text style={styles.notificationReminderText}>
+              Feel free to leave the app. You'll receive a notification when
+              pairing happens at {getCurrentPool()}, and throughout the day when
+              it's time to send photos to your mystery buddy.
+            </Text>
+          </View>
+        )}
+
+        {/* Engaging Content Cards - Show when NOT in pool or paired */}
+        {!isInPool && !currentPair && (
+          <>
+            {/* How It Works Card - Interactive */}
+            <TouchableOpacity
+              style={styles.engagingCard}
+              activeOpacity={0.7}
+              onPress={() => {
+                // Could expand to show more details or link to help
+              }}
+            >
+              <View style={styles.engagingCardHeader}>
+                <View style={styles.engagingCardIconContainer}>
+                  <Ionicons
+                    name="help-circle-outline"
+                    size={22}
+                    color={colors.accentPurple}
+                  />
+                </View>
+                <Text style={styles.engagingCardTitle}>How It Works</Text>
+              </View>
+              <View style={styles.engagingCardContent}>
+                <View style={styles.engagingCardStep}>
+                  <View style={styles.engagingCardStepNumber}>
+                    <Text style={styles.engagingCardStepNumberText}>1</Text>
+                  </View>
+                  <Text style={styles.engagingCardStepText}>
+                    Join a pool and get paired with a mystery buddy
+                  </Text>
+                </View>
+                <View style={styles.engagingCardStep}>
+                  <View style={styles.engagingCardStepNumber}>
+                    <Text style={styles.engagingCardStepNumberText}>2</Text>
+                  </View>
+                  <Text style={styles.engagingCardStepText}>
+                    Exchange anonymous photos throughout the day
+                  </Text>
+                </View>
+                <View style={styles.engagingCardStep}>
+                  <View style={styles.engagingCardStepNumber}>
+                    <Text style={styles.engagingCardStepNumberText}>3</Text>
+                  </View>
+                  <Text style={styles.engagingCardStepText}>
+                    Reveal identities and chat with your buddy
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            {/* Pro Tips Card - Interactive */}
+            <TouchableOpacity
+              style={[
+                styles.engagingCard,
+                { backgroundColor: "rgba(139, 92, 246, 0.08)" },
+              ]}
+              activeOpacity={0.7}
+              onPress={() => {
+                // Could expand to show more tips
+              }}
+            >
+              <View style={styles.engagingCardHeader}>
+                <View style={styles.engagingCardIconContainer}>
+                  <Ionicons
+                    name="star-outline"
+                    size={22}
+                    color={colors.accentPink}
+                  />
+                </View>
+                <Text style={styles.engagingCardTitle}>Tips for Success</Text>
+              </View>
+              <View style={styles.engagingCardContent}>
+                <View style={styles.tipRow}>
+                  <View style={styles.tipBullet} />
+                  <Text style={styles.engagingCardTip}>
+                    Send creative photos to keep your buddy engaged
+                  </Text>
+                </View>
+                <View style={styles.tipRow}>
+                  <View style={styles.tipBullet} />
+                  <Text style={styles.engagingCardTip}>
+                    Keep your streak going by participating daily
+                  </Text>
+                </View>
+                <View style={styles.tipRow}>
+                  <View style={styles.tipBullet} />
+                  <Text style={styles.engagingCardTip}>
+                    Earn points by completing challenges
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Quick Actions Card - Always visible */}
+        <View style={styles.quickActionsCard}>
+          <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+          <View style={styles.quickActionsGrid}>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              activeOpacity={0.7}
+              onPress={() =>
+                (navigation as any).navigate("MainTabs", {
+                  screen: "Leaderboard",
+                })
+              }
+            >
+              <View style={styles.quickActionIconContainer}>
+                <Ionicons
+                  name="trophy-outline"
+                  size={24}
+                  color={colors.accentPurple}
+                />
+              </View>
+              <Text style={styles.quickActionText}>Leaderboard</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              activeOpacity={0.7}
+              onPress={() => navigation.navigate("Friends")}
+            >
+              <View style={styles.quickActionIconContainer}>
+                <Ionicons
+                  name="people-outline"
+                  size={24}
+                  color={colors.accentTeal}
+                />
+              </View>
+              <Text style={styles.quickActionText}>Friends</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              activeOpacity={0.7}
+              onPress={() =>
+                (navigation as any).navigate("MainTabs", {
+                  screen: "Matches",
+                })
+              }
+            >
+              <View style={styles.quickActionIconContainer}>
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={24}
+                  color={colors.accentPink}
+                />
+              </View>
+              <Text style={styles.quickActionText}>Chats</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              activeOpacity={0.7}
+              onPress={() =>
+                (navigation as any).navigate("MainTabs", {
+                  screen: "Profile",
+                })
+              }
+            >
+              <View style={styles.quickActionIconContainer}>
+                <Ionicons name="person-outline" size={24} color="#F97316" />
+              </View>
+              <Text style={styles.quickActionText}>Profile</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -3609,5 +3846,177 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textSecondary,
     fontSize: 14,
+  },
+  // Notification reminder card styles
+  notificationReminderCard: {
+    backgroundColor: "rgba(46, 230, 169, 0.08)",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(46, 230, 169, 0.2)",
+    marginBottom: 20,
+  },
+  notificationReminderHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 12,
+  },
+  notificationReminderIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(46, 230, 169, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notificationReminderTitle: {
+    ...typography.subtitle,
+    color: colors.accentTeal,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  notificationReminderText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  // Engaging content card styles
+  engagingCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    marginBottom: 16,
+  },
+  engagingCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  engagingCardIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  engagingCardTitle: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  engagingCardContent: {
+    gap: 16,
+  },
+  engagingCardStep: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  engagingCardStepNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.accentPurple,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  engagingCardStepNumberText: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  engagingCardStepText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+    flex: 1,
+  },
+  tipRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  tipBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.accentPink,
+    marginTop: 8,
+  },
+  engagingCardTip: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+    flex: 1,
+  },
+  // Quick actions card styles
+  quickActionsCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    marginBottom: 16,
+  },
+  quickActionsTitle: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 16,
+  },
+  quickActionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  quickActionButton: {
+    flex: 1,
+    minWidth: "45%",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  quickActionIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickActionText: {
+    ...typography.body,
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  // Button hint styles
+  buttonHintContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 12,
+  },
+  buttonHintText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "400",
   },
 });
