@@ -508,9 +508,18 @@ export const HomeScreen = () => {
         setCurrentPool(pool);
 
         if (pool) {
-          // Check if user is in this pool
-          const inPool = await poolService.isUserInPool(user.uid, pool.id);
-          setIsInPool(inPool);
+          // Check if user is in this pool and get their game mode
+          const poolUserData = await poolService.getUserPoolData(
+            user.uid,
+            pool.id
+          );
+          if (poolUserData) {
+            setIsInPool(true);
+            setSelectedPriority(poolUserData.gameMode);
+          } else {
+            setIsInPool(false);
+            setSelectedPriority(null);
+          }
         }
 
         // Get current pair (if any)
@@ -1044,18 +1053,22 @@ export const HomeScreen = () => {
     setShowPriorityModal(true);
   };
 
-  const handlePrioritySelect = async (
-    priority: "friends" | "country" | "world"
-  ) => {
-    if (!user || !currentPool) return;
-
+  const handlePrioritySelect = (priority: "friends" | "country" | "world") => {
     setSelectedPriority(priority);
+  };
+
+  const handleContinueWithPriority = async () => {
+    if (!user || !currentPool || !selectedPriority) return;
+
     setShowPriorityModal(false);
     setPoolLoading(true);
 
     try {
-      await poolService.joinPool(user.uid, currentPool.id, priority);
+      await poolService.joinPool(user.uid, currentPool.id, selectedPriority);
       setIsInPool(true);
+    } catch (error) {
+      console.error("Error joining pool:", error);
+      Alert.alert("Error", "Failed to join pool. Please try again.");
     } finally {
       setPoolLoading(false);
     }
@@ -1527,9 +1540,32 @@ export const HomeScreen = () => {
             />
           </View>
           {!excitedForReveal && (
-            <Text style={styles.statusText}>
-              {isAfterReveal && currentPair ? timeUntilWindow : statusMessage}
-            </Text>
+            <>
+              <Text style={styles.statusText}>
+                {isAfterReveal && currentPair ? timeUntilWindow : statusMessage}
+              </Text>
+              {/* Show selected mode when in pool */}
+              {isInPool && selectedPriority && !currentPair && (
+                <View style={styles.selectedModeContainer}>
+                  <Ionicons
+                    name={
+                      selectedPriority === "friends"
+                        ? "people"
+                        : selectedPriority === "country"
+                        ? "flag"
+                        : "globe"
+                    }
+                    size={16}
+                    color={colors.accentPurple}
+                  />
+                  <Text style={styles.selectedModeText}>
+                    Mode:{" "}
+                    {selectedPriority.charAt(0).toUpperCase() +
+                      selectedPriority.slice(1)}
+                  </Text>
+                </View>
+              )}
+            </>
           )}
 
           {excitedForReveal && currentPair && (
@@ -1562,33 +1598,21 @@ export const HomeScreen = () => {
             </Animated.View>
           )}
 
-          {/* Show countdown timers if paired (hidden when excited for reveal) */}
-          {currentPair && !excitedForReveal && (
-            <View style={styles.timersContainer}>
-              <View style={styles.timerCard}>
-                <Text style={styles.timerLabel}>Photo Window</Text>
-                <Text style={styles.timerValue}>
-                  {poolService.isInPhotoWindow(currentPair, timeOffset)
-                    ? "Now!"
-                    : poolService.formatTimeRemaining(
-                        poolService.getTimeUntilPhotoWindow(currentPair)
-                      )}
-                </Text>
+          {/* Show only reveal time countdown if paired (simplified) */}
+          {currentPair &&
+            !excitedForReveal &&
+            !poolService.isRevealTime(currentPair, timeOffset) && (
+              <View style={styles.timersContainer}>
+                <View style={styles.timerCard}>
+                  <Text style={styles.timerLabel}>Reveal Time In:</Text>
+                  <Text style={styles.timerValue}>
+                    {poolService.formatTimeRemaining(
+                      poolService.getTimeUntilReveal(currentPair)
+                    )}
+                  </Text>
+                </View>
               </View>
-
-              {poolService.isInPhotoWindow(currentPair, timeOffset) &&
-                !poolService.isRevealTime(currentPair) && (
-                  <View style={styles.timerCard}>
-                    <Text style={styles.timerLabel}>Reveal Time In:</Text>
-                    <Text style={styles.timerValue}>
-                      {poolService.formatTimeRemaining(
-                        poolService.getTimeUntilReveal(currentPair)
-                      )}
-                    </Text>
-                  </View>
-                )}
-            </View>
-          )}
+            )}
 
           {/* Hide the pairing CTA when reveal window is open - reveal interaction is handled by the Reveal Time card above */}
           {/* Only show pairing CTA when the user is NOT currently paired */}
@@ -1700,46 +1724,79 @@ export const HomeScreen = () => {
         animationType="slide"
         transparent={true}
         visible={showPriorityModal}
-        onRequestClose={() => setShowPriorityModal(false)}
+        onRequestClose={() => {
+          // Only allow closing if a priority is selected
+          if (selectedPriority) {
+            setShowPriorityModal(false);
+          }
+        }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Choose Priority</Text>
-              <Pressable
-                hitSlop={12}
-                onPress={() => setShowPriorityModal(false)}
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => {
+            // Only allow closing by tapping outside if priority is selected
+            if (selectedPriority) {
+              setShowPriorityModal(false);
+            }
+          }}
+        >
+          <Pressable onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeaderRow}>
+                <Text style={styles.modalTitle}>Choose Priority</Text>
+                <Pressable
+                  hitSlop={12}
+                  onPress={() => {
+                    // Only allow closing with X if priority is selected
+                    if (selectedPriority) {
+                      setShowPriorityModal(false);
+                    }
+                  }}
+                >
+                  <Ionicons name="close" size={24} color={colors.textPrimary} />
+                </Pressable>
+              </View>
+
+              <Text style={styles.modalDescription}>
+                Select how you'd like to be matched with your mystery buddy
+              </Text>
+
+              <View style={styles.priorityOptions}>
+                <PillOption
+                  label="Friends"
+                  description="Pair with your friends first"
+                  selected={selectedPriority === "friends"}
+                  onPress={() => handlePrioritySelect("friends")}
+                />
+                <PillOption
+                  label="Country"
+                  description="Match with people from your country"
+                  selected={selectedPriority === "country"}
+                  onPress={() => handlePrioritySelect("country")}
+                />
+                <PillOption
+                  label="World"
+                  description="Connect with anyone globally"
+                  selected={selectedPriority === "world"}
+                  onPress={() => handlePrioritySelect("world")}
+                />
+              </View>
+
+              {/* Continue Button */}
+              <TouchableOpacity
+                style={[
+                  styles.continueButton,
+                  !selectedPriority && styles.continueButtonDisabled,
+                ]}
+                onPress={handleContinueWithPriority}
+                disabled={!selectedPriority}
               >
-                <Ionicons name="close" size={24} color={colors.textPrimary} />
-              </Pressable>
+                <Text style={styles.continueButtonText}>Continue</Text>
+                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
             </View>
-
-            <Text style={styles.modalDescription}>
-              Select how you'd like to be matched with your mystery buddy
-            </Text>
-
-            <View style={styles.priorityOptions}>
-              <PillOption
-                label="Friends"
-                description="Pair with your friends first"
-                selected={selectedPriority === "friends"}
-                onPress={() => handlePrioritySelect("friends")}
-              />
-              <PillOption
-                label="Country"
-                description="Match with people from your country"
-                selected={selectedPriority === "country"}
-                onPress={() => handlePrioritySelect("country")}
-              />
-              <PillOption
-                label="World"
-                description="Connect with anyone globally"
-                selected={selectedPriority === "world"}
-                onPress={() => handlePrioritySelect("world")}
-              />
-            </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Paired Success Modal */}
@@ -2264,6 +2321,26 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textSecondary,
     marginBottom: 16,
+  },
+  selectedModeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 12,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.3)",
+  },
+  selectedModeText: {
+    ...typography.caption,
+    color: colors.accentPurple,
+    fontSize: 13,
+    fontWeight: "600",
   },
   searchingIndicator: {
     alignItems: "center",
@@ -2832,6 +2909,10 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
+  },
+  continueButtonDisabled: {
+    backgroundColor: "rgba(99, 102, 241, 0.3)",
+    shadowOpacity: 0,
   },
 
   // Modal header with anonymity icon

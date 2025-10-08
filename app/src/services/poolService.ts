@@ -308,14 +308,21 @@ export const joinPool = async (
       userId
     );
 
-    await setDoc(poolUserDoc, {
+    // ✅ FIX: Only include country if it exists (Firestore doesn't allow undefined)
+    const poolUserData: any = {
       userId,
       poolId,
       poolType,
       gameMode,
       joinedAt: serverTimestamp(),
-      country: userProfile?.country || undefined,
-    });
+    };
+
+    // Only add country field if it exists
+    if (userProfile?.country) {
+      poolUserData.country = userProfile.country;
+    }
+
+    await setDoc(poolUserDoc, poolUserData);
 
     // ✅ FIX: Update pool metadata (shard counts)
     const poolRef = doc(db, POOLS_COLLECTION, poolId);
@@ -433,6 +440,49 @@ export const isUserInPool = async (
   } catch (error) {
     console.error("❌ Error checking pool membership:", error);
     return false;
+  }
+};
+
+/**
+ * Get user's pool data (including their selected game mode)
+ * ✅ SCALE OPTIMIZED: Searches all shards to find user
+ */
+export const getUserPoolData = async (
+  userId: string,
+  poolId: string
+): Promise<PoolUser | null> => {
+  try {
+    // Get pool document to find which shard to check
+    const poolDoc = await getDoc(doc(db, POOLS_COLLECTION, poolId));
+    if (!poolDoc.exists()) {
+      return null;
+    }
+
+    const poolData = poolDoc.data();
+    const currentShard = poolData.currentShard || 0;
+
+    // Check all shards (from 0 to currentShard)
+    for (let shardId = 0; shardId <= currentShard; shardId++) {
+      const poolUserDoc = doc(
+        db,
+        POOLS_COLLECTION,
+        poolId,
+        "shards",
+        `shard_${shardId}`,
+        "poolUsers",
+        userId
+      );
+
+      const userDoc = await getDoc(poolUserDoc);
+      if (userDoc.exists()) {
+        return userDoc.data() as PoolUser;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("❌ Error getting user pool data:", error);
+    return null;
   }
 };
 
