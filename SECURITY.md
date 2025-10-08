@@ -437,7 +437,7 @@ Before launching to production:
 
 For security issues:
 
-- **Email:** security@secretbuddy.app
+- **Email:** thesecretbuddyapp@gmail.com
 - **In-App:** Settings > Report Security Issue
 
 **Bug Bounty:** (Consider setting up)

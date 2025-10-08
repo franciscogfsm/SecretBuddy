@@ -144,8 +144,8 @@ export const TermsOfServiceScreen = () => {
           <Text style={styles.sectionTitle}>13. Contact Information</Text>
           <Text style={styles.body}>
             For questions about these Terms:{"\n"}
-            Email: support@secretbuddy.app{"\n"}
-            Legal inquiries: legal@secretbuddy.app
+            Email: thesecretbuddyapp@gmail.com{"\n"}
+            Legal inquiries: thesecretbuddyapp@gmail.com
           </Text>
         </View>
 

@@ -276,7 +276,7 @@ For users under 16:
 
 If you believe your child is using the App without consent:
 
-- Contact us immediately at privacy@secretbuddy.app
+- Contact us immediately at thesecretbuddyapp@gmail.com
 - We will delete the account and associated data
 - Provide proof of parentage if requested
 
@@ -312,7 +312,7 @@ We implement industry-standard security measures:
 - No system is 100% secure
 - We cannot guarantee absolute security
 - You use the App at your own risk
-- Report security vulnerabilities to security@secretbuddy.app
+- Report security vulnerabilities to thesecretbuddyapp@gmail.com
 
 ## 9. International Data Transfers
 
@@ -399,7 +399,7 @@ California residents have additional rights:
 
 ### 12.5 Exercising Rights
 
-- Email: privacy@secretbuddy.app
+- Email: thesecretbuddyapp@gmail.com
 - We will verify your identity before processing requests
 - Response within 45 days (may be extended to 90 days)
 

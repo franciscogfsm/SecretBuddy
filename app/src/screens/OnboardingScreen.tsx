@@ -892,7 +892,9 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                           style={styles.termsLink}
                           onPress={(event) => {
                             event.stopPropagation();
-                            openLegalLink("https://secretbuddy.app/terms");
+                            openLegalLink(
+                              "https://secret-buddy-web.vercel.app/terms"
+                            );
                           }}
                         >
                           {" "}
@@ -903,7 +905,9 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                           style={styles.termsLink}
                           onPress={(event) => {
                             event.stopPropagation();
-                            openLegalLink("https://secretbuddy.app/privacy");
+                            openLegalLink(
+                              "https://secret-buddy-web.vercel.app/privacy"
+                            );
                           }}
                         >
                           {" "}

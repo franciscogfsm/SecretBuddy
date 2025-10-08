@@ -147,7 +147,7 @@ export const PrivacyPolicyScreen = () => {
           </Text>
           <Text style={styles.body}>
             If you believe your child is using the App without consent, contact
-            us immediately at privacy@secretbuddy.app
+            us immediately at thesecretbuddyapp@gmail.com
           </Text>
         </View>
 
@@ -215,10 +215,10 @@ export const PrivacyPolicyScreen = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>12. Contact Us</Text>
           <Text style={styles.body}>
-            Privacy inquiries: privacy@secretbuddy.app{"\n"}
-            Data Protection Officer: dpo@secretbuddy.app{"\n"}
-            Security issues: security@secretbuddy.app{"\n"}
-            General support: support@secretbuddy.app
+            Privacy inquiries: thesecretbuddyapp@gmail.com{"\n"}
+            Data Protection Officer: thesecretbuddyapp@gmail.com{"\n"}
+            Security issues: thesecretbuddyapp@gmail.com{"\n"}
+            General support: thesecretbuddyapp@gmail.com
           </Text>
         </View>
 
