@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useIsFocused, useFocusEffect } from "@react-navigation/native";
+import { FireIcon, SparklesIcon } from "react-native-heroicons/solid";
 
 import { CountryDropdown } from "../components/CountryDropdown";
 import { GradientBackground } from "../components/GradientBackground";
@@ -1248,7 +1249,7 @@ export const HomeScreen = () => {
         nextPairingTime.getTime() - portugalTime.getTime();
       const formattedTime = poolService.formatTimeRemaining(timeUntilPairing);
 
-      return `Pairing in ${formattedTime}. Relax—we'll notify you!`;
+      return `Pairing in ${formattedTime}. Relax, we'll notify you!`;
     }
 
     if (currentPool) {
@@ -1910,12 +1911,24 @@ export const HomeScreen = () => {
         {/* Stats */}
         <View style={styles.metaSection}>
           <View style={styles.metaCard}>
-            <Text style={styles.metaTitle}>Streak</Text>
-            <Text style={styles.metaValue}>{streak} days 🔥</Text>
+            <View style={styles.metaCardHeader}>
+              <View style={styles.metaIconContainer}>
+                <FireIcon size={20} color={colors.accentPink} />
+              </View>
+              <Text style={styles.metaTitle}>Streak</Text>
+            </View>
+            <Text style={styles.metaValue}>{streak}</Text>
+            <Text style={styles.metaLabel}>days</Text>
           </View>
           <View style={styles.metaCard}>
-            <Text style={styles.metaTitle}>Points</Text>
-            <Text style={styles.metaValue}>{points} pts</Text>
+            <View style={styles.metaCardHeader}>
+              <View style={styles.metaIconContainer}>
+                <SparklesIcon size={20} color={colors.accentPurple} />
+              </View>
+              <Text style={styles.metaTitle}>Points</Text>
+            </View>
+            <Text style={styles.metaValue}>{points}</Text>
+            <Text style={styles.metaLabel}>pts</Text>
           </View>
         </View>
 
@@ -2695,70 +2708,106 @@ const styles = StyleSheet.create({
   },
   pairingCard: {
     borderRadius: isSmallScreen ? 20 : 24,
-    backgroundColor: "rgba(6, 0, 18, 0.72)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    padding: isSmallScreen ? 18 : 22,
+    backgroundColor: "rgba(11, 5, 32, 0.9)",
+    borderWidth: 1.5,
+    borderColor: "rgba(139, 92, 246, 0.3)",
+    padding: isSmallScreen ? 20 : 24,
+    shadowColor: "rgba(139, 92, 246, 0.4)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 8,
   },
   statusHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
+    justifyContent: "center",
+    marginBottom: 16,
+    gap: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(139, 92, 246, 0.2)",
   },
   statusTitle: {
-    ...typography.subtitle,
+    ...typography.title,
     color: colors.textPrimary,
+    fontSize: isSmallScreen ? 18 : 20,
+    fontWeight: "700",
+    textAlign: "center",
   },
   statusIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    shadowColor: "currentColor",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 3,
   },
   statusText: {
     ...typography.body,
     color: colors.textSecondary,
     marginBottom: 16,
+    textAlign: "center",
+    lineHeight: 22,
+    paddingHorizontal: 8,
   },
   selectedModeContainer: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    backgroundColor: "rgba(139, 92, 246, 0.15)",
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    backgroundColor: "rgba(139, 92, 246, 0.2)",
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     marginTop: 8,
     marginBottom: 12,
-    alignSelf: "flex-start",
-    borderWidth: 1,
-    borderColor: "rgba(139, 92, 246, 0.3)",
+    alignSelf: "center",
+    borderWidth: 1.5,
+    borderColor: "rgba(139, 92, 246, 0.4)",
+    shadowColor: "rgba(139, 92, 246, 0.3)",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   selectedModeText: {
     ...typography.caption,
     color: colors.accentPurple,
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
   searchingIndicator: {
     alignItems: "center",
-    marginTop: 12,
+    marginTop: 16,
+    marginBottom: 8,
   },
   searchingText: {
     ...typography.caption,
     color: colors.accentPurple,
-    fontWeight: "600",
+    fontWeight: "700",
+    fontSize: isSmallScreen ? 13 : 14,
+    letterSpacing: 0.5,
   },
 
   searchingContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 10,
+    backgroundColor: "rgba(139, 92, 246, 0.1)",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.3)",
   },
 
   searchingIcon: {
-    backgroundColor: "rgba(156, 107, 255, 0.1)",
+    backgroundColor: "rgba(156, 107, 255, 0.2)",
     borderRadius: 15,
     padding: 8,
   },
@@ -2895,20 +2944,62 @@ const styles = StyleSheet.create({
   },
   metaCard: {
     flex: 1,
-    borderRadius: 20,
-    padding: 20,
-    backgroundColor: "rgba(11, 5, 32, 0.7)",
+    borderRadius: isSmallScreen ? 18 : 20,
+    padding: isSmallScreen ? 18 : 20,
+    backgroundColor: "rgba(11, 5, 32, 0.85)",
+    borderWidth: 1.5,
+    borderColor: "rgba(139, 92, 246, 0.25)",
+    shadowColor: "rgba(139, 92, 246, 0.3)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  metaCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  metaIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(139, 92, 246, 0.3)",
   },
   metaTitle: {
     ...typography.subtitle,
     color: colors.textSecondary,
+    fontSize: isSmallScreen ? 13 : 14,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    textAlign: "center",
   },
   metaValue: {
-    ...typography.title,
-    color: colors.accentPurple,
-    marginTop: 8,
+    ...typography.display,
+    color: colors.textPrimary,
+    fontSize: isSmallScreen ? 32 : 36,
+    fontWeight: "800",
+    marginTop: 4,
+    letterSpacing: -1,
+    textAlign: "center",
+  },
+  metaLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: isSmallScreen ? 12 : 13,
+    fontWeight: "500",
+    marginTop: 2,
+    opacity: 0.7,
+    textAlign: "center",
   },
   modeOptions: {
     gap: 12,
@@ -3943,25 +4034,43 @@ const styles = StyleSheet.create({
   timersContainer: {
     marginVertical: 16,
     gap: 12,
+    alignItems: "center",
   },
   timerCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+    borderRadius: 16,
+    padding: isSmallScreen ? 20 : 24,
+    borderWidth: 1.5,
+    borderColor: "rgba(139, 92, 246, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: "85%",
+    shadowColor: "rgba(139, 92, 246, 0.3)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
   },
   timerLabel: {
     ...typography.caption,
     color: colors.textSecondary,
-    fontSize: 12,
-    marginBottom: 8,
+    fontSize: isSmallScreen ? 13 : 14,
+    marginBottom: 12,
+    textAlign: "center",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    fontWeight: "600",
   },
   timerValue: {
-    ...typography.title,
+    ...typography.display,
     color: colors.accentPurple,
-    fontSize: 24,
-    fontWeight: "700",
+    fontSize: isSmallScreen ? 32 : 36,
+    fontWeight: "900",
+    textAlign: "center",
+    letterSpacing: -1,
+    textShadowColor: "rgba(139, 92, 246, 0.3)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   // Priority modal styles
   modalHeaderRow: {
@@ -4253,11 +4362,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     marginTop: 12,
+    opacity: 0.7,
   },
   buttonHintText: {
-    ...typography.body,
+    ...typography.caption,
     color: colors.textSecondary,
     fontSize: 12,
-    fontWeight: "400",
+    fontWeight: "500",
+    textAlign: "center",
+    fontStyle: "italic",
   },
 });
