@@ -423,7 +423,7 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       name: derivedName,
       username: derivedUsername,
       age: derivedAge,
-      ageVisible: true, // Default to visible, user can change in privacy settings
+      ageVisible: false, // Default to private for user privacy
       country: derivedCountry,
       mode: profile?.mode ?? "global",
     });

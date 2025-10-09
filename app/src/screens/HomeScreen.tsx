@@ -1141,10 +1141,21 @@ export const HomeScreen = () => {
       poolLoading
     );
 
-    if (currentPair && poolService.isRevealTime(currentPair)) {
-      // Navigate to reveal screen
-      navigation.navigate("Reveal" as never);
-      return;
+    // Check if it's reveal time and user can reveal
+    if (currentPair && poolService.isRevealTime(currentPair, timeOffset)) {
+      // Only navigate to reveal if user sent photos and can reveal
+      if (poolService.canIReveal(currentPair, user?.uid || "")) {
+        navigation.navigate("Reveal" as never);
+        return;
+      } else {
+        // User ghosted - show them the warning
+        Alert.alert(
+          "👻 Can't Reveal",
+          "You didn't send any photos to your buddy today, so you can't reveal their identity. Send photos tomorrow to unlock reveals!",
+          [{ text: "OK" }]
+        );
+        return;
+      }
     }
 
     // If user already has a pair, don't allow leaving pool
@@ -1182,6 +1193,19 @@ export const HomeScreen = () => {
     }
 
     if (currentPair) {
+      // Check if user ghosted their buddy (didn't send any photos during photo window)
+      const myPhotoCount = poolService.getMyPhotoCount(
+        currentPair,
+        user?.uid || ""
+      );
+      const photoWindowPassed =
+        !poolService.isInPhotoWindow(currentPair, timeOffset) && hour >= 12; // After photo window
+
+      // If user didn't send any photos and photo window is over
+      if (myPhotoCount === 0 && photoWindowPassed) {
+        return "👻 You ghosted your buddy! You won't be able to reveal their identity because you didn't send any photos today.";
+      }
+
       if (poolService.isRevealTime(currentPair)) {
         return "🎉 Reveal time! See who your buddy is.";
       }
@@ -1246,9 +1270,14 @@ export const HomeScreen = () => {
 
     // Only show "Reveal Identity" during actual reveal window (21:00-22:00 UTC)
     if (currentPair && poolService.isRevealTime(currentPair, timeOffset)) {
-      // Only if reveal window is actually open
+      // Only if reveal window is actually open AND user can reveal
       if (poolService.isRevealWindowOpen(timeOffset)) {
-        return "Reveal Identity";
+        // Check if user sent photos and can reveal
+        if (poolService.canIReveal(currentPair, user?.uid || "")) {
+          return "Reveal Identity";
+        } else {
+          return "Can't Reveal (No Photos Sent)";
+        }
       }
     }
 
@@ -1503,6 +1532,7 @@ export const HomeScreen = () => {
         {/* Reveal Time Card - Shows from reveal time (21:00 UTC / 22:00 PT) until midnight */}
         {/* ✅ Card persists until midnight (doesn't disappear after reveal window closes) */}
         {/* ✅ Button only active during reveal window (21:00-22:00 UTC / 22:00-23:00 PT) */}
+        {/* ✅ Only shows if user can reveal (sent at least 1 photo) */}
         {currentPair &&
           poolService.isRevealTime(currentPair, timeOffset) &&
           poolService.canIReveal(currentPair, user?.uid || "") && (
@@ -1570,6 +1600,47 @@ export const HomeScreen = () => {
                 )}
               </View>
             </Animated.View>
+          )}
+
+        {/* Ghosting Warning Card - Shows when user didn't send photos and can't reveal */}
+        {currentPair &&
+          poolService.isRevealTime(currentPair, timeOffset) &&
+          !poolService.canIReveal(currentPair, user?.uid || "") && (
+            <View style={styles.ghostingWarningCard}>
+              <View style={styles.ghostingWarningHeader}>
+                <View style={styles.ghostingWarningIcon}>
+                  <Ionicons name="warning" size={32} color="#F97316" />
+                </View>
+                <View style={styles.ghostingWarningHeaderText}>
+                  <Text style={styles.ghostingWarningTitle}>
+                    👻 You Ghosted!
+                  </Text>
+                  <Text style={styles.ghostingWarningSubtitle}>
+                    No reveal for you today
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.ghostingWarningContent}>
+                <Text style={styles.ghostingWarningMessage}>
+                  You didn't send any photos to your buddy today, so you can't
+                  reveal their identity. Your buddy who sent photos can still
+                  reveal and message you if they want.
+                </Text>
+
+                <View style={styles.ghostingTipBox}>
+                  <Ionicons
+                    name="bulb-outline"
+                    size={20}
+                    color={colors.accentYellow}
+                  />
+                  <Text style={styles.ghostingTipText}>
+                    Tomorrow, make sure to send photos when you get
+                    notifications to unlock the reveal!
+                  </Text>
+                </View>
+              </View>
+            </View>
           )}
 
         {/* Pairing Status Card */}
@@ -1714,34 +1785,55 @@ export const HomeScreen = () => {
             )}
 
           {/* Hide the pairing CTA when reveal window is open - reveal interaction is handled by the Reveal Time card above */}
-          {/* Only show pairing CTA when the user is NOT currently paired */}
-          {!currentPair && !excitedForReveal && (
-            <>
-              <PrimaryButton
-                label={getButtonText()}
-                onPress={() => {
-                  console.log("🖱️ Button onPress called");
-                  handlePairingPress();
-                }}
-                variant={isInPool ? "ghost" : currentPool ? "primary" : "ghost"}
-                disabled={poolLoading}
-              />
+          {/* Show pairing/reveal button logic */}
+          {(!currentPair ||
+            (currentPair &&
+              poolService.isRevealTime(currentPair, timeOffset) &&
+              poolService.isRevealWindowOpen(timeOffset) &&
+              !poolService.canIReveal(currentPair, user?.uid || ""))) &&
+            !excitedForReveal && (
+              <>
+                <PrimaryButton
+                  label={getButtonText()}
+                  onPress={() => {
+                    console.log("🖱️ Button onPress called");
+                    handlePairingPress();
+                  }}
+                  variant={
+                    isInPool
+                      ? "ghost"
+                      : currentPool
+                      ? "primary"
+                      : currentPair &&
+                        !poolService.canIReveal(currentPair, user?.uid || "")
+                      ? "ghost"
+                      : "ghost"
+                  }
+                  disabled={
+                    poolLoading ||
+                    !!(
+                      currentPair &&
+                      poolService.isRevealTime(currentPair, timeOffset) &&
+                      !poolService.canIReveal(currentPair, user?.uid || "")
+                    )
+                  }
+                />
 
-              {/* Modern button styling indicator */}
-              {isInPool && (
-                <View style={styles.buttonHintContainer}>
-                  <Ionicons
-                    name="exit-outline"
-                    size={14}
-                    color={colors.textSecondary}
-                  />
-                  <Text style={styles.buttonHintText}>
-                    Tap to leave the pool anytime
-                  </Text>
-                </View>
-              )}
-            </>
-          )}
+                {/* Modern button styling indicator */}
+                {isInPool && (
+                  <View style={styles.buttonHintContainer}>
+                    <Ionicons
+                      name="exit-outline"
+                      size={14}
+                      color={colors.textSecondary}
+                    />
+                    <Text style={styles.buttonHintText}>
+                      Tap to leave the pool anytime
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
 
           {poolLoading && (
             <View style={styles.searchingIndicator}>
@@ -3507,6 +3599,86 @@ const styles = StyleSheet.create({
     color: "#FF4FB7",
     fontSize: isSmallScreen ? 12 : 14,
     fontWeight: "600",
+  },
+
+  // Ghosting Warning Card Styles (for users who didn't send photos)
+  ghostingWarningCard: {
+    borderRadius: isSmallScreen ? 20 : 24,
+    backgroundColor: "rgba(249, 115, 22, 0.1)",
+    borderWidth: 2,
+    borderColor: "rgba(249, 115, 22, 0.4)",
+    padding: isSmallScreen ? 18 : 24,
+    shadowColor: "#F97316",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
+    marginBottom: isSmallScreen ? 12 : 16,
+  },
+  ghostingWarningHeader: {
+    flexDirection: isSmallScreen ? "column" : "row",
+    alignItems: "center",
+    marginBottom: isSmallScreen ? 16 : 20,
+    gap: isSmallScreen ? 12 : 0,
+  },
+  ghostingWarningIcon: {
+    width: isSmallScreen ? 56 : 64,
+    height: isSmallScreen ? 56 : 64,
+    borderRadius: isSmallScreen ? 28 : 32,
+    backgroundColor: "rgba(249, 115, 22, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: isSmallScreen ? 0 : 16,
+    borderWidth: 2,
+    borderColor: "rgba(249, 115, 22, 0.3)",
+  },
+  ghostingWarningHeaderText: {
+    flex: 1,
+    alignItems: isSmallScreen ? "center" : "flex-start",
+  },
+  ghostingWarningTitle: {
+    ...typography.display,
+    color: "#F97316",
+    fontSize: isSmallScreen ? 20 : 24,
+    fontWeight: "800",
+    marginBottom: 4,
+    textAlign: isSmallScreen ? "center" : "left",
+  },
+  ghostingWarningSubtitle: {
+    ...typography.body,
+    color: "#FB923C",
+    fontSize: isSmallScreen ? 14 : 16,
+    fontWeight: "500",
+    textAlign: isSmallScreen ? "center" : "left",
+    lineHeight: isSmallScreen ? 20 : 22,
+  },
+  ghostingWarningContent: {
+    gap: isSmallScreen ? 16 : 20,
+  },
+  ghostingWarningMessage: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: isSmallScreen ? 14 : 16,
+    lineHeight: isSmallScreen ? 20 : 24,
+    textAlign: "center",
+    paddingHorizontal: isSmallScreen ? 4 : 0,
+  },
+  ghostingTipBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: isSmallScreen ? 10 : 12,
+    backgroundColor: "rgba(252, 211, 77, 0.15)",
+    padding: isSmallScreen ? 14 : 16,
+    borderRadius: isSmallScreen ? 14 : 16,
+    borderWidth: 1,
+    borderColor: "rgba(252, 211, 77, 0.3)",
+  },
+  ghostingTipText: {
+    ...typography.body,
+    color: "#FCD34D",
+    fontSize: isSmallScreen ? 13 : 14,
+    lineHeight: isSmallScreen ? 18 : 20,
+    flex: 1,
   },
 
   // Ghosting Protection Info Card Styles

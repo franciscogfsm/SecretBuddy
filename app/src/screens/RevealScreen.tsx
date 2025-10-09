@@ -103,8 +103,17 @@ export const RevealScreen = ({ navigation, route }: Props) => {
     loadPairData();
   }, [user]);
 
-  // Check if both people can reveal (both sent >= 1 photo)
-  const bothCanReveal = pair ? pair.canRevealA && pair.canRevealB : false;
+  // Check if CURRENT user can reveal (sent at least 1 photo)
+  const iCanReveal =
+    pair && user ? poolService.canIReveal(pair, user.uid) : false;
+
+  // Check if PARTNER can reveal (sent at least 1 photo) - determines if chat is available
+  const partnerCanReveal =
+    pair && user
+      ? user.uid === pair.userA
+        ? pair.canRevealB
+        : pair.canRevealA
+      : false;
 
   // Check if current user has already revealed this pair
   const hasAlreadyRevealed =
@@ -428,6 +437,16 @@ export const RevealScreen = ({ navigation, route }: Props) => {
         setIsRevealed(true);
         setAnimationStage("complete");
 
+        // Mark reveal as viewed in Firestore immediately
+        if (pair && user) {
+          const pairRef = doc(db, "pairs", pair.id);
+          updateDoc(pairRef, {
+            [pair.userA === user.uid ? "revealedA" : "revealedB"]: true,
+          }).catch((err) => {
+            console.error("❌ Error marking reveal as viewed:", err);
+          });
+        }
+
         // Epic reveal with 3D flip and staggered animations
         Animated.sequence([
           // Phase 1: Flip the card (like revealing a mystery)
@@ -641,7 +660,7 @@ export const RevealScreen = ({ navigation, route }: Props) => {
     );
   }
 
-  // If user has already revealed, show simple "Continue to Chat" screen
+  // If user has already revealed, show simple "Your Mystery Buddy" screen
   if (hasAlreadyRevealed && pair.conversationId) {
     const partnerId = poolService.getPartnerIdFromPair(pair, user!.uid);
 
@@ -649,7 +668,7 @@ export const RevealScreen = ({ navigation, route }: Props) => {
       <View
         style={[
           styles.container,
-          { justifyContent: "center", alignItems: "center", padding: 20 },
+          { justifyContent: "center", alignItems: "center", padding: 24 },
         ]}
       >
         <LinearGradient
@@ -659,20 +678,46 @@ export const RevealScreen = ({ navigation, route }: Props) => {
           end={{ x: 1, y: 1 }}
         />
 
-        <View style={{ alignItems: "center" }}>
+        <View style={{ alignItems: "center", maxWidth: 400, width: "100%" }}>
+          {/* Simple header */}
+          <Text
+            style={{
+              fontSize: 20,
+              fontWeight: "600",
+              color: colors.textPrimary,
+              marginBottom: 32,
+              textAlign: "center",
+            }}
+          >
+            Your Mystery Buddy
+          </Text>
+
+          {/* Profile photo */}
           {partnerProfile.profilePhotoUrl ? (
             <Image
               source={{ uri: partnerProfile.profilePhotoUrl }}
               style={{
-                width: 100,
-                height: 100,
-                borderRadius: 50,
+                width: 120,
+                height: 120,
+                borderRadius: 60,
                 marginBottom: 20,
+                borderWidth: 3,
+                borderColor: "rgba(79, 70, 229, 0.3)",
               }}
             />
           ) : (
-            <View style={[styles.profileAvatar, { marginBottom: 20 }]}>
-              <Text style={styles.profileAvatarText}>
+            <View
+              style={[
+                styles.profileAvatar,
+                {
+                  marginBottom: 20,
+                  width: 120,
+                  height: 120,
+                  borderRadius: 60,
+                },
+              ]}
+            >
+              <Text style={[styles.profileAvatarText, { fontSize: 48 }]}>
                 {(partnerProfile.username || partnerProfile.displayName || "U")
                   .charAt(0)
                   .toUpperCase()}
@@ -680,37 +725,101 @@ export const RevealScreen = ({ navigation, route }: Props) => {
             </View>
           )}
 
-          <Text style={[styles.profileName, { marginBottom: 8 }]}>
+          {/* Name */}
+          <Text
+            style={{
+              fontSize: 24,
+              fontWeight: "700",
+              color: colors.textPrimary,
+              marginBottom: 8,
+              textAlign: "center",
+            }}
+          >
             {partnerProfile.username ||
               partnerProfile.displayName ||
               "Anonymous"}
           </Text>
 
-          <Text style={[styles.profileDetail, { marginBottom: 24 }]}>
-            Age: {partnerProfile.age || "??"} • Location:{" "}
-            {partnerProfile.country || "???"}
+          {/* Info */}
+          <Text
+            style={{
+              fontSize: 15,
+              color: colors.textSecondary,
+              marginBottom: 32,
+              textAlign: "center",
+            }}
+          >
+            Age:{" "}
+            {partnerProfile.ageVisible === false
+              ? "Private"
+              : partnerProfile.age || "??"}{" "}
+            • {partnerProfile.country || "Unknown"}
           </Text>
 
-          <PrimaryButton
-            label="Continue to Chat"
-            onPress={() => {
-              navigation.replace("Chat", {
-                conversationId: pair.conversationId,
-                matchedUserId: partnerId,
-                matchedUserName:
-                  partnerProfile.username ||
-                  partnerProfile.displayName ||
-                  "Anonymous",
-              });
-            }}
-            leadingIcon={
-              <Ionicons
-                name="chatbubbles"
-                size={20}
-                color={colors.textPrimary}
-              />
-            }
-          />
+          {/* Only show chat button if partner sent photos (can communicate) */}
+          {partnerCanReveal ? (
+            <PrimaryButton
+              label="Continue to Chat"
+              onPress={() => {
+                navigation.replace("Chat", {
+                  conversationId: pair.conversationId,
+                  matchedUserId: partnerId,
+                  matchedUserName:
+                    partnerProfile.username ||
+                    partnerProfile.displayName ||
+                    "Anonymous",
+                });
+              }}
+              leadingIcon={
+                <Ionicons
+                  name="chatbubbles"
+                  size={20}
+                  color={colors.textPrimary}
+                />
+              }
+            />
+          ) : (
+            <View
+              style={{
+                padding: 16,
+                backgroundColor: "rgba(251, 146, 60, 0.1)",
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: "rgba(251, 146, 60, 0.3)",
+                marginBottom: 12,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 8,
+                }}
+              >
+                <Ionicons name="chatbubble-outline" size={20} color="#FB923C" />
+                <Text
+                  style={{
+                    color: colors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: "600",
+                  }}
+                >
+                  Chat Unavailable
+                </Text>
+              </View>
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: 14,
+                  lineHeight: 20,
+                }}
+              >
+                Your buddy didn't send any photos during the photo window, so
+                you can't send messages to them.
+              </Text>
+            </View>
+          )}
 
           <Pressable
             onPress={() => navigation.goBack()}
@@ -766,7 +875,7 @@ export const RevealScreen = ({ navigation, route }: Props) => {
 
       {/* Professional main content */}
       <View style={styles.mainContent}>
-        {bothCanReveal ? (
+        {iCanReveal ? (
           <>
             {/* Professional reveal header */}
             <Animated.View
@@ -787,11 +896,11 @@ export const RevealScreen = ({ navigation, route }: Props) => {
               ]}
             >
               <View style={styles.iconContainer}>
-                <Ionicons name="eye" size={24} color="#4F46E5" />
+                <Ionicons name="eye-outline" size={22} color="#8B5CF6" />
               </View>
-              <Text style={styles.revealTitle}>Identity Revealed</Text>
+              <Text style={styles.revealTitle}>Identity Reveal</Text>
               <Text style={styles.revealSubtitle}>
-                Meet your secret connection
+                Tap to reveal your match
               </Text>
             </Animated.View>
 
@@ -996,9 +1105,11 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                           ]}
                         >
                           {isRevealed
-                            ? `Age: ${partnerProfile.age || "??"} • Location: ${
-                                partnerProfile.country || "???"
-                              }`
+                            ? `Age: ${
+                                partnerProfile.ageVisible === false
+                                  ? "Private"
+                                  : partnerProfile.age || "??"
+                              } • Location: ${partnerProfile.country || "???"}`
                             : "Age: ?? • Location: ???"}
                         </Animated.Text>
                       </View>
@@ -1212,42 +1323,96 @@ export const RevealScreen = ({ navigation, route }: Props) => {
                   },
                 ]}
               />
-              <PrimaryButton
-                label={
-                  decision === "continue" ? "Opening Chat..." : "Start Chatting"
-                }
-                onPress={() => handleDecision("continue")}
-                disabled={decision === "continue"}
-                loading={decision === "continue"}
-                leadingIcon={
-                  decision === "continue" ? undefined : (
+
+              {/* Only show chat button if partner sent photos (can communicate) */}
+              {partnerCanReveal ? (
+                <PrimaryButton
+                  label={
+                    decision === "continue"
+                      ? "Opening Chat..."
+                      : "Begin the conversation"
+                  }
+                  onPress={() => handleDecision("continue")}
+                  disabled={decision === "continue"}
+                  loading={decision === "continue"}
+                  leadingIcon={
+                    decision === "continue" ? undefined : (
+                      <Ionicons
+                        name="chatbubbles"
+                        size={20}
+                        color={colors.textPrimary}
+                      />
+                    )
+                  }
+                />
+              ) : (
+                <View
+                  style={{
+                    padding: 16,
+                    backgroundColor: "rgba(251, 146, 60, 0.1)",
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: "rgba(251, 146, 60, 0.3)",
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 8,
+                    }}
+                  >
                     <Ionicons
-                      name="chatbubbles"
+                      name="chatbubble-outline"
                       size={20}
-                      color={colors.textPrimary}
+                      color="#FB923C"
                     />
-                  )
-                }
-              />
+                    <Text
+                      style={{
+                        color: colors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: "600",
+                      }}
+                    >
+                      Chat Unavailable
+                    </Text>
+                  </View>
+                  <Text
+                    style={{
+                      color: colors.textSecondary,
+                      fontSize: 14,
+                      lineHeight: 20,
+                    }}
+                  >
+                    Your buddy didn't send any photos during the photo window,
+                    so you can't send messages to them.
+                  </Text>
+                </View>
+              )}
             </Animated.View>
           </>
         ) : (
           // Ghosting protection - show different messages based on participation
           <>
             <View style={styles.noRevealIcon}>
-              <Text style={styles.noRevealEmoji}>👻</Text>
+              <Ionicons
+                name="lock-closed-outline"
+                size={48}
+                color={colors.textSecondary}
+              />
             </View>
 
-            {/* Default ghosting protection message */}
-            <Text style={styles.noRevealTitle}>No Messages, No Reveal</Text>
+            {/* Ghosting protection message - current user didn't send enough photos */}
+            <Text style={styles.noRevealTitle}>Reveal Locked</Text>
             <Text style={styles.noRevealSubtitle}>
-              Neither you nor your buddy sent enough messages during the day.
-              Stay active to unlock reveal time tomorrow!
+              You didn't send any photos during the photo window today. Send at
+              least 1 photo tomorrow to unlock reveal time.
             </Text>
             <View style={styles.ghostingProtectionInfo}>
               <Ionicons name="shield-checkmark" size={20} color="#F59E0B" />
               <Text style={styles.ghostingProtectionText}>
-                Ghosting Protection: Send at least 1 message to unlock reveals
+                Ghosting Protection Active
               </Text>
             </View>
 

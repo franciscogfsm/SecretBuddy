@@ -99,7 +99,7 @@ export const createUserProfile = async (
       displayName: data.displayName,
       email: data.email,
       bio: "",
-      ageVisible: true,
+      ageVisible: false, // Default to private for user privacy
       points: 0,
       streak: 0,
       hearts: 5, // Start with 5 hearts

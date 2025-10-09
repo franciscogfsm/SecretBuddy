@@ -715,6 +715,18 @@ export const ChatScreen = () => {
                 </View>
               </View>
             </Pressable>
+
+            {/* Report Button */}
+            <Pressable
+              style={styles.reportButton}
+              hitSlop={12}
+              onPress={() => {
+                setReportingMessageId(null); // Report the user, not a specific message
+                setReportModalVisible(true);
+              }}
+            >
+              <Ionicons name="flag" size={18} color="#FB923C" />
+            </Pressable>
           </View>
 
           {/* End Conversation - Subtle link style */}
@@ -854,8 +866,7 @@ export const ChatScreen = () => {
                           </Animated.View>
                         )}
                         <Text style={styles.emptyMessagesText}>
-                          Start chatting! Your first message will begin the
-                          conversation.
+                          You can choose to end the chat at any time
                         </Text>
                       </View>
                     }
@@ -890,6 +901,7 @@ export const ChatScreen = () => {
                   >
                     <ChatInput
                       onSendMessage={handleSendMessage}
+                      placeholder="Start the conversation"
                       bottomInset={0}
                       disabled={sending}
                     />
@@ -901,7 +913,7 @@ export const ChatScreen = () => {
         </KeyboardAvoidingView>
       </GradientBackground>
 
-      {/* Report Modal for Photos */}
+      {/* Report Modal for User */}
       {user && matchedUserId && (
         <ReportModal
           visible={reportModalVisible}
@@ -909,7 +921,7 @@ export const ChatScreen = () => {
             setReportModalVisible(false);
             setReportingMessageId(null);
           }}
-          reportType="photo"
+          reportType="user"
           targetName={matchedUserName}
           reportedUserId={matchedUserId}
           reportingUserId={user.uid}
@@ -1056,6 +1068,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 12,
   },
+  reportButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(251, 146, 60, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(251, 146, 60, 0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
   endChatButton: {
     width: 32,
     height: 32,
@@ -1185,15 +1208,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   endConversationLink: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
   },
   endConversationLinkText: {
     ...typography.caption,
-    color: "rgba(239, 68, 68, 0.7)",
+    color: "#EF4444",
     fontSize: 12,
-    fontWeight: "500",
-    textDecorationLine: "underline",
+    fontWeight: "600",
   },
   avatarImage: {
     width: "100%",
