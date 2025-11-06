@@ -26,6 +26,7 @@ import { MysteryCard } from "../components/MysteryCard";
 import { PhotoViewModal } from "../components/PhotoViewModal";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { TopHeader } from "../components/TopHeader";
+import { OnboardingTutorial } from "../components/OnboardingTutorial";
 import { useAppState } from "../store/AppStateContext";
 import { useUserProfile } from "../hooks/useUserProfile";
 import { useAuth } from "../context/AuthContext";
@@ -34,7 +35,9 @@ import type { RootStackParamList } from "../navigation/types";
 import * as photoService from "../services/photoService";
 import * as poolService from "../services/poolService";
 import * as notificationService from "../services/notificationService";
+import * as userService from "../services/userService";
 import { PillOption } from "../components/PillOption";
+import { TUTORIAL_STEPS } from "../constants/tutorialSteps";
 
 type PairingStatus =
   | "waiting"
@@ -257,6 +260,17 @@ export const HomeScreen = () => {
   const [timeRemaining, setTimeRemaining] = useState(300); // 5 minutes in seconds
   // Show photo challenge card (appears after notification)
   const [showPhotoChallengeCard, setShowPhotoChallengeCard] = useState(false);
+
+  // Onboarding tutorial state
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+
+  // UI element refs for interactive tutorial
+  const [elementRefs, setElementRefs] = useState<
+    Record<string, { x: number; y: number; width: number; height: number }>
+  >({});
+  const poolButtonRef = useRef<View>(null);
+  const profileButtonRef = useRef<View>(null);
 
   // Random photo prompts that appear throughout the day
   const randomPrompts = [
@@ -1033,6 +1047,25 @@ export const HomeScreen = () => {
     restorePhotoChallenge();
   }, [user?.uid]); // Re-run when user logs in to show saved challenge
 
+  // Check if user needs to see onboarding tutorial (first-time users)
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      if (!user?.uid || !firestoreProfile) return;
+
+      // Check if user has completed onboarding
+      const hasCompleted = firestoreProfile.hasCompletedOnboarding;
+
+      if (!hasCompleted) {
+        // Small delay to let the UI settle before showing tutorial
+        setTimeout(() => {
+          setShowOnboarding(true);
+        }, 1000);
+      }
+    };
+
+    checkOnboarding();
+  }, [user?.uid, firestoreProfile]);
+
   // Countdown timer for photo challenge card
   useEffect(() => {
     if (!showPhotoChallengeCard || !photoChallengeCreatedAt) return;
@@ -1131,6 +1164,69 @@ export const HomeScreen = () => {
       },
     ]);
   };
+
+  // Onboarding tutorial handlers
+  const handleOnboardingNext = () => {
+    setOnboardingStep((prev) => prev + 1);
+  };
+
+  const handleOnboardingPrevious = () => {
+    setOnboardingStep((prev) => Math.max(0, prev - 1));
+  };
+
+  const handleOnboardingSkip = async () => {
+    if (!user?.uid) return;
+    try {
+      await userService.completeOnboarding(user.uid);
+      setShowOnboarding(false);
+      setOnboardingStep(0);
+    } catch (error) {
+      console.error("Error completing onboarding:", error);
+    }
+  };
+
+  const handleOnboardingComplete = async () => {
+    if (!user?.uid) return;
+    try {
+      await userService.completeOnboarding(user.uid);
+      setShowOnboarding(false);
+      setOnboardingStep(0);
+      // Show a success message
+      Alert.alert(
+        "Welcome Aboard",
+        "You're all set. Start by joining a pool to find your first mystery buddy.",
+        [{ text: "Let's Go" }]
+      );
+    } catch (error) {
+      console.error("Error completing onboarding:", error);
+    }
+  };
+
+  // Measure UI element positions for interactive tutorial
+  const measureElement = (
+    elementId: string,
+    ref: React.RefObject<View | null>
+  ) => {
+    if (ref.current) {
+      ref.current.measureInWindow((x, y, width, height) => {
+        setElementRefs((prev) => ({
+          ...prev,
+          [elementId]: { x, y, width, height },
+        }));
+      });
+    }
+  };
+
+  // Measure elements when tutorial is visible
+  useEffect(() => {
+    if (showOnboarding) {
+      // Small delay to ensure elements are rendered
+      setTimeout(() => {
+        measureElement("pool-button", poolButtonRef);
+        measureElement("profile-button", profileButtonRef);
+      }, 500);
+    }
+  }, [showOnboarding]);
 
   const handlePairingPress = () => {
     console.log(
@@ -1794,31 +1890,33 @@ export const HomeScreen = () => {
               !poolService.canIReveal(currentPair, user?.uid || ""))) &&
             !excitedForReveal && (
               <>
-                <PrimaryButton
-                  label={getButtonText()}
-                  onPress={() => {
-                    console.log("🖱️ Button onPress called");
-                    handlePairingPress();
-                  }}
-                  variant={
-                    isInPool
-                      ? "ghost"
-                      : currentPool
-                      ? "primary"
-                      : currentPair &&
+                <View ref={poolButtonRef} collapsable={false}>
+                  <PrimaryButton
+                    label={getButtonText()}
+                    onPress={() => {
+                      console.log("🖱️ Button onPress called");
+                      handlePairingPress();
+                    }}
+                    variant={
+                      isInPool
+                        ? "ghost"
+                        : currentPool
+                        ? "primary"
+                        : currentPair &&
+                          !poolService.canIReveal(currentPair, user?.uid || "")
+                        ? "ghost"
+                        : "ghost"
+                    }
+                    disabled={
+                      poolLoading ||
+                      !!(
+                        currentPair &&
+                        poolService.isRevealTime(currentPair, timeOffset) &&
                         !poolService.canIReveal(currentPair, user?.uid || "")
-                      ? "ghost"
-                      : "ghost"
-                  }
-                  disabled={
-                    poolLoading ||
-                    !!(
-                      currentPair &&
-                      poolService.isRevealTime(currentPair, timeOffset) &&
-                      !poolService.canIReveal(currentPair, user?.uid || "")
-                    )
-                  }
-                />
+                      )
+                    }
+                  />
+                </View>
 
                 {/* Modern button styling indicator */}
                 {isInPool && (
@@ -2103,20 +2201,22 @@ export const HomeScreen = () => {
               </View>
               <Text style={styles.quickActionText}>Chats</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickActionButton}
-              activeOpacity={0.7}
-              onPress={() =>
-                (navigation as any).navigate("MainTabs", {
-                  screen: "Profile",
-                })
-              }
-            >
-              <View style={styles.quickActionIconContainer}>
-                <Ionicons name="person-outline" size={24} color="#F97316" />
-              </View>
-              <Text style={styles.quickActionText}>Profile</Text>
-            </TouchableOpacity>
+            <View ref={profileButtonRef} collapsable={false}>
+              <TouchableOpacity
+                style={styles.quickActionButton}
+                activeOpacity={0.7}
+                onPress={() =>
+                  (navigation as any).navigate("MainTabs", {
+                    screen: "Profile",
+                  })
+                }
+              >
+                <View style={styles.quickActionIconContainer}>
+                  <Ionicons name="person-outline" size={24} color="#F97316" />
+                </View>
+                <Text style={styles.quickActionText}>Profile</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -2232,6 +2332,18 @@ export const HomeScreen = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Onboarding Tutorial for first-time users */}
+      <OnboardingTutorial
+        visible={showOnboarding}
+        steps={TUTORIAL_STEPS}
+        currentStep={onboardingStep}
+        onNext={handleOnboardingNext}
+        onPrevious={handleOnboardingPrevious}
+        onSkip={handleOnboardingSkip}
+        onComplete={handleOnboardingComplete}
+        elementRefs={elementRefs}
+      />
     </GradientBackground>
   );
 };

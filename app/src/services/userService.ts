@@ -34,6 +34,7 @@ export interface UserProfile {
   streak: number;
   hearts: number;
   friendsCount?: number;
+  hasCompletedOnboarding?: boolean; // Tutorial completion flag
   createdAt: any;
   updatedAt: any;
   lastActive: any;
@@ -570,6 +571,50 @@ export const deleteProfilePhoto = async (uid: string): Promise<void> => {
     if (error instanceof Error && !error.message.includes("object-not-found")) {
       throw error;
     }
+  }
+};
+
+/**
+ * Mark onboarding tutorial as completed
+ */
+export const completeOnboarding = async (uid: string): Promise<void> => {
+  try {
+    const userRef = doc(db, USERS_COLLECTION, uid);
+
+    await updateDoc(userRef, {
+      hasCompletedOnboarding: true,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log("✅ Onboarding completed for user:", uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
+  } catch (error) {
+    console.error("❌ Error completing onboarding:", error);
+    throw error;
+  }
+};
+
+/**
+ * Reset onboarding tutorial (allows user to see it again)
+ */
+export const resetOnboarding = async (uid: string): Promise<void> => {
+  try {
+    const userRef = doc(db, USERS_COLLECTION, uid);
+
+    await updateDoc(userRef, {
+      hasCompletedOnboarding: false,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log("✅ Onboarding reset for user:", uid);
+
+    // ⚡ Invalidate cache since profile changed
+    invalidateProfileCache(uid);
+  } catch (error) {
+    console.error("❌ Error resetting onboarding:", error);
+    throw error;
   }
 };
 
