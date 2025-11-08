@@ -271,6 +271,7 @@ export const HomeScreen = () => {
   >({});
   const poolButtonRef = useRef<View>(null);
   const profileButtonRef = useRef<View>(null);
+  const statsCardsRef = useRef<View>(null);
 
   // Random photo prompts that appear throughout the day
   const randomPrompts = [
@@ -1056,10 +1057,13 @@ export const HomeScreen = () => {
       const hasCompleted = firestoreProfile.hasCompletedOnboarding;
 
       if (!hasCompleted) {
-        // Small delay to let the UI settle before showing tutorial
+        // Scroll to top first to ensure all tutorial elements are visible
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+
+        // Delay to let UI settle and scroll complete before showing tutorial
         setTimeout(() => {
           setShowOnboarding(true);
-        }, 1000);
+        }, 1500);
       }
     };
 
@@ -1191,14 +1195,18 @@ export const HomeScreen = () => {
       await userService.completeOnboarding(user.uid);
       setShowOnboarding(false);
       setOnboardingStep(0);
-      // Show a success message
-      Alert.alert(
-        "Welcome Aboard",
-        "You're all set. Start by joining a pool to find your first mystery buddy.",
-        [{ text: "Let's Go" }]
-      );
     } catch (error) {
       console.error("Error completing onboarding:", error);
+    }
+  };
+
+  const handleOnboardingAction = (action: string) => {
+    console.log("🎬 Tutorial action:", action);
+    if (action === "navigate-profile") {
+      // Navigate to profile screen
+      (navigation as any).navigate("MainTabs", {
+        screen: "Profile",
+      });
     }
   };
 
@@ -1208,25 +1216,42 @@ export const HomeScreen = () => {
     ref: React.RefObject<View | null>
   ) => {
     if (ref.current) {
+      // measureInWindow gives position relative to window (accounts for scroll automatically)
       ref.current.measureInWindow((x, y, width, height) => {
-        setElementRefs((prev) => ({
-          ...prev,
-          [elementId]: { x, y, width, height },
-        }));
+        // Only store if the element is actually visible (y is not 0 or negative)
+        if (y > 0 && width > 0 && height > 0) {
+          console.log(`📏 Measured ${elementId}:`, { x, y, width, height });
+          setElementRefs((prev) => ({
+            ...prev,
+            [elementId]: { x, y, width, height },
+          }));
+        } else {
+          console.log(
+            `⚠️ Element ${elementId} not visible yet, skipping measurement`
+          );
+        }
       });
     }
   };
 
-  // Measure elements when tutorial is visible
+  // Measure elements when tutorial is visible and when content changes
   useEffect(() => {
     if (showOnboarding) {
-      // Small delay to ensure elements are rendered
-      setTimeout(() => {
-        measureElement("pool-button", poolButtonRef);
+      // Longer delay to ensure all animations and renders are complete
+      const timeoutId = setTimeout(() => {
+        console.log("📐 Starting element measurements...");
+        // Only measure pool button if it's actually rendered (not paired)
+        if (!currentPair) {
+          measureElement("pool-button", poolButtonRef);
+        }
+        // Stats cards and profile button are always visible
+        measureElement("stats-cards", statsCardsRef);
         measureElement("profile-button", profileButtonRef);
-      }, 500);
+      }, 1000);
+
+      return () => clearTimeout(timeoutId);
     }
-  }, [showOnboarding]);
+  }, [showOnboarding, currentPair, isInPool]);
 
   const handlePairingPress = () => {
     console.log(
@@ -2007,7 +2032,11 @@ export const HomeScreen = () => {
         )}
 
         {/* Stats */}
-        <View style={styles.metaSection}>
+        <View
+          ref={statsCardsRef}
+          collapsable={false}
+          style={styles.metaSection}
+        >
           <View style={styles.metaCard}>
             <View style={styles.metaCardHeader}>
               <View style={styles.metaIconContainer}>
@@ -2201,22 +2230,21 @@ export const HomeScreen = () => {
               </View>
               <Text style={styles.quickActionText}>Chats</Text>
             </TouchableOpacity>
-            <View ref={profileButtonRef} collapsable={false}>
-              <TouchableOpacity
-                style={styles.quickActionButton}
-                activeOpacity={0.7}
-                onPress={() =>
-                  (navigation as any).navigate("MainTabs", {
-                    screen: "Profile",
-                  })
-                }
-              >
-                <View style={styles.quickActionIconContainer}>
-                  <Ionicons name="person-outline" size={24} color="#F97316" />
-                </View>
-                <Text style={styles.quickActionText}>Profile</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              ref={profileButtonRef}
+              style={styles.quickActionButton}
+              activeOpacity={0.7}
+              onPress={() =>
+                (navigation as any).navigate("MainTabs", {
+                  screen: "Profile",
+                })
+              }
+            >
+              <View style={styles.quickActionIconContainer}>
+                <Ionicons name="person-outline" size={24} color="#F97316" />
+              </View>
+              <Text style={styles.quickActionText}>Profile</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -2342,7 +2370,7 @@ export const HomeScreen = () => {
         onPrevious={handleOnboardingPrevious}
         onSkip={handleOnboardingSkip}
         onComplete={handleOnboardingComplete}
-        elementRefs={elementRefs}
+        onAction={handleOnboardingAction}
       />
     </GradientBackground>
   );
@@ -4440,11 +4468,11 @@ const styles = StyleSheet.create({
   quickActionsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    justifyContent: "space-between",
+    rowGap: 12,
   },
   quickActionButton: {
-    flex: 1,
-    minWidth: "45%",
+    width: "48%",
     backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 12,
     padding: 16,
@@ -4452,6 +4480,7 @@ const styles = StyleSheet.create({
     gap: 8,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
+    marginBottom: 0,
   },
   quickActionIconContainer: {
     width: 48,

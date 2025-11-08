@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,14 +7,13 @@ import {
   TouchableOpacity,
   Animated,
   Dimensions,
-  Platform,
   PanResponder,
   GestureResponderEvent,
   PanResponderGestureState,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { ArrowRightIcon } from "react-native-heroicons/outline";
 import { colors, typography } from "../theme";
-import { BlurView } from "expo-blur";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -24,14 +23,7 @@ export interface TutorialStep {
   description: string;
   icon?: any; // Can be Ionicons name or Heroicon component
   iconType?: "ionicons" | "heroicon";
-  targetPosition?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-  placement?: "top" | "bottom" | "center";
-  targetElement?: string; // ID of the element to highlight (e.g., "pool-button", "profile-tab")
+  action?: "navigate-profile"; // Special action to perform on this step
 }
 
 interface OnboardingTutorialProps {
@@ -42,10 +34,7 @@ interface OnboardingTutorialProps {
   onPrevious?: () => void;
   onSkip: () => void;
   onComplete: () => void;
-  elementRefs?: Record<
-    string,
-    { x: number; y: number; width: number; height: number }
-  >; // Positions of UI elements to highlight
+  onAction?: (action: string) => void; // Callback for special actions like navigation
 }
 
 export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
@@ -56,87 +45,27 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
   onPrevious,
   onSkip,
   onComplete,
-  elementRefs = {},
+  onAction,
 }) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.8)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const hintOpacity = useRef(new Animated.Value(1)).current; // Separate opacity for hint to prevent flashing
 
   // Pan responder for swipe gestures
   const panResponderRef = useRef<any>(null);
+  const swipeDirection = useRef(0); // -1 for left, 1 for right
+  const isAnimating = useRef(false); // Prevent animation conflicts
+  const prevStepRef = useRef(currentStep); // Track previous step
+  const hasInitialized = useRef(false); // Track if first animation ran
+  const animationRef = useRef<any>(null); // Store running animation reference
+  const hasSwipedOnce = useRef(false); // Track if user has swiped at least once
 
   const step = steps[currentStep];
   const isLastStep = currentStep === steps.length - 1;
   const progress = ((currentStep + 1) / steps.length) * 100;
 
-  // Initialize pan responder for swipe detection
-  useEffect(() => {
-    if (!panResponderRef.current) {
-      panResponderRef.current = PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderRelease: (
-          _evt: GestureResponderEvent,
-          gestureState: PanResponderGestureState
-        ) => {
-          const { dx } = gestureState;
-          const swipeDistance = 50; // Minimum distance to trigger swipe
-
-          // Swipe left (dx < -50) or swipe right (dx > 50)
-          if (dx < -swipeDistance) {
-            // Swiped left - go to next step
-            handleNext();
-          } else if (dx > swipeDistance && currentStep > 0) {
-            // Swiped right - go to previous step
-            if (onPrevious) {
-              onPrevious();
-            }
-          }
-        },
-      });
-    }
-  }, [currentStep, isLastStep, onPrevious]);
-
-  useEffect(() => {
-    if (visible) {
-      // Fade in animation
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          tension: 50,
-          friction: 7,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Pulse animation for spotlight
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    } else {
-      fadeAnim.setValue(0);
-      scaleAnim.setValue(0.8);
-    }
-  }, [visible, currentStep]);
-
-  if (!visible || !step) return null;
-
+  // Define handleNext before using it in effects
   const handleNext = () => {
     if (isLastStep) {
       onComplete();
@@ -145,37 +74,226 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
     }
   };
 
-  const getTooltipPosition = () => {
-    // Check if this step should highlight a specific element
-    const targetElement = step.targetElement;
-    const targetPos =
-      targetElement && elementRefs[targetElement]
-        ? elementRefs[targetElement]
-        : step.targetPosition;
+  // Initialize pan responder for swipe detection with smooth transitions
+  // Recreate whenever dependencies change to ensure proper behavior
+  useEffect(() => {
+    panResponderRef.current = PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dx) > 10; // Only respond to horizontal swipes
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (isAnimating.current) return; // Don't follow finger during animation
+        // Follow finger for interactive feel (with less resistance for smoother feel)
+        const resistance = 0.5;
+        slideAnim.setValue(gestureState.dx * resistance);
+      },
+      onPanResponderRelease: (
+        _evt: GestureResponderEvent,
+        gestureState: PanResponderGestureState
+      ) => {
+        if (isAnimating.current) {
+          // If already animating, force complete current animation and reset
+          if (animationRef.current) {
+            animationRef.current.stop();
+          }
+          slideAnim.setValue(0);
+          scaleAnim.setValue(1);
+          fadeAnim.setValue(1);
+          isAnimating.current = false;
+          return;
+        }
 
-    if (!targetPos) {
-      return { top: SCREEN_HEIGHT / 2 - 150 };
+        const { dx, vx } = gestureState;
+        const swipeDistance = 60; // Minimum distance to trigger swipe (reduced for easier swiping)
+        const swipeVelocity = 0.4; // Minimum velocity (reduced for easier swiping)
+
+        // Swipe LEFT (dx < -60) = Go Forward/Next
+        if (dx < -swipeDistance || (vx < -swipeVelocity && dx < -30)) {
+          if (!isLastStep) {
+            isAnimating.current = true;
+            swipeDirection.current = -1; // Moving forward
+
+            // Hide hint after first swipe
+            if (!hasSwipedOnce.current) {
+              hasSwipedOnce.current = true;
+              Animated.timing(hintOpacity, {
+                toValue: 0,
+                duration: 300,
+                useNativeDriver: true,
+              }).start();
+            }
+
+            handleNext();
+            setTimeout(() => {
+              isAnimating.current = false;
+              // Force reset to ensure clean state
+              slideAnim.setValue(0);
+              scaleAnim.setValue(1);
+              fadeAnim.setValue(1);
+            }, 400);
+          } else {
+            // Bounce back on last step
+            Animated.spring(slideAnim, {
+              toValue: 0,
+              tension: 80,
+              friction: 8,
+              useNativeDriver: true,
+            }).start();
+          }
+        }
+        // Swipe RIGHT (dx > 60) = Go Back/Previous
+        else if (
+          (dx > swipeDistance || (vx > swipeVelocity && dx > 30)) &&
+          currentStep > 0 &&
+          onPrevious
+        ) {
+          isAnimating.current = true;
+          swipeDirection.current = 1; // Moving backward
+
+          // Hide hint after first swipe
+          if (!hasSwipedOnce.current) {
+            hasSwipedOnce.current = true;
+            Animated.timing(hintOpacity, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            }).start();
+          }
+
+          onPrevious();
+          setTimeout(() => {
+            isAnimating.current = false;
+            // Force reset to ensure clean state
+            slideAnim.setValue(0);
+            scaleAnim.setValue(1);
+            fadeAnim.setValue(1);
+          }, 400);
+        }
+        // Not enough swipe, bounce back
+        else {
+          Animated.spring(slideAnim, {
+            toValue: 0,
+            tension: 80,
+            friction: 8,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    });
+  }, [currentStep, isLastStep, onPrevious, handleNext, slideAnim]);
+
+  // Initial fade-in when modal opens
+  useEffect(() => {
+    if (visible && !hasInitialized.current) {
+      hasInitialized.current = true;
+      fadeAnim.setValue(0);
+      scaleAnim.setValue(0.95);
+      hintOpacity.setValue(0);
+
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 40,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(hintOpacity, {
+          toValue: 1,
+          duration: 400,
+          delay: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else if (!visible) {
+      // Reset when modal closes
+      hasInitialized.current = false;
+      fadeAnim.setValue(1);
+      scaleAnim.setValue(1);
+      slideAnim.setValue(0);
+      hintOpacity.setValue(1);
+    }
+  }, [visible]);
+
+  // Smooth card transition animation ONLY when step changes
+  useEffect(() => {
+    if (!visible || !hasInitialized.current) return;
+
+    // Only animate if step actually changed
+    if (prevStepRef.current === currentStep) return;
+
+    const stepChanged = prevStepRef.current !== currentStep;
+    prevStepRef.current = currentStep;
+
+    if (!stepChanged) return;
+
+    // Trigger action if this step has one
+    if (step?.action && onAction) {
+      onAction(step.action);
     }
 
-    const { y, height } = targetPos;
-    const tooltipHeight = 280;
+    // Direction-based slide animation for continuous scrolling feel
+    // Going forward (swipe left): new card slides in from right
+    // Going backward (swipe right): new card slides in from left
+    const slideFrom =
+      swipeDirection.current === -1
+        ? SCREEN_WIDTH * 0.8
+        : swipeDirection.current === 1
+        ? -SCREEN_WIDTH * 0.8
+        : 0;
 
-    if (step.placement === "bottom") {
-      return { top: y + height + 20 };
-    } else if (step.placement === "top") {
-      return { top: Math.max(20, y - tooltipHeight - 20) };
-    } else {
-      return { top: SCREEN_HEIGHT / 2 - tooltipHeight / 2 };
+    // Stop any ongoing animation first to prevent getting stuck
+    if (animationRef.current) {
+      animationRef.current.stop();
+      animationRef.current = null;
     }
-  };
 
-  const getSpotlightPosition = () => {
-    // Check if this step should highlight a specific element
-    const targetElement = step.targetElement;
-    return targetElement && elementRefs[targetElement]
-      ? elementRefs[targetElement]
-      : step.targetPosition;
-  };
+    // Set initial animation values immediately
+    slideAnim.setValue(slideFrom);
+    scaleAnim.setValue(0.88);
+    fadeAnim.setValue(0.2); // Start with slight visibility to prevent disappearing
+
+    // Ultra-smooth entrance animation with damped spring for buttery lock-in
+    animationRef.current = Animated.parallel([
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 28,
+        friction: 12,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 28,
+        friction: 12,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 380,
+        useNativeDriver: true,
+      }),
+    ]);
+
+    animationRef.current.start(({ finished }: { finished: boolean }) => {
+      // Only set final values if animation completed naturally
+      if (finished) {
+        slideAnim.setValue(0);
+        scaleAnim.setValue(1);
+        fadeAnim.setValue(1);
+        animationRef.current = null;
+      }
+    });
+
+    // Reset swipe direction
+    swipeDirection.current = 0;
+  }, [currentStep, visible]);
+
+  if (!visible || !step) return null;
 
   return (
     <Modal
@@ -185,132 +303,83 @@ export const OnboardingTutorial: React.FC<OnboardingTutorialProps> = ({
       statusBarTranslucent
     >
       <View style={styles.container} {...panResponderRef.current?.panHandlers}>
-        {/* Blurred backdrop */}
-        {Platform.OS === "ios" ? (
-          <BlurView intensity={30} style={StyleSheet.absoluteFill}>
-            <View style={styles.overlay} />
-          </BlurView>
-        ) : (
-          <View style={[StyleSheet.absoluteFill, styles.overlay]} />
-        )}
+        {/* Simple dimmed backdrop */}
+        <View style={styles.overlay} pointerEvents="none" />
 
-        {/* Spotlight effect on target (if provided) */}
-        {getSpotlightPosition() && (
+        {/* Card and hint container */}
+        <View style={styles.cardContainer}>
+          {/* Interactive tutorial card with smooth transitions */}
           <Animated.View
             style={[
-              styles.spotlight,
+              styles.card,
               {
-                left: getSpotlightPosition()!.x - 10,
-                top: getSpotlightPosition()!.y - 10,
-                width: getSpotlightPosition()!.width + 20,
-                height: getSpotlightPosition()!.height + 20,
-                transform: [{ scale: pulseAnim }],
+                opacity: fadeAnim,
+                transform: [{ translateX: slideAnim }, { scale: scaleAnim }],
               },
             ]}
-          />
-        )}
-
-        {/* Tooltip card */}
-        <Animated.View
-          style={[
-            styles.tooltip,
-            getTooltipPosition(),
-            {
-              opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }],
-            },
-          ]}
-        >
-          {/* Progress indicator */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <Animated.View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${progress}%`,
-                  },
-                ]}
-              />
+          >
+            {/* Pagination dots */}
+            <View style={styles.paginationContainer}>
+              {steps.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.paginationDot,
+                    index === currentStep && styles.paginationDotActive,
+                  ]}
+                />
+              ))}
             </View>
-            <Text style={styles.stepCounter}>
-              {currentStep + 1} / {steps.length}
-            </Text>
-          </View>
 
-          {/* Icon */}
-          {step.icon && (
-            <View style={styles.iconContainer}>
-              {step.iconType === "heroicon" ? (
-                <step.icon size={48} color={colors.accentPurple} />
+            {/* Icon */}
+            {step.icon && (
+              <View style={styles.iconContainer}>
+                {step.iconType === "heroicon" ? (
+                  <step.icon size={48} color={colors.accentPurple} />
+                ) : (
+                  <Ionicons
+                    name={step.icon}
+                    size={48}
+                    color={colors.accentPurple}
+                  />
+                )}
+              </View>
+            )}
+
+            {/* Content */}
+            <Text style={styles.title}>{step.title}</Text>
+            <Text style={styles.description}>{step.description}</Text>
+
+            {/* Actions */}
+            <View style={styles.actions}>
+              {!isLastStep ? (
+                <TouchableOpacity
+                  onPress={onSkip}
+                  style={styles.skipButton}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.skipText}>Skip Tutorial</Text>
+                </TouchableOpacity>
               ) : (
-                <Ionicons
-                  name={step.icon}
-                  size={48}
-                  color={colors.accentPurple}
-                />
+                <TouchableOpacity
+                  onPress={onComplete}
+                  style={styles.getStartedButton}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.getStartedText}>Get Started</Text>
+                </TouchableOpacity>
               )}
             </View>
-          )}
-
-          {/* Content */}
-          <Text style={styles.title}>{step.title}</Text>
-          <Text style={styles.description}>{step.description}</Text>
-
-          {/* Actions */}
-          <View style={styles.actions}>
-            {currentStep > 0 && (
-              <TouchableOpacity
-                onPress={onPrevious}
-                style={styles.previousButton}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="arrow-back"
-                  size={20}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-            )}
-
-            {!isLastStep && (
-              <TouchableOpacity
-                onPress={onSkip}
-                style={styles.skipButton}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.skipText}>Skip</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              onPress={handleNext}
-              style={styles.nextButton}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.nextText}>
-                {isLastStep ? "Get Started" : "Next"}
-              </Text>
-              {!isLastStep && (
-                <Ionicons
-                  name="arrow-forward"
-                  size={20}
-                  color={colors.textPrimary}
-                  style={styles.nextIcon}
-                />
-              )}
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-
-        {/* Tap anywhere to continue hint */}
-        {currentStep > 0 && (
-          <Animated.View style={[styles.tapHint, { opacity: fadeAnim }]}>
-            <Text style={styles.tapHintText}>
-              Swipe left for next, swipe right to go back
-            </Text>
           </Animated.View>
-        )}
+
+          {/* Swipe hint - directly below card, disappears after first swipe */}
+          <Animated.View style={[styles.swipeHint, { opacity: hintOpacity }]}>
+            <View style={styles.swipeHintContainer}>
+              <Text style={styles.swipeHintText}>Swipe to navigate</Text>
+              <ArrowRightIcon size={16} color={colors.textSecondary} />
+            </View>
+          </Animated.View>
+        </View>
       </View>
     </Modal>
   );
@@ -323,57 +392,43 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   overlay: {
-    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
   },
-  spotlight: {
-    position: "absolute",
-    backgroundColor: "transparent",
-    borderRadius: 16,
-    borderWidth: 3,
-    borderColor: colors.accentPurple,
-    shadowColor: colors.accentPurple,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 20,
-    elevation: 10,
+  cardContainer: {
+    alignItems: "center",
+    justifyContent: "center",
   },
-  tooltip: {
-    position: "absolute",
-    width: SCREEN_WIDTH - 40,
+  card: {
+    width: SCREEN_WIDTH - 48,
+    maxWidth: 420,
     backgroundColor: colors.surface,
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: "rgba(156, 107, 255, 0.3)",
+    borderRadius: 28,
+    padding: 32,
+    shadowColor: colors.accentPurple,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 12,
+    borderWidth: 2,
+    borderColor: "rgba(156, 107, 255, 0.4)",
   },
-  progressContainer: {
+  paginationContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
-    gap: 12,
+    justifyContent: "center",
+    marginBottom: 24,
+    gap: 8,
   },
-  progressBar: {
-    flex: 1,
-    height: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 2,
-    overflow: "hidden",
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
   },
-  progressFill: {
-    height: "100%",
+  paginationDotActive: {
+    width: 24,
     backgroundColor: colors.accentPurple,
-    borderRadius: 2,
-  },
-  stepCounter: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
   },
   iconContainer: {
     width: 80,
@@ -409,23 +464,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  previousButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
   skipButton: {
     paddingVertical: 14,
-    paddingHorizontal: 24,
+    paddingHorizontal: 32,
     borderRadius: 12,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.2)",
+    minWidth: 200,
+    alignItems: "center",
   },
   skipText: {
     ...typography.body,
@@ -433,13 +480,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  nextButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 24,
+  getStartedButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 40,
     borderRadius: 12,
     backgroundColor: colors.accentPurple,
     shadowColor: colors.accentPurple,
@@ -447,22 +490,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+    minWidth: 200,
+    alignItems: "center",
   },
-  nextText: {
+  getStartedText: {
     ...typography.body,
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: "700",
   },
-  nextIcon: {
-    marginLeft: 8,
-  },
-  tapHint: {
-    position: "absolute",
-    bottom: 60,
+  swipeHint: {
+    marginTop: 20,
     alignSelf: "center",
   },
-  tapHintText: {
+  swipeHintContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  swipeHintText: {
     ...typography.caption,
     color: colors.textSecondary,
     fontSize: 13,
