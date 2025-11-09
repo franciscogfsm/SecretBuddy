@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { getUserProfile, updateUserProfile } from "./userService";
+import { invalidateSuggestionsCache } from "./friendSuggestionsService";
 
 const FRIENDS_COLLECTION = "friendships";
 
@@ -31,7 +32,7 @@ const FRIENDS_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes (friends don't chan
 /**
  * Invalidate friends cache for a specific user
  */
-const invalidateFriendsCache = (userId?: string) => {
+export const invalidateFriendsCache = (userId?: string) => {
   if (!userId || !friendsCache || friendsCache.userId === userId) {
     friendsCache = null;
   }
@@ -258,9 +259,10 @@ export const acceptFriendRequest = async (
       friendsCount: increment(1),
     } as any);
 
-    // ⚡ Invalidate cache for both users
+    // ⚡ Invalidate cache for both users AND suggestions
     invalidateFriendsCache(friendship.userId1);
     invalidateFriendsCache(friendship.userId2);
+    await invalidateSuggestionsCache();
 
     console.log("✅ Friend request accepted:", friendshipId);
   } catch (error) {
@@ -319,9 +321,10 @@ export const removeFriend = async (
       friendsCount: increment(-1),
     } as any);
 
-    // ⚡ Invalidate cache for both users
+    // ⚡ Invalidate cache for both users AND suggestions
     invalidateFriendsCache(userId1);
     invalidateFriendsCache(userId2);
+    await invalidateSuggestionsCache();
 
     console.log("✅ Friend removed:", friendshipId);
   } catch (error) {

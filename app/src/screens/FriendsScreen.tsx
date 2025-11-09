@@ -42,6 +42,7 @@ import {
   getSentFriendRequests,
   removeFriend,
   blockUser,
+  invalidateFriendsCache,
   type FriendProfile,
 } from "../services/friendService";
 import { getUserProfile } from "../services/userService";
@@ -136,7 +137,10 @@ export const FriendsScreen = () => {
 
     const loadFriendData = async () => {
       try {
-        // Use cached data from friendService (30-minute TTL)
+        // Invalidate cache first to force fresh data fetch
+        invalidateFriendsCache(user.uid);
+
+        // Fetch fresh data from Firestore
         const [friendsData, receivedData, sentData] = await Promise.all([
           getUserFriends(user.uid),
           getPendingFriendRequests(user.uid),
@@ -362,13 +366,15 @@ export const FriendsScreen = () => {
     try {
       setActionLoading(true);
       await acceptFriendRequest(friend.friendshipId, user.uid);
-      // Refresh all lists
-      const [friendsData, receivedData] = await Promise.all([
+      // Refresh all lists - friends, pending requests, AND suggestions
+      const [friendsData, receivedData, suggestionsData] = await Promise.all([
         getUserFriends(user.uid),
         getPendingFriendRequests(user.uid),
+        getFriendSuggestions(user.uid),
       ]);
       setFriends(friendsData);
       setPendingRequests(receivedData);
+      setSuggestions(suggestionsData);
     } catch (error) {
       console.error("Error accepting friend request:", error);
       Alert.alert(
@@ -553,11 +559,14 @@ export const FriendsScreen = () => {
                                 user.uid,
                                 item.uid
                               );
-                              // Refresh friends list
-                              const friendsData = await getUserFriends(
-                                user.uid
-                              );
+                              // Refresh friends list AND suggestions instantly
+                              const [friendsData, suggestionsData] =
+                                await Promise.all([
+                                  getUserFriends(user.uid),
+                                  getFriendSuggestions(user.uid),
+                                ]);
                               setFriends(friendsData);
+                              setSuggestions(suggestionsData);
                             } catch (error) {
                               console.error("Error removing friend:", error);
                               Alert.alert("Error", "Failed to remove friend");
@@ -670,16 +679,11 @@ export const FriendsScreen = () => {
               }}
               disabled={actionLoading}
             >
-              <LinearGradient
-                colors={["rgba(156, 107, 255, 0.8)", "rgba(147, 51, 234, 0.9)"]}
-                style={styles.addButtonGradient}
-              >
-                <Ionicons
-                  name="person-add"
-                  size={18}
-                  color={colors.textPrimary}
-                />
-              </LinearGradient>
+              <Ionicons
+                name="person-add"
+                size={20}
+                color="rgba(156, 107, 255, 0.9)"
+              />
             </TouchableOpacity>
           )}
           {isPendingSent && (
@@ -1296,7 +1300,7 @@ const styles = StyleSheet.create({
   // Friend Card Styles
   friendCard: {
     borderRadius: 24,
-    marginBottom: 12,
+    marginBottom: 1,
     overflow: "hidden",
     shadowColor: "rgba(0, 0, 0, 0.4)",
     shadowOffset: { width: 0, height: 4 },
@@ -1921,24 +1925,30 @@ const styles = StyleSheet.create({
   },
 
   addFriendButton: {
-    borderRadius: 20,
-    overflow: "hidden",
-    shadowColor: "rgba(156, 107, 255, 0.6)",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(156, 107, 255, 0.12)",
+    borderWidth: 1.5,
+    borderColor: "rgba(156, 107, 255, 0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "rgba(156, 107, 255, 0.5)",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
     elevation: 6,
     flexShrink: 0,
   },
 
   addButtonGradient: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(156, 107, 255, 0.4)",
-    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.15)",
   },
 
   removeFriendButton: {

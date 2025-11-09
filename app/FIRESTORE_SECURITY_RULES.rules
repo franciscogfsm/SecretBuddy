@@ -37,14 +37,45 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
+      allow update: if isAuthenticated(); // Simplified - any authenticated user can update (for friend operations)
       allow delete: if isOwner(userId);
+
+      // ============================================
+      // USER PRIVACY SUBCOLLECTION
+      // ============================================
+      match /userPrivacy/{docId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAuthenticated();
+      }
+
+      // ============================================
+      // USER STATS SUBCOLLECTION
+      // ============================================
+      match /userStats/{docId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAuthenticated();
+      }
+
+      // ============================================
+      // USER BADGES SUBCOLLECTION
+      // ============================================
+      match /userBadges/{docId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAuthenticated();
+      }
     }
     
     // ============================================
-    // FRIENDSHIPS - Can manage your own friendships
+    // FRIENDSHIPS - Simple: authenticated users can manage
     // ============================================
     match /friendships/{friendshipId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ============================================
+    // FRIEND REQUESTS - Simple: authenticated users can manage
+    // ============================================
+    match /friendRequests/{requestId} {
       allow read, write: if isAuthenticated();
     }
 
