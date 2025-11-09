@@ -56,41 +56,21 @@ const SwipeableTabScreen = ({
 
   useEffect(() => {
     if (isFocused) {
-      // Determine slide direction based on last active tab and current tab
-      const direction = currentIndex > lastActiveTabIndex.current ? 1 : -1;
-
       // Update the global last active tab
       lastActiveTabIndex.current = currentIndex;
 
       if (!hasAnimatedIn.current) {
-        focusProgress.setValue(0);
-        slideAnim.setValue(direction * SCREEN_WIDTH); // Start from screen edge
+        focusProgress.setValue(1);
+        slideAnim.setValue(0);
         hasAnimatedIn.current = true;
       } else {
-        slideAnim.setValue(direction * SCREEN_WIDTH); // Reset slide position
+        // Instant transition - no slide animation
+        slideAnim.setValue(0);
+        focusProgress.setValue(1);
       }
-
-      Animated.parallel([
-        Animated.spring(focusProgress, {
-          toValue: 1,
-          friction: 14,
-          tension: 100,
-          useNativeDriver: true,
-        }),
-        Animated.spring(slideAnim, {
-          toValue: 0,
-          friction: 14,
-          tension: 90,
-          useNativeDriver: true,
-        }),
-      ]).start();
     } else {
-      Animated.timing(focusProgress, {
-        toValue: 0,
-        duration: 150,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
+      // Quick fade out for smooth transition
+      focusProgress.setValue(0);
     }
   }, [focusProgress, slideAnim, isFocused, currentIndex]);
 
