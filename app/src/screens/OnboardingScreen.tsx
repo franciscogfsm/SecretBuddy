@@ -173,7 +173,6 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
   // Check biometric capability on mount
   useEffect(() => {
     const checkBiometrics = async () => {
-      console.log("🔐 Checking biometric capability...");
       const capability = await checkBiometricCapability();
       setBiometricAvailable(capability.canUseBiometrics);
 
@@ -183,19 +182,10 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
         const enabled = await isBiometricAuthEnabled();
         setBiometricEnabled(enabled);
 
-        console.log("🔐 Biometric status:", {
-          available: capability.canUseBiometrics,
-          type: biometricType,
-          enabled,
-          authMode,
-          platform: Platform.OS,
-        });
-
         // Auto-populate email if biometric is enabled
         if (enabled && authMode === "signin") {
           const savedEmail = await getBiometricSavedEmail();
           if (savedEmail) {
-            console.log("📧 Auto-populating email:", savedEmail);
             setEmail(savedEmail);
           }
         }
@@ -736,19 +726,14 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
 
   const handleBiometricLogin = async () => {
     try {
-      console.log("🔐 Starting biometric login...");
       const credentials = await getBiometricCredentials();
       if (!credentials) {
-        console.log("❌ No stored credentials found");
         return;
       }
 
-      console.log("✅ Credentials found, requesting biometric auth...");
       const success = await authenticateWithBiometrics(`Log in to SecretBuddy`);
-      console.log("🔐 Biometric auth result:", success);
 
       if (success) {
-        console.log("✅ Biometric auth succeeded, signing in...");
         // Biometric auth succeeded, now sign in with stored credentials
         setActiveAction("email");
         await emailSignIn(credentials.email, credentials.password);
@@ -756,28 +741,16 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
         // Reset rate limiter on successful login
         loginRateLimiter.reset(credentials.email);
 
-        console.log("✅ Sign in complete, entering app...");
         // Navigate to app directly
         enterApp();
-      } else {
-        console.log("❌ Biometric auth failed or cancelled");
       }
     } catch (error) {
-      console.error("❌ Biometric login error:", error);
       // Silently fail - user can enter password manually
       setActiveAction(null);
     }
   };
 
   const handlePasswordFocus = async () => {
-    console.log("🔍 Password focus - checking biometric login:", {
-      authMode,
-      biometricAvailable,
-      biometricEnabled,
-      attempted: biometricAttempted.current,
-      platform: Platform.OS,
-    });
-
     // Only trigger biometric if:
     // 1. We're in signin mode
     // 2. Biometrics are available and enabled
@@ -792,18 +765,13 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       const savedEmail = await getBiometricSavedEmail();
       const currentEmail = email.trim().toLowerCase();
 
-      console.log("📧 Email check:", { savedEmail, currentEmail });
-
       // Only show biometric prompt if email matches
       if (savedEmail && currentEmail === savedEmail) {
-        console.log("✅ Triggering biometric login...");
         biometricAttempted.current = true;
         await handleBiometricLogin();
-      } else {
-        console.log("❌ Email mismatch, skipping biometric");
       }
     } else {
-      console.log("❌ Conditions not met for biometric login");
+      // Conditions not met for biometric login - silently ignore
     }
   };
 

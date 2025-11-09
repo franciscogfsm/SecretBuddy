@@ -76,17 +76,13 @@ export const authenticateWithBiometrics = async (
   promptMessage?: string
 ): Promise<boolean> => {
   try {
-    console.log("🔐 [BiometricService] Starting authentication...");
     const capability = await checkBiometricCapability();
-    console.log("🔐 [BiometricService] Capability:", capability);
 
     if (!capability.canUseBiometrics) {
-      console.log("❌ [BiometricService] Cannot use biometrics");
       return false;
     }
 
     const biometricName = getBiometricName(capability.supportedTypes);
-    console.log("🔐 [BiometricService] Using:", biometricName);
 
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage: promptMessage || `Authenticate with ${biometricName}`,
@@ -94,12 +90,6 @@ export const authenticateWithBiometrics = async (
       disableDeviceFallback: false, // Allow passcode fallback after failed Face ID attempts
       cancelLabel: "Cancel",
     });
-
-    console.log(
-      "🔐 [BiometricService] Full result:",
-      JSON.stringify(result, null, 2)
-    );
-    console.log("🔐 [BiometricService] Success:", result.success);
 
     return result.success;
   } catch (error) {
