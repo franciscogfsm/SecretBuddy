@@ -14,6 +14,15 @@ const USERS_COLLECTION = "users";
 const SUGGESTIONS_CACHE_KEY = "@friend_suggestions";
 const SUGGESTIONS_CACHE_DURATION = 5 * 60 * 60 * 1000; // 5 hours
 
+// 🎭 DEMO MODE - Set to true to use demo suggestions instead of Firebase
+// Toggle this to easily switch between real and demo data for testing
+export let DEMO_MODE = false;
+
+export const setDemoMode = (enabled: boolean) => {
+  DEMO_MODE = enabled;
+  console.log(`🎭 Demo mode ${enabled ? "enabled" : "disabled"}`);
+};
+
 // 🎭 Demo suggestions for testing
 const DEMO_SUGGESTIONS: FriendSuggestion[] = [
   {
@@ -97,17 +106,38 @@ interface SuggestionsCache {
 /**
  * Get friend suggestions based on friends-of-friends
  * Returns 4-6 random suggestions that refresh every 5 hours
+ * If demoMode is enabled, returns demo suggestions instead
  */
 export const getFriendSuggestions = async (
-  userId: string
+  userId: string,
+  demoMode: boolean = false
 ): Promise<FriendSuggestion[]> => {
   try {
-    // 🎭 DEMO MODE: Return all demo suggestions immediately
-    console.log("🎭 Returning demo suggestions");
-    return DEMO_SUGGESTIONS;
+    // If demo mode is enabled, return demo suggestions
+    if (demoMode) {
+      console.log("🎭 Demo mode active - returning demo suggestions");
+      const randomCount = Math.floor(Math.random() * 3) + 4; // 4-6 random
+      return shuffleArray(DEMO_SUGGESTIONS).slice(0, randomCount);
+    }
 
-    /* ===== REAL IMPLEMENTATION (currently commented for demo) =====
-    
+    // Check cache first
+    const cachedData = await AsyncStorage.getItem(SUGGESTIONS_CACHE_KEY);
+    if (cachedData) {
+      const cache: SuggestionsCache = JSON.parse(cachedData);
+      const cacheAge = Date.now() - cache.cachedAt;
+
+      // Return cached data if less than 5 hours old
+      if (cacheAge < SUGGESTIONS_CACHE_DURATION) {
+        console.log(
+          `⚡ Using cached suggestions (${Math.floor(
+            cacheAge / 1000 / 60
+          )} minutes old)`
+        );
+        return cache.suggestions;
+      }
+      console.log("🔄 Cache expired, fetching new suggestions");
+    }
+
     // Step 1: Get all user's friends
     const userFriends = await getUserFriendIds(userId);
     if (userFriends.length === 0) {
@@ -191,10 +221,10 @@ export const getFriendSuggestions = async (
 
     // Take top 20 suggestions and randomly pick 4-6 from them
     const topSuggestions = suggestionsWithDetails.slice(0, 20);
-    const randomCount2 = Math.floor(Math.random() * 3) + 4; // 4-6 random
+    const randomCount = Math.floor(Math.random() * 3) + 4; // 4-6 random
     const randomSuggestions = shuffleArray(topSuggestions).slice(
       0,
-      randomCount2
+      randomCount
     );
 
     // Cache the results
@@ -209,11 +239,21 @@ export const getFriendSuggestions = async (
 
     console.log(`✅ Found ${randomSuggestions.length} friend suggestions`);
     return randomSuggestions;
-    
-    ===== END REAL IMPLEMENTATION ===== */
   } catch (error) {
     console.error("❌ Error getting friend suggestions:", error);
     return [];
+  }
+};
+
+/**
+ * Invalidate suggestions cache (call after sending friend request)
+ */
+export const invalidateSuggestionsCache = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem(SUGGESTIONS_CACHE_KEY);
+    console.log("🗑️ Friend suggestions cache invalidated");
+  } catch (error) {
+    console.error("❌ Error invalidating suggestions cache:", error);
   }
 };
 
@@ -257,18 +297,6 @@ const getUserFriendIds = async (userId: string): Promise<string[]> => {
   } catch (error) {
     console.error("❌ Error getting user friends:", error);
     return [];
-  }
-};
-
-/**
- * Invalidate suggestions cache (call after sending friend request)
- */
-export const invalidateSuggestionsCache = async (): Promise<void> => {
-  try {
-    await AsyncStorage.removeItem(SUGGESTIONS_CACHE_KEY);
-    console.log("🗑️ Friend suggestions cache invalidated");
-  } catch (error) {
-    console.error("❌ Error invalidating suggestions cache:", error);
   }
 };
 

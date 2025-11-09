@@ -5,10 +5,13 @@
  * Uses Azure Face API for accurate, cloud-based face detection
  */
 
-// Azure Face API Configuration
-const AZURE_FACE_API_KEY =
-  "3H9IRGmtaUEeIcKIK3T4X9MA0y7Eo8LqYvxLSIQhASYPGsqcxeo7JQQJ99BKAC5RqLJXJ3w3AAAKACOG9Mk7";
-const AZURE_FACE_ENDPOINT = "https://secretbuddy.cognitiveservices.azure.com/";
+// Azure Face API Configuration - loaded from environment variables
+// Create a `.env` file at the project root with the following keys:
+// AZURE_FACE_API_KEY=your_key_here
+// AZURE_FACE_ENDPOINT=https://your_endpoint_here/
+// The project already ignores `.env` in .gitignore.
+const AZURE_FACE_API_KEY = process.env.AZURE_FACE_API_KEY || "";
+const AZURE_FACE_ENDPOINT = process.env.AZURE_FACE_ENDPOINT || "";
 
 export interface FaceDetectionResult {
   hasFaces: boolean;
@@ -54,6 +57,12 @@ export const detectFacesInImage = async (
     const blob = await response.blob();
 
     // Call Azure Face API
+    if (!AZURE_FACE_API_KEY || !AZURE_FACE_ENDPOINT) {
+      console.warn(
+        "⚠️ Azure Face API key or endpoint not set. Set AZURE_FACE_API_KEY and AZURE_FACE_ENDPOINT in your environment."
+      );
+    }
+
     const azureResponse = await fetch(
       `${AZURE_FACE_ENDPOINT}face/v1.0/detect?returnFaceId=false&returnFaceLandmarks=false`,
       {

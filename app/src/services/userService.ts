@@ -34,6 +34,7 @@ export interface UserProfile {
   streak: number;
   hearts: number;
   friendsCount?: number;
+  lifetimeBuddiesCount?: number; // Total number of buddies connected in lifetime
   hasCompletedOnboarding?: boolean; // Tutorial completion flag
   createdAt: any;
   updatedAt: any;
@@ -105,6 +106,7 @@ export const createUserProfile = async (
       streak: 0,
       hearts: 5, // Start with 5 hearts
       friendsCount: 0, // Start with 0 friends
+      lifetimeBuddiesCount: 0, // Track lifetime buddy connections
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       lastActive: serverTimestamp(),

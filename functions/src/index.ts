@@ -1156,6 +1156,20 @@ async function createPair(
     status: "active",
   });
 
+  // Increment lifetime buddies count for both users when they are paired
+  const batch = db.batch();
+  const userARef = db.collection("users").doc(userA);
+  const userBRef = db.collection("users").doc(userB);
+
+  batch.update(userARef, {
+    lifetimeBuddiesCount: admin.firestore.FieldValue.increment(1),
+  });
+  batch.update(userBRef, {
+    lifetimeBuddiesCount: admin.firestore.FieldValue.increment(1),
+  });
+
+  await batch.commit();
+
   return pairId; // Return for batch notification
 }
 
