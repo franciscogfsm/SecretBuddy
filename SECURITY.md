@@ -8,7 +8,91 @@ SecretBuddy implements **military-grade security** to protect user privacy and d
 
 ## 🛡️ Security Features
 
-### 1. End-to-End Message Encryption
+### 1. Biometric Authentication
+
+**Status:** ✅ Implemented (NEW!)
+
+Users can enable Face ID, Touch ID, or Fingerprint authentication for quick and secure login.
+
+#### Technical Details:
+
+- **Platform Support:** iOS (Face ID/Touch ID), Android (Fingerprint/Face Recognition)
+- **Library:** expo-local-authentication
+- **Fallback:** Password login always available
+- **Security:** Biometric data never leaves the device, stored in Secure Enclave (iOS) or Keystore (Android)
+
+#### Features:
+
+- ✅ Automatic prompt after first successful login
+- ✅ Quick login without typing password
+- ✅ Email auto-populated for biometric users
+- ✅ Optional - users can decline
+- ✅ Can be disabled anytime in settings
+
+**Files:**
+
+- `app/src/services/biometricService.ts` - Biometric authentication logic
+- `app/src/screens/OnboardingScreen.tsx` - Integration with login flow
+
+---
+
+### 2. Enhanced Password Security
+
+**Status:** ✅ Implemented (UPDATED!)
+
+Strong password requirements with real-time strength indicator.
+
+#### Requirements:
+
+- ✅ Minimum 8 characters (increased from 6)
+- ✅ At least one uppercase letter (NEW!)
+- ✅ At least one number (NEW!)
+- ✅ At least one lowercase letter
+- ✅ Optional: Special characters for extra strength
+
+#### Password Strength Indicator:
+
+- **Real-time feedback** as user types
+- **Visual bars** showing strength level (1-5)
+- **Color-coded:** Red (weak) → Orange (fair) → Green (good/strong)
+- **Helpful hints:** Shows what's missing
+
+**Files:**
+
+- `app/src/components/PasswordStrengthIndicator.tsx` - Strength indicator component
+- `app/src/screens/OnboardingScreen.tsx` - Validation logic
+
+---
+
+### 3. Rate Limiting
+
+**Status:** ✅ Implemented (NEW!)
+
+Prevents brute-force attacks and spam.
+
+#### Features:
+
+- ✅ **Login Rate Limit:** 5 attempts per 5 minutes per email
+- ✅ Automatic lockout after exceeded attempts
+- ✅ Clear user feedback when rate limited
+- ✅ Automatic reset after time window
+- ✅ Client-side implementation with server-side ready
+
+**Implementation:**
+
+```typescript
+// 5 login attempts per 5 minutes
+const loginRateLimiter = SecurityUtils.createRateLimiter(5, 300000);
+
+if (!loginRateLimiter.check(email)) {
+  showError("Too Many Attempts", "Wait 5 minutes before trying again");
+  return;
+}
+```
+
+---
+
+### 4. End-to-End Message Encryption
 
 **Status:** ✅ Implemented
 
@@ -68,7 +152,7 @@ All chat messages are encrypted before being stored in the database, ensuring th
 
 ---
 
-### 2. Firestore Security Rules
+### 5. Firestore Security Rules
 
 **Status:** ✅ Implemented
 
@@ -122,7 +206,7 @@ firebase deploy --only firestore:rules
 
 ---
 
-### 3. Firebase Storage Security Rules
+### 6. Firebase Storage Security Rules
 
 **Status:** ✅ Implemented
 
@@ -146,7 +230,7 @@ firebase deploy --only storage
 
 ---
 
-### 4. Authentication Security
+### 7. Authentication Security
 
 **Status:** ✅ Implemented
 
@@ -155,16 +239,17 @@ Secure user authentication using Firebase Authentication.
 #### Features:
 
 - ✅ Email/Password with Firebase
-- ✅ Password requirements enforced
+- ✅ Strong password requirements enforced (8+ chars, uppercase, number)
 - ✅ Session tokens (auto-refresh)
 - ✅ Secure password reset flow
-- ✅ Rate limiting on auth attempts
+- ✅ Rate limiting on login attempts (5 per 5 minutes)
+- ✅ Biometric authentication (Face ID/Touch ID/Fingerprint)
 
 **File:** `app/src/lib/firebaseAuth.ts`
 
 ---
 
-### 5. Input Sanitization
+### 8. Input Sanitization
 
 **Status:** ✅ Implemented
 
@@ -187,17 +272,18 @@ const safe = SecurityUtils.sanitizeInput(userInput);
 
 ---
 
-### 6. Rate Limiting
+### 9. Additional Rate Limiting Utilities
 
 **Status:** ✅ Implemented
 
-Prevents spam and brute-force attacks.
+Provides flexible rate limiting for various actions.
 
 #### Features:
 
 - ✅ Configurable attempts and time window
 - ✅ Per-user tracking
 - ✅ Auto-reset after time window
+- ✅ Used for login attempts (5 per 5 minutes)
 
 **Usage:**
 

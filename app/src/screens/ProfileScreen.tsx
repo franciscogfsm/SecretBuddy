@@ -37,7 +37,7 @@ const isSmallScreen = screenWidth < 375 || screenHeight < 667; // iPhone SE or s
 
 export const ProfileScreen = () => {
   const { profile: localProfile, setProfile } = useAppState();
-  const { user, signOut, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const {
     profile: firestoreProfile,
     loading: profileLoading,
@@ -161,34 +161,6 @@ export const ProfileScreen = () => {
     }, [isFocused])
   );
 
-  const handleSignOut = async () => {
-    Alert.alert("Log out", "Are you sure you want to leave SecretBuddy?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await signOut();
-            setProfile(null);
-            requestAnimationFrame(() => {
-              const rootNav = (navigation as any).getParent?.() ?? navigation;
-              rootNav.reset({
-                index: 0,
-                routes: [{ name: "Onboarding", params: { mode: "signin" } }],
-              });
-            });
-          } catch (error) {
-            Alert.alert(
-              "Couldn't log out",
-              error instanceof Error ? error.message : "Please try again."
-            );
-          }
-        },
-      },
-    ]);
-  };
-
   const handleToggleAgeVisibility = async () => {
     try {
       await toggleAge();
@@ -309,108 +281,6 @@ export const ProfileScreen = () => {
     );
   };
 
-  // Development-only: orchestrate pairing + notification using cloud functions
-  const [devRunning, setDevRunning] = useState(false);
-
-  const runDevPairAndNotify = async () => {
-    if (devRunning) return;
-    setDevRunning(true);
-
-    try {
-      // Compute target pool hour from current UTC: close previous hour
-      const nowUtc = new Date();
-      const previousHour = nowUtc.getUTCHours() - 1; // we close the pool for the previous hour
-
-      // Clamp to valid pool hours (9..16)
-      const clampedHour = Math.max(9, Math.min(16, previousHour));
-
-      const dateStr = nowUtc.toISOString().split("T")[0];
-      const poolId = `${dateStr}-${clampedHour}h`;
-
-      console.log(`🔧 Dev tool: Pool ID = ${poolId}`);
-
-      const base = "https://us-central1-secretbuddy-5637d.cloudfunctions.net";
-
-      // 1) Ensure pools exist
-      console.log("📅 Step 1: Creating pools...");
-      const createPoolsRes = await fetch(`${base}/manualCreatePools`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (!createPoolsRes.ok) {
-        const error = await createPoolsRes.json();
-        throw new Error(
-          `Pool creation failed: ${error.error || createPoolsRes.status}`
-        );
-      }
-
-      console.log("✅ Pools created");
-
-      // Small delay to allow Firestore indexes to settle
-      await new Promise((r) => setTimeout(r, 1500));
-
-      // 2) Create pairs in test mode (allUsers=true to pair ALL users, not just pool members)
-      // ✅ This ensures it works even when no users are in the specific pool
-      console.log("👥 Step 2: Creating pairs with allUsers=true...");
-      const createPairsRes = await fetch(`${base}/manualCreatePairs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          poolId,
-          allUsers: true, // ✅ Pair ALL users regardless of pool membership
-        }),
-      });
-
-      const createPairsJson = await createPairsRes.json();
-      console.log("📊 Pairs response:", createPairsJson);
-
-      if (!createPairsRes.ok) {
-        throw new Error(
-          `manualCreatePairs failed: ${
-            createPairsJson?.error || createPairsRes.status
-          }\n\nThis usually means:\n• No users registered in the app yet\n• Database connection issue`
-        );
-      }
-
-      // Small delay
-      await new Promise((r) => setTimeout(r, 1000));
-
-      // 3) Trigger test photo notification for the pool
-      console.log("📸 Step 3: Sending photo notifications...");
-      const notifyRes = await fetch(`${base}/manualTestPhotoNotification`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ poolId }),
-      });
-
-      const notifyJson = await notifyRes.json();
-      if (!notifyRes.ok) {
-        console.warn("⚠️ Photo notifications failed:", notifyJson);
-        // Don't throw - pairing succeeded, notification is optional
-      }
-
-      Alert.alert(
-        "✅ Dev: Pair & Notify Complete",
-        `Pool: ${poolId}\n\n` +
-          `Pairs created: ${createPairsJson?.pairs ?? 0}\n` +
-          `Unpaired: ${createPairsJson?.unpaired ?? 0}\n` +
-          `Notifications sent: ${
-            notifyJson?.sent ?? notifyJson?.result ?? "N/A"
-          }\n\n` +
-          `Mode: ${createPairsJson?.mode || "unknown"}`
-      );
-    } catch (error: any) {
-      console.error("❌ Dev pairing error:", error);
-      Alert.alert(
-        "Dev: Pair & Notify Error",
-        error instanceof Error ? error.message : String(error)
-      );
-    } finally {
-      setDevRunning(false);
-    }
-  };
-
   // No loading screen needed - profile is pre-loaded on HomeScreen
   // This ensures instant display when user navigates to Profile tab
 
@@ -431,20 +301,6 @@ export const ProfileScreen = () => {
             },
           ]}
         >
-          {!isSmallScreen && (
-            <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={handleSignOut}
-              disabled={authLoading}
-            >
-              <Ionicons
-                name="log-out-outline"
-                size={20}
-                color={colors.accentPink}
-              />
-            </TouchableOpacity>
-          )}
-
           <View style={styles.profileContent}>
             {/* Avatar on the left */}
             <View style={styles.avatarSection}>
@@ -753,9 +609,6 @@ export const ProfileScreen = () => {
                     ? "Your age is visible to other users when they view your profile"
                     : "Your age is hidden and only you can see it"}
                 </Text>
-                <Text style={styles.privacyHint}>
-                  Toggle to control who can see your age information
-                </Text>
               </View>
               <Switch
                 trackColor={{
@@ -934,54 +787,6 @@ export const ProfileScreen = () => {
               </View>
             </TouchableOpacity>
           </Animated.View>
-
-          {/* DEV: Pair & Notify orchestration button (only in dev) */}
-          {__DEV__ && (
-            <Animated.View
-              style={{
-                marginTop: 16,
-                opacity: settingsAnim3,
-                transform: [
-                  { scale: scaleAnim },
-                  {
-                    translateX: settingsAnim3.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [50, 0],
-                    }),
-                  },
-                ],
-              }}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.settingsCard,
-                  { borderColor: "rgba(46,230,169,0.25)" },
-                ]}
-                onPress={runDevPairAndNotify}
-                disabled={devRunning}
-              >
-                <View style={styles.settingsCardContent}>
-                  <View style={styles.settingsIconContainer}>
-                    <Ionicons
-                      name="flash-outline"
-                      size={24}
-                      color={colors.textPrimary}
-                    />
-                  </View>
-                  <View style={styles.settingsTextContainer}>
-                    <Text style={styles.settingsLabel}>Pair & Notify</Text>
-                    <Text style={styles.settingsDescription} numberOfLines={2}>
-                      Create pools, pair users (all users), and send test photo
-                      notifications.
-                    </Text>
-                  </View>
-                  <Text style={styles.settingsChevron}>
-                    {devRunning ? "…" : "›"}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </Animated.View>
-          )}
         </Animated.View>
 
         {/* Footer Space */}
@@ -1284,24 +1089,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  logoutButton: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 79, 183, 0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 79, 183, 0.3)",
-    shadowColor: "rgba(255, 79, 183, 0.4)",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-    zIndex: 10,
-  },
-
   // Section Styles
   sectionContainer: {
     marginBottom: 32,
@@ -1480,15 +1267,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
-  },
-
-  privacyHint: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 16,
-    opacity: 0.7,
-    fontStyle: "italic",
   },
 
   switch: {

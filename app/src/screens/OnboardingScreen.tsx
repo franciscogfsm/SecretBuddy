@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { FontAwesome } from "@expo/vector-icons";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Alert,
   Animated,
@@ -24,11 +24,26 @@ import { CountryDropdown } from "../components/CountryDropdown";
 import { InputField } from "../components/InputField";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { ErrorModal } from "../components/ErrorModal";
+import {
+  PasswordStrengthIndicator,
+  validatePasswordStrength,
+} from "../components/PasswordStrengthIndicator";
+import { BiometricPromptModal } from "../components/BiometricPromptModal";
 import { useAuth } from "../context/AuthContext";
 import type { RootStackParamList } from "../navigation/types";
 import { useAppState } from "../store/AppStateContext";
 import { colors, typography } from "../theme";
 import { createUserProfile, getUserProfile } from "../services/userService";
+import { SecurityUtils } from "../services/encryptionService";
+import {
+  checkBiometricCapability,
+  authenticateWithBiometrics,
+  isBiometricAuthEnabled,
+  getBiometricSavedEmail,
+  getBiometricCredentials,
+  promptEnableBiometrics,
+  getBiometricName,
+} from "../services/biometricService";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Onboarding">;
 
@@ -93,6 +108,29 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     type: "error",
   });
 
+  // Biometric authentication state
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricName, setBiometricName] = useState("Biometric");
+  const biometricAttempted = useRef(false);
+  const [biometricPrompt, setBiometricPrompt] = useState<{
+    visible: boolean;
+    email: string;
+    password: string;
+    isDifferentAccount: boolean;
+  }>({
+    visible: false,
+    email: "",
+    password: "",
+    isDifferentAccount: false,
+  });
+
+  // Rate limiting for login attempts
+  const loginRateLimiter = useMemo(
+    () => SecurityUtils.createRateLimiter(5, 300000), // 5 attempts per 5 minutes
+    []
+  );
+
   const fadeAnim = useState(new Animated.Value(0))[0];
   const tabSlideAnim = useState(
     new Animated.Value(authMode === "signup" ? 0 : 1)
@@ -131,6 +169,45 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       useNativeDriver: true,
     }).start();
   }, [authMode, tabSlideAnim]);
+
+  // Check biometric capability on mount
+  useEffect(() => {
+    const checkBiometrics = async () => {
+      console.log("🔐 Checking biometric capability...");
+      const capability = await checkBiometricCapability();
+      setBiometricAvailable(capability.canUseBiometrics);
+
+      if (capability.canUseBiometrics) {
+        const biometricType = getBiometricName(capability.supportedTypes);
+        setBiometricName(biometricType);
+        const enabled = await isBiometricAuthEnabled();
+        setBiometricEnabled(enabled);
+
+        console.log("🔐 Biometric status:", {
+          available: capability.canUseBiometrics,
+          type: biometricType,
+          enabled,
+          authMode,
+          platform: Platform.OS,
+        });
+
+        // Auto-populate email if biometric is enabled
+        if (enabled && authMode === "signin") {
+          const savedEmail = await getBiometricSavedEmail();
+          if (savedEmail) {
+            console.log("📧 Auto-populating email:", savedEmail);
+            setEmail(savedEmail);
+          }
+        }
+      }
+    };
+    checkBiometrics();
+  }, [authMode]);
+
+  // Reset biometric attempt flag when email changes
+  useEffect(() => {
+    biometricAttempted.current = false;
+  }, [email]);
 
   const isSignup = authMode === "signup";
   const isBusy = authLoading && activeAction !== null;
@@ -392,13 +469,46 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       return null;
     }
 
-    if (passwordValue.length < 6) {
-      showCustomError(
-        "Password Too Short",
-        "Use at least 6 characters for your password.",
-        "warning"
-      );
-      return null;
+    // Enhanced password validation for signup
+    if (authMode === "signup") {
+      const strength = validatePasswordStrength(passwordValue);
+
+      if (passwordValue.length < 8) {
+        showCustomError(
+          "Password Too Short",
+          "Use at least 8 characters for your password.",
+          "warning"
+        );
+        return null;
+      }
+
+      if (!/[A-Z]/.test(passwordValue)) {
+        showCustomError(
+          "Weak Password",
+          "Password must include at least one uppercase letter.",
+          "warning"
+        );
+        return null;
+      }
+
+      if (!/[0-9]/.test(passwordValue)) {
+        showCustomError(
+          "Weak Password",
+          "Password must include at least one number.",
+          "warning"
+        );
+        return null;
+      }
+
+      // Require at least "Fair" strength (score >= 3)
+      if (strength.score < 3) {
+        showCustomError(
+          "Weak Password",
+          `Your password is too weak. ${strength.feedback.join(", ")}.`,
+          "warning"
+        );
+        return null;
+      }
     }
 
     return {
@@ -469,6 +579,27 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
     );
   };
 
+  const handleEnableBiometric = async () => {
+    try {
+      await promptEnableBiometrics(
+        biometricPrompt.email,
+        biometricPrompt.password
+      );
+      setBiometricEnabled(true);
+      setBiometricPrompt({ ...biometricPrompt, visible: false });
+      enterApp();
+    } catch (error) {
+      console.error("Error enabling biometrics:", error);
+      setBiometricPrompt({ ...biometricPrompt, visible: false });
+      enterApp();
+    }
+  };
+
+  const handleCancelBiometric = () => {
+    setBiometricPrompt({ ...biometricPrompt, visible: false });
+    enterApp();
+  };
+
   const handleSignupCredentials = () => {
     const credentials = ensureCredentials();
     if (!credentials) {
@@ -503,6 +634,10 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       return;
     }
 
+    await performSignup(persona);
+  };
+
+  const performSignup = async (persona: PersonaDetails) => {
     try {
       if (signupCredentials) {
         setActiveAction("email");
@@ -534,9 +669,56 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       return;
     }
 
+    // Rate limiting check
+    if (!loginRateLimiter.check(credentials.email)) {
+      showCustomError(
+        "Too Many Attempts",
+        "You've tried logging in too many times. Please wait 5 minutes before trying again.",
+        "warning"
+      );
+      return;
+    }
+
+    await performLogin(credentials);
+  };
+
+  const performLogin = async (credentials: {
+    email: string;
+    password: string;
+  }) => {
     try {
       setActiveAction("email");
       await emailSignIn(credentials.email, credentials.password);
+
+      // Reset rate limiter on successful login
+      loginRateLimiter.reset(credentials.email);
+
+      // Check if biometric should be prompted
+      // Only prompt if biometrics available AND either:
+      // 1. Not enabled yet, OR
+      // 2. Different account (switching accounts)
+      if (biometricAvailable) {
+        const savedEmail = await getBiometricSavedEmail();
+        const currentEmail = credentials.email.toLowerCase();
+        const isDifferentAccount = !!(
+          savedEmail && savedEmail !== currentEmail
+        );
+        const isAlreadyEnabledForThisAccount =
+          biometricEnabled && savedEmail === currentEmail;
+
+        // Only show prompt if not already enabled for this account
+        if (!isAlreadyEnabledForThisAccount || isDifferentAccount) {
+          setBiometricPrompt({
+            visible: true,
+            email: credentials.email,
+            password: credentials.password,
+            isDifferentAccount,
+          });
+          return; // Don't enter app yet, wait for modal response
+        }
+      }
+
+      // If biometrics already enabled for this account, or not available, just enter
       enterApp();
     } catch (err) {
       if (
@@ -549,6 +731,79 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
       showCustomError(errorInfo.title, errorInfo.message);
     } finally {
       setActiveAction(null);
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    try {
+      console.log("🔐 Starting biometric login...");
+      const credentials = await getBiometricCredentials();
+      if (!credentials) {
+        console.log("❌ No stored credentials found");
+        return;
+      }
+
+      console.log("✅ Credentials found, requesting biometric auth...");
+      const success = await authenticateWithBiometrics(`Log in to SecretBuddy`);
+      console.log("🔐 Biometric auth result:", success);
+
+      if (success) {
+        console.log("✅ Biometric auth succeeded, signing in...");
+        // Biometric auth succeeded, now sign in with stored credentials
+        setActiveAction("email");
+        await emailSignIn(credentials.email, credentials.password);
+
+        // Reset rate limiter on successful login
+        loginRateLimiter.reset(credentials.email);
+
+        console.log("✅ Sign in complete, entering app...");
+        // Navigate to app directly
+        enterApp();
+      } else {
+        console.log("❌ Biometric auth failed or cancelled");
+      }
+    } catch (error) {
+      console.error("❌ Biometric login error:", error);
+      // Silently fail - user can enter password manually
+      setActiveAction(null);
+    }
+  };
+
+  const handlePasswordFocus = async () => {
+    console.log("🔍 Password focus - checking biometric login:", {
+      authMode,
+      biometricAvailable,
+      biometricEnabled,
+      attempted: biometricAttempted.current,
+      platform: Platform.OS,
+    });
+
+    // Only trigger biometric if:
+    // 1. We're in signin mode
+    // 2. Biometrics are available and enabled
+    // 3. Email matches the saved email
+    // 4. We haven't attempted yet
+    if (
+      authMode === "signin" &&
+      biometricAvailable &&
+      biometricEnabled &&
+      !biometricAttempted.current
+    ) {
+      const savedEmail = await getBiometricSavedEmail();
+      const currentEmail = email.trim().toLowerCase();
+
+      console.log("📧 Email check:", { savedEmail, currentEmail });
+
+      // Only show biometric prompt if email matches
+      if (savedEmail && currentEmail === savedEmail) {
+        console.log("✅ Triggering biometric login...");
+        biometricAttempted.current = true;
+        await handleBiometricLogin();
+      } else {
+        console.log("❌ Email mismatch, skipping biometric");
+      }
+    } else {
+      console.log("❌ Conditions not met for biometric login");
     }
   };
 
@@ -852,7 +1107,12 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                     label="Password"
                     value={password}
                     onChangeText={setPassword}
-                    placeholder="Minimum 6 characters"
+                    onFocus={handlePasswordFocus}
+                    placeholder={
+                      authMode === "signup"
+                        ? "Minimum 8 characters"
+                        : "Enter your password"
+                    }
                     secureTextEntry
                     autoComplete={
                       authMode === "signup"
@@ -863,6 +1123,13 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
                       authMode === "signup" ? "newPassword" : "password"
                     }
                   />
+                  {/* Password strength indicator for signup */}
+                  {authMode === "signup" && (
+                    <PasswordStrengthIndicator
+                      password={password}
+                      visible={password.length > 0}
+                    />
+                  )}
                 </View>
 
                 <View style={styles.metaSection}>
@@ -1020,6 +1287,16 @@ export const OnboardingScreen = ({ navigation, route }: Props) => {
         message={errorModal.message}
         type={errorModal.type}
         onClose={hideErrorModal}
+      />
+
+      {/* Biometric Prompt Modal */}
+      <BiometricPromptModal
+        visible={biometricPrompt.visible}
+        biometricName={biometricName}
+        email={biometricPrompt.email}
+        isDifferentAccount={biometricPrompt.isDifferentAccount}
+        onEnable={handleEnableBiometric}
+        onCancel={handleCancelBiometric}
       />
     </GradientBackground>
   );

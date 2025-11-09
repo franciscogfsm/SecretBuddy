@@ -4,7 +4,14 @@ import {
   createBottomTabNavigator,
 } from "@react-navigation/bottom-tabs";
 import { useIsFocused } from "@react-navigation/native";
-import { Animated, Easing, Pressable, StyleSheet, View } from "react-native";
+import {
+  Animated,
+  Dimensions,
+  Easing,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +32,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
+// Global state to track last active tab index across all screens
+const lastActiveTabIndex = { current: 0 };
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
+
 // Swipe-enabled wrapper for tab screens
 const SwipeableTabScreen = ({
   children,
@@ -39,49 +51,59 @@ const SwipeableTabScreen = ({
 }) => {
   const isFocused = useIsFocused();
   const focusProgress = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
   const hasAnimatedIn = useRef(false);
 
   useEffect(() => {
     if (isFocused) {
+      // Determine slide direction based on last active tab and current tab
+      const direction = currentIndex > lastActiveTabIndex.current ? 1 : -1;
+
+      // Update the global last active tab
+      lastActiveTabIndex.current = currentIndex;
+
       if (!hasAnimatedIn.current) {
         focusProgress.setValue(0);
+        slideAnim.setValue(direction * SCREEN_WIDTH); // Start from screen edge
         hasAnimatedIn.current = true;
+      } else {
+        slideAnim.setValue(direction * SCREEN_WIDTH); // Reset slide position
       }
+
       Animated.parallel([
         Animated.spring(focusProgress, {
           toValue: 1,
-          friction: 12,
-          tension: 120,
+          friction: 14,
+          tension: 100,
+          useNativeDriver: true,
+        }),
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          friction: 14,
+          tension: 90,
           useNativeDriver: true,
         }),
       ]).start();
     } else {
       Animated.timing(focusProgress, {
         toValue: 0,
-        duration: 200,
-        easing: Easing.out(Easing.quad),
+        duration: 150,
+        easing: Easing.out(Easing.ease),
         useNativeDriver: true,
       }).start();
     }
-  }, [focusProgress, isFocused]);
+  }, [focusProgress, slideAnim, isFocused, currentIndex]);
 
   const animatedStyle = useMemo(
     () => ({
       backgroundColor: colors.background,
-      opacity: focusProgress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0.6, 1],
-      }),
       transform: [
         {
-          scale: focusProgress.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0.96, 1],
-          }),
+          translateX: slideAnim,
         },
       ],
     }),
-    [focusProgress]
+    [slideAnim]
   );
 
   const onGestureEvent = useCallback((event: any) => {
@@ -125,17 +147,19 @@ const SwipeableTabScreen = ({
   );
 
   return (
-    <PanGestureHandler
-      onGestureEvent={onGestureEvent}
-      onHandlerStateChange={onHandlerStateChange}
-      // Only capture horizontal gestures, let vertical scroll through
-      activeOffsetX={[-20, 20]}
-      failOffsetY={[-10, 10]}
-    >
-      <Animated.View style={[styles.sceneContainer, animatedStyle]}>
-        {children}
-      </Animated.View>
-    </PanGestureHandler>
+    <View style={styles.sceneWrapper}>
+      <PanGestureHandler
+        onGestureEvent={onGestureEvent}
+        onHandlerStateChange={onHandlerStateChange}
+        // Only capture horizontal gestures, let vertical scroll through
+        activeOffsetX={[-20, 20]}
+        failOffsetY={[-10, 10]}
+      >
+        <Animated.View style={[styles.sceneContainer, animatedStyle]}>
+          {children}
+        </Animated.View>
+      </PanGestureHandler>
+    </View>
   );
 };
 
@@ -501,7 +525,7 @@ export const HomeTabs = () => {
   }, [user]);
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <TopHeader />
       <Tab.Navigator
         screenOptions={{
@@ -517,6 +541,7 @@ export const HomeTabs = () => {
             unviewedPhotosCount={unviewedPhotosCount}
           />
         )}
+        sceneContainerStyle={{ backgroundColor: colors.background }}
       >
         <Tab.Screen name="Home">
           {(props) => (
@@ -594,10 +619,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: "100%",
   },
-  sceneContainer: {
+  sceneWrapper: {
     flex: 1,
     backgroundColor: colors.background,
     overflow: "hidden",
+    position: "relative",
+  },
+  sceneContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.background,
   },
   tabBar: {
     flexDirection: "row",
