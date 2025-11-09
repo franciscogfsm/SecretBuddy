@@ -36,6 +36,7 @@ import * as photoService from "../services/photoService";
 import * as poolService from "../services/poolService";
 import * as notificationService from "../services/notificationService";
 import * as userService from "../services/userService";
+import * as faceDetectionService from "../services/faceDetectionService";
 import { PillOption } from "../components/PillOption";
 import { TUTORIAL_STEPS } from "../constants/tutorialSteps";
 
@@ -214,6 +215,15 @@ export const HomeScreen = () => {
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [showPhotoViewer, setShowPhotoViewer] = useState(false);
 
+  // Face detection modal state
+  const [showFaceDetectionModal, setShowFaceDetectionModal] = useState(false);
+  const [faceDetectionResult, setFaceDetectionResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+  const [photoUploadAttempts, setPhotoUploadAttempts] = useState(0);
+  const MAX_UPLOAD_ATTEMPTS = 5;
+
   // Control photo state - will be connected to backend
   const [receivedPhotos, setReceivedPhotos] = useState<
     photoService.PhotoChallenge[]
@@ -352,6 +362,51 @@ export const HomeScreen = () => {
         const photoUri = result.assets[0].uri;
 
         try {
+          // 🔍 Check for faces in the photo before uploading
+          console.log("🔍 Checking photo for faces...");
+          const validation = await faceDetectionService.validatePhotoForUpload(
+            photoUri
+          );
+
+          if (!validation.isValid) {
+            // Increment attempt counter
+            const newAttempts = photoUploadAttempts + 1;
+            setPhotoUploadAttempts(newAttempts);
+
+            // Check if max attempts reached
+            if (newAttempts >= MAX_UPLOAD_ATTEMPTS) {
+              // Max attempts reached - close the photo challenge card
+              setFaceDetectionResult({
+                success: false,
+                message: `You've reached the maximum number of attempts (${MAX_UPLOAD_ATTEMPTS}).\n\nThe photo challenge has been closed. Please try sending a photo without faces next time! 😊`,
+              });
+              setShowFaceDetectionModal(true);
+
+              // Close photo challenge card after a delay
+              setTimeout(() => {
+                setShowPhotoChallengeCard(false);
+                setPhotoChallengeCreatedAt(null);
+                setPhotoUploadAttempts(0);
+                AsyncStorage.removeItem("photoChallengeData");
+              }, 2000);
+              return;
+            }
+
+            // Show in-app modal with remaining attempts
+            const attemptsLeft = MAX_UPLOAD_ATTEMPTS - newAttempts;
+            setFaceDetectionResult({
+              success: false,
+              message: `We detected ${
+                validation.reason
+              } in your photo!\n\nPlease don't take photos with faces to protect everyone's anonymity. Try again with objects, scenery, or other non-face content! 📸\n\n${attemptsLeft} attempt${
+                attemptsLeft !== 1 ? "s" : ""
+              } remaining.`,
+            });
+            setShowFaceDetectionModal(true);
+            return;
+          }
+
+          console.log("✅ No faces detected, proceeding with upload");
           console.log("📤 Starting photo upload...");
 
           // TESTING: Always use friend's UID for photo challenges
@@ -386,6 +441,9 @@ export const HomeScreen = () => {
           );
 
           setHasSentPhoto(true); // Mark photo as sent
+
+          // Reset attempts counter on success
+          setPhotoUploadAttempts(0);
 
           // Hide photo challenge card after sending
           setShowPhotoChallengeCard(false);
@@ -453,6 +511,52 @@ export const HomeScreen = () => {
       if (!result.canceled && result.assets && result.assets[0]) {
         const photoUri = result.assets[0].uri;
 
+        // 🔍 Check for faces in the photo before uploading
+        console.log("🔍 Checking photo for faces...");
+        const validation = await faceDetectionService.validatePhotoForUpload(
+          photoUri
+        );
+
+        if (!validation.isValid) {
+          // Increment attempt counter
+          const newAttempts = photoUploadAttempts + 1;
+          setPhotoUploadAttempts(newAttempts);
+
+          // Check if max attempts reached
+          if (newAttempts >= MAX_UPLOAD_ATTEMPTS) {
+            // Max attempts reached - close the photo challenge card
+            setFaceDetectionResult({
+              success: false,
+              message: `You've reached the maximum number of attempts (${MAX_UPLOAD_ATTEMPTS}).\n\nThe photo challenge has been closed. Please try sending a photo without faces next time! 😊`,
+            });
+            setShowFaceDetectionModal(true);
+
+            // Close photo challenge card after a delay
+            setTimeout(() => {
+              setShowPhotoChallengeCard(false);
+              setPhotoChallengeCreatedAt(null);
+              setPhotoUploadAttempts(0);
+              AsyncStorage.removeItem("photoChallengeData");
+            }, 2000);
+            return;
+          }
+
+          // Show in-app modal with remaining attempts
+          const attemptsLeft = MAX_UPLOAD_ATTEMPTS - newAttempts;
+          setFaceDetectionResult({
+            success: false,
+            message: `We detected ${
+              validation.reason
+            } in your photo!\n\nPlease don't take photos with faces to protect everyone's anonymity. Try again with objects, scenery, or other non-face content! 📸\n\n${attemptsLeft} attempt${
+              attemptsLeft !== 1 ? "s" : ""
+            } remaining.`,
+          });
+          setShowFaceDetectionModal(true);
+          return;
+        }
+
+        console.log("✅ No faces detected, proceeding with upload");
+
         // Get partner ID
         const partnerId = poolService.getPartnerIdFromPair(
           currentPair,
@@ -482,6 +586,9 @@ export const HomeScreen = () => {
           currentPair.id,
           true // bypassPhotoWindow = true
         );
+
+        // Reset attempts counter on success
+        setPhotoUploadAttempts(0);
 
         // Hide photo challenge card after sending
         setShowPhotoChallengeCard(false);
@@ -2372,6 +2479,77 @@ export const HomeScreen = () => {
         onComplete={handleOnboardingComplete}
         onAction={handleOnboardingAction}
       />
+
+      {/* Face Detection Result Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showFaceDetectionModal}
+        onRequestClose={() => setShowFaceDetectionModal(false)}
+      >
+        <View style={styles.faceDetectionModalOverlay}>
+          <View style={styles.faceDetectionModalContainer}>
+            {/* Icon */}
+            <View
+              style={[
+                styles.faceDetectionModalIcon,
+                faceDetectionResult?.success
+                  ? styles.faceDetectionModalIconSuccess
+                  : styles.faceDetectionModalIconError,
+              ]}
+            >
+              <Ionicons
+                name={
+                  faceDetectionResult?.success
+                    ? "checkmark-circle"
+                    : "alert-circle"
+                }
+                size={64}
+                color={faceDetectionResult?.success ? "#10B981" : "#EF4444"}
+              />
+            </View>
+
+            {/* Title */}
+            <Text style={styles.faceDetectionModalTitle}>
+              {faceDetectionResult?.success
+                ? "✅ Perfect!"
+                : "😬 Oh no! Face Detected"}
+            </Text>
+
+            {/* Message */}
+            <Text style={styles.faceDetectionModalMessage}>
+              {faceDetectionResult?.message}
+            </Text>
+
+            {/* Button */}
+            <TouchableOpacity
+              style={[
+                styles.faceDetectionModalButton,
+                faceDetectionResult?.success
+                  ? styles.faceDetectionModalButtonSuccess
+                  : styles.faceDetectionModalButtonError,
+              ]}
+              onPress={() => {
+                setShowFaceDetectionModal(false);
+                // If the result was failure and not max attempts, open camera again after modal closes
+                if (
+                  !faceDetectionResult?.success &&
+                  photoUploadAttempts < MAX_UPLOAD_ATTEMPTS
+                ) {
+                  // Add a small delay to let the modal close animation complete
+                  setTimeout(() => {
+                    openCamera();
+                  }, 300);
+                }
+              }}
+            >
+              <Text style={styles.faceDetectionModalButtonText}>
+                {faceDetectionResult?.success ? "Awesome!" : "Try Again"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </GradientBackground>
   );
 };
@@ -4512,5 +4690,88 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     textAlign: "center",
     fontStyle: "italic",
+  },
+  // Face Detection Modal Styles
+  faceDetectionModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  faceDetectionModalContainer: {
+    backgroundColor: "rgba(11, 5, 32, 0.98)",
+    borderRadius: 28,
+    padding: 32,
+    alignItems: "center",
+    width: "90%",
+    maxWidth: 400,
+    borderWidth: 2,
+    borderColor: "rgba(139, 92, 246, 0.3)",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 16,
+  },
+  faceDetectionModalIcon: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+    borderWidth: 3,
+  },
+  faceDetectionModalIconSuccess: {
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    borderColor: "rgba(16, 185, 129, 0.4)",
+  },
+  faceDetectionModalIconError: {
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderColor: "rgba(239, 68, 68, 0.4)",
+  },
+  faceDetectionModalTitle: {
+    ...typography.display,
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "800",
+    marginBottom: 16,
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
+  faceDetectionModalMessage: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center",
+    marginBottom: 28,
+    paddingHorizontal: 8,
+  },
+  faceDetectionModalButton: {
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    width: "100%",
+    alignItems: "center",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  faceDetectionModalButtonSuccess: {
+    backgroundColor: "#10B981",
+    shadowColor: "#10B981",
+  },
+  faceDetectionModalButtonError: {
+    backgroundColor: "#EF4444",
+    shadowColor: "#EF4444",
+  },
+  faceDetectionModalButtonText: {
+    ...typography.subtitle,
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "700",
   },
 });
