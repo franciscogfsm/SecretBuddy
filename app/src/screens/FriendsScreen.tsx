@@ -638,7 +638,11 @@ export const FriendsScreen = () => {
     const isFriend = item.friendshipStatus === "friend";
 
     return (
-      <TouchableOpacity style={styles.searchResultCard}>
+      <TouchableOpacity
+        style={styles.searchResultCard}
+        onPress={() => handleFriendPress(item)}
+        activeOpacity={0.7}
+      >
         <LinearGradient
           colors={["rgba(11, 5, 32, 0.9)", "rgba(6, 0, 18, 0.8)"]}
           style={styles.friendCardGradient}
@@ -667,7 +671,10 @@ export const FriendsScreen = () => {
           {canSendRequest && (
             <TouchableOpacity
               style={styles.addFriendButton}
-              onPress={() => handleSendRequest(item)}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleSendRequest(item);
+              }}
               disabled={actionLoading}
             >
               <Ionicons
@@ -680,7 +687,10 @@ export const FriendsScreen = () => {
           {isPendingSent && (
             <TouchableOpacity
               style={styles.sentButton}
-              onPress={() => handleCancelRequest(item)}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleCancelRequest(item);
+              }}
               disabled={actionLoading}
             >
               <Text style={styles.sentButtonText}>Sent</Text>
@@ -779,13 +789,33 @@ export const FriendsScreen = () => {
             {renderStatCard("Sent", sentRequests.length, colors.textPrimary)}
           </View>
 
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search for friends"
-            placeholderTextColor="rgba(255,255,255,0.5)"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+          <View style={styles.searchContainer}>
+            <Ionicons
+              name="search"
+              size={20}
+              color="rgba(255,255,255,0.5)"
+              style={styles.searchIcon}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search for friends"
+              placeholderTextColor="rgba(255,255,255,0.5)"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                style={styles.clearButton}
+                onPress={() => setSearchQuery("")}
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={20}
+                  color="rgba(255,255,255,0.5)"
+                />
+              </TouchableOpacity>
+            )}
+          </View>
 
           {searchQuery.trim() ? (
             <View style={styles.section}>
@@ -1187,12 +1217,26 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
+  searchContainer: {
+    position: "relative",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  searchIcon: {
+    position: "absolute",
+    left: 18,
+    zIndex: 1,
+  },
+
   searchInput: {
+    flex: 1,
     borderRadius: 26,
     borderWidth: 1.5,
     borderColor: "rgba(156, 107, 255, 0.25)",
     backgroundColor: "rgba(6, 0, 18, 0.9)",
-    paddingHorizontal: 22,
+    paddingLeft: 50,
+    paddingRight: 50,
     paddingVertical: 16,
     color: colors.textPrimary,
     ...typography.body,
@@ -1202,6 +1246,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 10,
     elevation: 6,
+  },
+
+  clearButton: {
+    position: "absolute",
+    right: 18,
+    zIndex: 1,
+    padding: 4,
   },
 
   section: {
