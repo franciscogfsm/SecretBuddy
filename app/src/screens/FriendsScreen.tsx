@@ -14,6 +14,8 @@ import {
   ActivityIndicator,
   Image,
   Share,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -724,401 +726,410 @@ export const FriendsScreen = () => {
   return (
     <GradientBackground gradient="midnight">
       <TopHeader />
-      <ScrollView
-        ref={scrollRef}
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={
-          !profileModalVisible && !reportModalVisible && !blockModalVisible
-        }
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
-        <View style={styles.container}>
-          <View style={styles.header}>
-            <Text style={styles.title}>Friends</Text>
-            <View style={styles.headerButtons}>
-              <TouchableOpacity
-                style={styles.testChatButton}
-                onPress={() => {
-                  // Quick test button to chat with specific friend
-                  navigation.navigate("Chat", {
-                    conversationId: "test_conv_" + Date.now(),
-                    matchedUserId: "u4FhcyXndsRiAjTK2VcC0dUhU643",
-                    matchedUserName: "Test Friend",
-                  });
-                }}
-              >
-                <Ionicons
-                  name="chatbubble-ellipses"
-                  size={20}
-                  color={colors.accentTeal}
-                />
-                <Text style={styles.testChatText}>Test</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.shareButton}
-                onPress={handleShareUsername}
-              >
-                <Ionicons
-                  name="share-social-outline"
-                  size={22}
-                  color={colors.accentPurple}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.inviteButton}
-                onPress={handleImportContacts}
-              >
-                <Ionicons
-                  name="person-add-outline"
-                  size={24}
-                  color={colors.textPrimary}
-                />
-              </TouchableOpacity>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={
+            !profileModalVisible && !reportModalVisible && !blockModalVisible
+          }
+        >
+          <View style={styles.container}>
+            <View style={styles.header}>
+              <Text style={styles.title}>Friends</Text>
+              <View style={styles.headerButtons}>
+                <TouchableOpacity
+                  style={styles.testChatButton}
+                  onPress={() => {
+                    // Quick test button to chat with specific friend
+                    navigation.navigate("Chat", {
+                      conversationId: "test_conv_" + Date.now(),
+                      matchedUserId: "u4FhcyXndsRiAjTK2VcC0dUhU643",
+                      matchedUserName: "Test Friend",
+                    });
+                  }}
+                >
+                  <Ionicons
+                    name="chatbubble-ellipses"
+                    size={20}
+                    color={colors.accentTeal}
+                  />
+                  <Text style={styles.testChatText}>Test</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.shareButton}
+                  onPress={handleShareUsername}
+                >
+                  <Ionicons
+                    name="share-social-outline"
+                    size={20}
+                    color={colors.accentPurple}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.inviteButton}
+                  onPress={handleImportContacts}
+                >
+                  <Ionicons
+                    name="person-add-outline"
+                    size={22}
+                    color={colors.textPrimary}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
 
-          {/* Statistics Row */}
-          <View style={styles.statsContainer}>
-            {renderStatCard("Friends", friends.length, colors.textPrimary)}
-            {renderStatCard(
-              "Requests",
-              pendingRequests.length,
-              colors.textPrimary
-            )}
-            {renderStatCard("Sent", sentRequests.length, colors.textPrimary)}
-          </View>
+            {/* Statistics Row */}
+            <View style={styles.statsContainer}>
+              {renderStatCard("Friends", friends.length, colors.textPrimary)}
+              {renderStatCard(
+                "Requests",
+                pendingRequests.length,
+                colors.textPrimary
+              )}
+              {renderStatCard("Sent", sentRequests.length, colors.textPrimary)}
+            </View>
 
-          <View style={styles.searchContainer}>
-            <Ionicons
-              name="search"
-              size={20}
-              color="rgba(255,255,255,0.5)"
-              style={styles.searchIcon}
-            />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search for friends"
-              placeholderTextColor="rgba(255,255,255,0.5)"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity
-                style={styles.clearButton}
-                onPress={() => setSearchQuery("")}
-              >
-                <Ionicons
-                  name="close-circle"
-                  size={20}
-                  color="rgba(255,255,255,0.5)"
-                />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {searchQuery.trim() ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Search Results</Text>
-              {searchResults.map((item) => (
-                <View key={item.uid}>{renderSearchResult({ item })}</View>
-              ))}
-              {searchResults.length === 0 && (
-                <Text style={styles.emptyText}>No users found</Text>
+            <View style={styles.searchContainer}>
+              <Ionicons
+                name="search"
+                size={20}
+                color="rgba(255,255,255,0.5)"
+                style={styles.searchIcon}
+              />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search for friends"
+                placeholderTextColor="rgba(255,255,255,0.5)"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  style={styles.clearButton}
+                  onPress={() => setSearchQuery("")}
+                >
+                  <Ionicons
+                    name="close-circle"
+                    size={20}
+                    color="rgba(255,255,255,0.5)"
+                  />
+                </TouchableOpacity>
               )}
             </View>
-          ) : (
-            <>
-              {/* Friend Suggestions - Only show if 4+ friends */}
-              {friends.length >= 4 && suggestions.length > 0 && (
-                <View style={styles.suggestionsSection}>
-                  <View style={styles.suggestionHeader}>
-                    <Text style={styles.sectionTitle}>Suggested for you</Text>
-                    <Text style={styles.suggestionSubtitle}>
-                      Based on mutual friends
-                    </Text>
-                  </View>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.suggestionsScroll}
-                  >
-                    {suggestions.map((suggestion) => (
-                      <SuggestionCard
-                        key={suggestion.uid}
-                        suggestion={suggestion}
-                        onSendRequest={handleSendSuggestionRequest}
-                        onDiscard={(uid) =>
-                          setSuggestions((prev) =>
-                            prev.filter((s) => s.uid !== uid)
-                          )
-                        }
-                        loading={sendingRequestTo === suggestion.uid}
-                      />
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
 
+            {searchQuery.trim() ? (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                  Your Friends ({friends.length})
-                </Text>
-                {displayedFriends.map((item) => (
-                  <View key={item.uid}>{renderFriend({ item })}</View>
+                <Text style={styles.sectionTitle}>Search Results</Text>
+                {searchResults.map((item) => (
+                  <View key={item.uid}>{renderSearchResult({ item })}</View>
                 ))}
-                {friends.length === 0 && (
-                  <Text style={styles.emptyText}>No friends yet</Text>
-                )}
-                {renderSeeMoreButton(
-                  showAllFriends,
-                  setShowAllFriends,
-                  displayedFriends.length,
-                  friends.length
+                {searchResults.length === 0 && (
+                  <Text style={styles.emptyText}>No users found</Text>
                 )}
               </View>
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                  Friend Requests ({pendingRequests.length})
-                </Text>
-                {displayedRequests.map((item) => (
-                  <View key={item.uid}>{renderFriend({ item })}</View>
-                ))}
-                {pendingRequests.length === 0 && (
-                  <Text style={styles.emptyText}>No pending requests</Text>
-                )}
-                {renderSeeMoreButton(
-                  showAllRequests,
-                  setShowAllRequests,
-                  displayedRequests.length,
-                  pendingRequests.length
-                )}
-              </View>
-            </>
-          )}
-        </View>
-      </ScrollView>
-
-      {/* Profile Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={profileModalVisible}
-        onRequestClose={closeProfileModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={closeProfileModal}
-            >
-              <Ionicons name="close" size={24} color={colors.textPrimary} />
-            </TouchableOpacity>
-
-            {selectedFriend && (
+            ) : (
               <>
-                <View style={styles.profileModalContent}>
-                  <View style={styles.profileAvatarLarge}>
-                    {selectedFriend.profilePhotoUrl ? (
-                      <Image
-                        source={{ uri: selectedFriend.profilePhotoUrl }}
-                        style={styles.profileAvatarImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <Text style={styles.profileAvatarTextLarge}>
-                        {selectedFriend.displayName
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")
-                          .toUpperCase()}
-                      </Text>
-                    )}
-                  </View>
-
-                  <Text style={styles.profileNameLarge}>
-                    {selectedFriend.displayName}
-                  </Text>
-                  <Text style={styles.profileUsernameLarge}>
-                    @{selectedFriend.username || "user"}
-                  </Text>
-
-                  <View style={styles.profileInfoCard}>
-                    <View style={styles.profileInfoRow}>
-                      <Ionicons
-                        name="location-outline"
-                        size={20}
-                        color={colors.textSecondary}
-                      />
-                      <Text style={styles.profileCountryText}>
-                        {selectedFriend.country || "Unknown"}
+                {/* Friend Suggestions - Only show if 4+ friends */}
+                {friends.length >= 4 && suggestions.length > 0 && (
+                  <View style={styles.suggestionsSection}>
+                    <View style={styles.suggestionHeader}>
+                      <Text style={styles.sectionTitle}>Suggested for you</Text>
+                      <Text style={styles.suggestionSubtitle}>
+                        Based on mutual friends
                       </Text>
                     </View>
-
-                    {/* Show age only if not restricted by privacy settings */}
-                    {selectedFriendPrivacy && (
-                      <View style={styles.profileInfoRow}>
-                        <Ionicons
-                          name="calendar-outline"
-                          size={20}
-                          color={colors.textSecondary}
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.suggestionsScroll}
+                    >
+                      {suggestions.map((suggestion) => (
+                        <SuggestionCard
+                          key={suggestion.uid}
+                          suggestion={suggestion}
+                          onSendRequest={handleSendSuggestionRequest}
+                          onDiscard={(uid) =>
+                            setSuggestions((prev) =>
+                              prev.filter((s) => s.uid !== uid)
+                            )
+                          }
+                          loading={sendingRequestTo === suggestion.uid}
                         />
-                        <Text style={styles.profileCountryText}>
-                          {selectedFriendPrivacy.ageVisible === false
-                            ? "Private"
-                            : selectedFriendPrivacy.age
-                            ? `${selectedFriendPrivacy.age} years`
-                            : "Not specified"}
-                        </Text>
-                      </View>
-                    )}
+                      ))}
+                    </ScrollView>
                   </View>
+                )}
 
-                  {selectedFriend.bio && (
-                    <View style={styles.bioCard}>
-                      <View style={styles.bioHeader}>
-                        <Ionicons
-                          name="document-text-outline"
-                          size={20}
-                          color={colors.accentPurple}
-                        />
-                        <Text style={styles.bioTitle}>About</Text>
-                      </View>
-                      <Text style={styles.bioText}>{selectedFriend.bio}</Text>
-                    </View>
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>
+                    Your Friends ({friends.length})
+                  </Text>
+                  {displayedFriends.map((item) => (
+                    <View key={item.uid}>{renderFriend({ item })}</View>
+                  ))}
+                  {friends.length === 0 && (
+                    <Text style={styles.emptyText}>No friends yet</Text>
                   )}
+                  {renderSeeMoreButton(
+                    showAllFriends,
+                    setShowAllFriends,
+                    displayedFriends.length,
+                    friends.length
+                  )}
+                </View>
 
-                  <View style={styles.statusContainer}>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        {
-                          backgroundColor:
-                            getStatusColor(selectedFriend.friendshipStatus) +
-                            "20",
-                          borderColor:
-                            getStatusColor(selectedFriend.friendshipStatus) +
-                            "60",
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-                          {
-                            color: getStatusColor(
-                              selectedFriend.friendshipStatus
-                            ),
-                          },
-                        ]}
-                      >
-                        {getStatusText(selectedFriend.friendshipStatus)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Safety Actions */}
-                  <View style={styles.safetyActionsContainer}>
-                    <TouchableOpacity
-                      style={styles.reportButton}
-                      onPress={() => {
-                        // Preserve the current friend as the report target, close the profile modal
-                        // then open the report modal after the profile modal is dismissed to avoid
-                        // modal stacking and touch-blocking issues.
-                        if (selectedFriend) {
-                          setSelectedReportTarget(selectedFriend);
-                        }
-                        setProfileModalVisible(false);
-                        // small delay to ensure the first modal has been dismissed
-                        setTimeout(() => setReportModalVisible(true), 220);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons
-                        name="flag-outline"
-                        size={20}
-                        color={colors.danger}
-                      />
-                      <Text style={styles.reportButtonText}>Report User</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.blockButton}
-                      onPress={() => {
-                        // Preserve block target then close profile modal before opening block confirm
-                        if (selectedFriend) {
-                          setSelectedBlockTarget(selectedFriend);
-                        }
-                        setProfileModalVisible(false);
-                        setTimeout(() => setBlockModalVisible(true), 220);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons
-                        name="ban-outline"
-                        size={20}
-                        color={colors.danger}
-                      />
-                      <Text style={styles.blockButtonText}>Block User</Text>
-                    </TouchableOpacity>
-                  </View>
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>
+                    Friend Requests ({pendingRequests.length})
+                  </Text>
+                  {displayedRequests.map((item) => (
+                    <View key={item.uid}>{renderFriend({ item })}</View>
+                  ))}
+                  {pendingRequests.length === 0 && (
+                    <Text style={styles.emptyText}>No pending requests</Text>
+                  )}
+                  {renderSeeMoreButton(
+                    showAllRequests,
+                    setShowAllRequests,
+                    displayedRequests.length,
+                    pendingRequests.length
+                  )}
                 </View>
               </>
             )}
           </View>
-        </View>
-      </Modal>
+        </ScrollView>
 
-      {/* Report Modal */}
-      <ReportModal
-        visible={reportModalVisible}
-        onClose={() => {
-          setReportModalVisible(false);
-          // Clear preserved target after closing so it doesn't linger
-          setSelectedReportTarget(null);
-        }}
-        reportType="user"
-        targetName={
-          selectedReportTarget?.displayName || selectedFriend?.displayName
-        }
-        reportedUserId={selectedReportTarget?.uid || selectedFriend?.uid || ""}
-        reportingUserId={user?.uid || ""}
-      />
+        {/* Profile Modal */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={profileModalVisible}
+          onRequestClose={closeProfileModal}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContainer}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={closeProfileModal}
+              >
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
 
-      {/* Block Confirm Modal */}
-      <BlockConfirmModal
-        visible={blockModalVisible}
-        onClose={() => {
-          setBlockModalVisible(false);
-          setSelectedBlockTarget(null);
-        }}
-        onConfirm={async () => {
-          // Use preserved block target if available; fall back to selectedFriend
-          const target = selectedBlockTarget || selectedFriend;
-          if (target && user) {
-            try {
-              setActionLoading(true);
-              await blockUser(user.uid, target.uid);
-              // Remove from friends list after blocking
-              setFriends((prev) => prev.filter((f) => f.uid !== target.uid));
-            } catch (error) {
-              console.error("Error blocking user:", error);
-              Alert.alert("Error", "Failed to block user. Please try again.");
-            } finally {
-              setActionLoading(false);
-            }
+              {selectedFriend && (
+                <>
+                  <View style={styles.profileModalContent}>
+                    <View style={styles.profileAvatarLarge}>
+                      {selectedFriend.profilePhotoUrl ? (
+                        <Image
+                          source={{ uri: selectedFriend.profilePhotoUrl }}
+                          style={styles.profileAvatarImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Text style={styles.profileAvatarTextLarge}>
+                          {selectedFriend.displayName
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .toUpperCase()}
+                        </Text>
+                      )}
+                    </View>
+
+                    <Text style={styles.profileNameLarge}>
+                      {selectedFriend.displayName}
+                    </Text>
+                    <Text style={styles.profileUsernameLarge}>
+                      @{selectedFriend.username || "user"}
+                    </Text>
+
+                    <View style={styles.profileInfoCard}>
+                      <View style={styles.profileInfoRow}>
+                        <Ionicons
+                          name="location-outline"
+                          size={20}
+                          color={colors.textSecondary}
+                        />
+                        <Text style={styles.profileCountryText}>
+                          {selectedFriend.country || "Unknown"}
+                        </Text>
+                      </View>
+
+                      {/* Show age only if not restricted by privacy settings */}
+                      {selectedFriendPrivacy && (
+                        <View style={styles.profileInfoRow}>
+                          <Ionicons
+                            name="calendar-outline"
+                            size={20}
+                            color={colors.textSecondary}
+                          />
+                          <Text style={styles.profileCountryText}>
+                            {selectedFriendPrivacy.ageVisible === false
+                              ? "Private"
+                              : selectedFriendPrivacy.age
+                              ? `${selectedFriendPrivacy.age} years`
+                              : "Not specified"}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {selectedFriend.bio && (
+                      <View style={styles.bioCard}>
+                        <View style={styles.bioHeader}>
+                          <Ionicons
+                            name="document-text-outline"
+                            size={20}
+                            color={colors.accentPurple}
+                          />
+                          <Text style={styles.bioTitle}>About</Text>
+                        </View>
+                        <Text style={styles.bioText}>{selectedFriend.bio}</Text>
+                      </View>
+                    )}
+
+                    <View style={styles.statusContainer}>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor:
+                              getStatusColor(selectedFriend.friendshipStatus) +
+                              "20",
+                            borderColor:
+                              getStatusColor(selectedFriend.friendshipStatus) +
+                              "60",
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+                            {
+                              color: getStatusColor(
+                                selectedFriend.friendshipStatus
+                              ),
+                            },
+                          ]}
+                        >
+                          {getStatusText(selectedFriend.friendshipStatus)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Safety Actions */}
+                    <View style={styles.safetyActionsContainer}>
+                      <TouchableOpacity
+                        style={styles.reportButton}
+                        onPress={() => {
+                          // Preserve the current friend as the report target, close the profile modal
+                          // then open the report modal after the profile modal is dismissed to avoid
+                          // modal stacking and touch-blocking issues.
+                          if (selectedFriend) {
+                            setSelectedReportTarget(selectedFriend);
+                          }
+                          setProfileModalVisible(false);
+                          // small delay to ensure the first modal has been dismissed
+                          setTimeout(() => setReportModalVisible(true), 220);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name="flag-outline"
+                          size={20}
+                          color={colors.danger}
+                        />
+                        <Text style={styles.reportButtonText}>Report User</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.blockButton}
+                        onPress={() => {
+                          // Preserve block target then close profile modal before opening block confirm
+                          if (selectedFriend) {
+                            setSelectedBlockTarget(selectedFriend);
+                          }
+                          setProfileModalVisible(false);
+                          setTimeout(() => setBlockModalVisible(true), 220);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name="ban-outline"
+                          size={20}
+                          color={colors.danger}
+                        />
+                        <Text style={styles.blockButtonText}>Block User</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* Report Modal */}
+        <ReportModal
+          visible={reportModalVisible}
+          onClose={() => {
+            setReportModalVisible(false);
+            // Clear preserved target after closing so it doesn't linger
+            setSelectedReportTarget(null);
+          }}
+          reportType="user"
+          targetName={
+            selectedReportTarget?.displayName || selectedFriend?.displayName
           }
-          setBlockModalVisible(false);
-          // ensure we clear preserved block target
-          setSelectedBlockTarget(null);
-        }}
-        userName={
-          selectedBlockTarget?.displayName ||
-          selectedFriend?.displayName ||
-          "User"
-        }
-      />
+          reportedUserId={
+            selectedReportTarget?.uid || selectedFriend?.uid || ""
+          }
+          reportingUserId={user?.uid || ""}
+        />
+
+        {/* Block Confirm Modal */}
+        <BlockConfirmModal
+          visible={blockModalVisible}
+          onClose={() => {
+            setBlockModalVisible(false);
+            setSelectedBlockTarget(null);
+          }}
+          onConfirm={async () => {
+            // Use preserved block target if available; fall back to selectedFriend
+            const target = selectedBlockTarget || selectedFriend;
+            if (target && user) {
+              try {
+                setActionLoading(true);
+                await blockUser(user.uid, target.uid);
+                // Remove from friends list after blocking
+                setFriends((prev) => prev.filter((f) => f.uid !== target.uid));
+              } catch (error) {
+                console.error("Error blocking user:", error);
+                Alert.alert("Error", "Failed to block user. Please try again.");
+              } finally {
+                setActionLoading(false);
+              }
+            }
+            setBlockModalVisible(false);
+            // ensure we clear preserved block target
+            setSelectedBlockTarget(null);
+          }}
+          userName={
+            selectedBlockTarget?.displayName ||
+            selectedFriend?.displayName ||
+            "User"
+          }
+        />
+      </KeyboardAvoidingView>
     </GradientBackground>
   );
 };
@@ -1133,8 +1144,8 @@ const styles = StyleSheet.create({
   },
 
   container: {
-    padding: 16,
-    gap: 16,
+    padding: 12,
+    gap: 14,
     paddingTop: 100,
     minHeight: "100%",
   },
@@ -1144,62 +1155,66 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 8,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
   },
 
   title: {
     ...typography.title,
     color: colors.textPrimary,
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: "900",
     letterSpacing: 0.5,
+    flexShrink: 1,
   },
 
   inviteButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "rgba(156, 107, 255, 0.12)",
     borderWidth: 1.5,
     borderColor: "rgba(156, 107, 255, 0.4)",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "rgba(156, 107, 255, 0.5)",
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowRadius: 8,
+    elevation: 6,
+    flexShrink: 0,
   },
 
   shareButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "rgba(156, 107, 255, 0.12)",
     borderWidth: 1.5,
     borderColor: "rgba(156, 107, 255, 0.4)",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "rgba(156, 107, 255, 0.5)",
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowRadius: 8,
+    elevation: 6,
+    flexShrink: 0,
   },
 
   headerButtons: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
+    flexShrink: 0,
   },
 
   testChatButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 18,
     backgroundColor: "rgba(46, 230, 169, 0.12)",
     borderWidth: 1.5,
     borderColor: "rgba(46, 230, 169, 0.4)",
@@ -1213,7 +1228,7 @@ const styles = StyleSheet.create({
   testChatText: {
     ...typography.body,
     color: colors.accentTeal,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
   },
 
@@ -1285,11 +1300,11 @@ const styles = StyleSheet.create({
   },
 
   friendCardGradient: {
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
+    gap: 12,
   },
 
   searchResultCard: {
@@ -1311,7 +1326,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
-    gap: 14,
+    gap: 10,
+    minWidth: 0,
   },
 
   friendInfoColumn: {
@@ -1320,48 +1336,52 @@ const styles = StyleSheet.create({
   },
 
   friendAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.accentPurple,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 2.5,
+    borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.25)",
     shadowColor: "rgba(156, 107, 255, 0.6)",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.6,
     shadowRadius: 8,
     elevation: 4,
+    flexShrink: 0,
   },
 
   friendInitials: {
     ...typography.body,
     color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800",
   },
 
   friendDetails: {
     flex: 1,
-    gap: 4,
+    gap: 2,
+    minWidth: 0,
   },
 
   friendName: {
     ...typography.body,
     color: colors.textPrimary,
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "700",
     letterSpacing: 0.2,
     marginBottom: 2,
+    flexShrink: 1,
   },
 
   friendUsername: {
     ...typography.caption,
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "500",
     opacity: 0.7,
+    flexShrink: 1,
   },
 
   friendCountry: {
@@ -1840,9 +1860,10 @@ const styles = StyleSheet.create({
   addFriendButton: {
     backgroundColor: colors.accentPurple + "30",
     borderRadius: 12,
-    padding: 10,
+    padding: 8,
     borderWidth: 1,
     borderColor: colors.accentPurple + "60",
+    flexShrink: 0,
   },
 
   removeFriendButton: {
@@ -1879,17 +1900,18 @@ const styles = StyleSheet.create({
   // Button for "Sent" status
   sentButton: {
     backgroundColor: "rgba(147, 51, 234, 0.3)",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "rgba(147, 51, 234, 0.5)",
+    flexShrink: 0,
   },
 
   sentButtonText: {
     ...typography.body,
     color: colors.accentPurple,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
   },
 
@@ -1898,16 +1920,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(46, 230, 169, 0.1)",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 14,
     gap: 4,
+    flexShrink: 0,
   },
 
   friendBadgeText: {
     ...typography.body,
     color: colors.accentTeal,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
   },
 });
