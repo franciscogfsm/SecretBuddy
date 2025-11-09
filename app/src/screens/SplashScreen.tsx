@@ -65,10 +65,12 @@ export const SplashScreen = ({ navigation }: Props) => {
   const textAnim = useState(new Animated.Value(50))[0];
   const blinkAnim = useState(new Animated.Value(1))[0];
   const blinkScaleAnim = useState(new Animated.Value(1))[0];
-  const orb1Anim = useRef(new Animated.Value(0)).current;
-  const orb2Anim = useRef(new Animated.Value(0)).current;
-  const orb3Anim = useRef(new Animated.Value(0)).current;
+  const particle1Anim = useRef(new Animated.Value(0)).current;
+  const particle2Anim = useRef(new Animated.Value(0)).current;
+  const particle3Anim = useRef(new Animated.Value(0)).current;
+  const particle4Anim = useRef(new Animated.Value(0)).current;
   const logoBob = useRef(new Animated.Value(0)).current;
+  const meshAnim = useRef(new Animated.Value(0)).current;
   const [displayedText, setDisplayedText] = useState("");
   const [showTagline, setShowTagline] = useState(false);
   const glowAnim = useState(new Animated.Value(0))[0];
@@ -155,21 +157,30 @@ export const SplashScreen = ({ navigation }: Props) => {
       ).start();
     });
 
-    // Start more visible orb animations with staggered starts so they feel alive
-    // Continuous, slightly faster orb motion with more visible oscillation
+    // Start elegant particle animations with smooth, organic motion
+    // Gradient mesh effect - more professional than bubbles
+    Animated.loop(
+      Animated.timing(meshAnim, {
+        toValue: 1,
+        duration: 8000,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      })
+    ).start();
+
     setTimeout(() => {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(orb1Anim, {
+          Animated.timing(particle1Anim, {
             toValue: 1,
-            duration: 3200,
-            easing: Easing.inOut(Easing.sin),
+            duration: 4500,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
             useNativeDriver: true,
           }),
-          Animated.timing(orb1Anim, {
+          Animated.timing(particle1Anim, {
             toValue: 0,
-            duration: 3200,
-            easing: Easing.inOut(Easing.sin),
+            duration: 4500,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
             useNativeDriver: true,
           }),
         ])
@@ -179,107 +190,136 @@ export const SplashScreen = ({ navigation }: Props) => {
     setTimeout(() => {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(orb2Anim, {
+          Animated.timing(particle2Anim, {
             toValue: 1,
-            duration: 3800,
-            easing: Easing.inOut(Easing.sin),
+            duration: 5200,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
             useNativeDriver: true,
           }),
-          Animated.timing(orb2Anim, {
+          Animated.timing(particle2Anim, {
             toValue: 0,
-            duration: 3800,
-            easing: Easing.inOut(Easing.sin),
+            duration: 5200,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
             useNativeDriver: true,
           }),
         ])
       ).start();
-    }, 200);
+    }, 300);
 
     setTimeout(() => {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(orb3Anim, {
+          Animated.timing(particle3Anim, {
             toValue: 1,
-            duration: 4200,
-            easing: Easing.inOut(Easing.sin),
+            duration: 4800,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
             useNativeDriver: true,
           }),
-          Animated.timing(orb3Anim, {
+          Animated.timing(particle3Anim, {
             toValue: 0,
-            duration: 4200,
-            easing: Easing.inOut(Easing.sin),
+            duration: 4800,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
             useNativeDriver: true,
           }),
         ])
       ).start();
-    }, 400);
+    }, 600);
+
+    setTimeout(() => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(particle4Anim, {
+            toValue: 1,
+            duration: 5500,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
+            useNativeDriver: true,
+          }),
+          Animated.timing(particle4Anim, {
+            toValue: 0,
+            duration: 5500,
+            easing: Easing.bezier(0.4, 0, 0.2, 1),
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    }, 900);
   }, [initializing, user]);
 
   return (
     <View style={styles.container}>
-      {/* Sophisticated Dark Gradient Background */}
+      {/* Deep Professional Dark Gradient Background */}
       <LinearGradient
-        colors={["#0B0516", "#13071F", "#1A0B2E", "#0F0820"]}
+        colors={["#050208", "#0A0412", "#0D0619", "#080310"]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
 
-      {/* Subtle Sophisticated Glow Effects */}
-      <View style={styles.glowContainer} pointerEvents="none">
-        {/* Deep ambient glows - very subtle */}
+      {/* Modern Gradient Mesh Background */}
+      <View style={styles.meshContainer} pointerEvents="none">
+        {/* Ambient gradient layers */}
         <Animated.View
           style={[
-            styles.glow,
-            styles.glow1,
+            styles.gradientLayer,
+            styles.gradientLayer1,
             {
               opacity: fadeAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0, 0.15],
+                outputRange: [0, 0.25],
               }),
+              transform: [
+                {
+                  rotate: meshAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ["0deg", "360deg"],
+                  }),
+                },
+              ],
             },
           ]}
         />
         <Animated.View
           style={[
-            styles.glow,
-            styles.glow2,
+            styles.gradientLayer,
+            styles.gradientLayer2,
             {
               opacity: fadeAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0, 0.12],
+                outputRange: [0, 0.2],
               }),
+              transform: [
+                {
+                  rotate: meshAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ["360deg", "0deg"],
+                  }),
+                },
+              ],
             },
           ]}
         />
 
-        {/* Subtle animated orbs - elegant and refined */}
+        {/* Elegant floating particles - professional and subtle */}
         <Animated.View
           style={[
-            styles.orb,
-            styles.orb1,
+            styles.particle,
+            styles.particle1,
             {
-              opacity: orb1Anim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.08, 0.18],
+              opacity: particle1Anim.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0.4, 0.7, 0.4],
               }),
               transform: [
                 {
-                  translateX: orb1Anim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [0, -40, 20],
+                  translateY: particle1Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -80],
                   }),
                 },
                 {
-                  translateY: orb1Anim.interpolate({
+                  translateX: particle1Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0, -30, 10],
-                  }),
-                },
-                {
-                  scale: orb1Anim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [1, 1.08, 1.02],
+                    outputRange: [0, 30, 0],
                   }),
                 },
               ],
@@ -289,30 +329,24 @@ export const SplashScreen = ({ navigation }: Props) => {
 
         <Animated.View
           style={[
-            styles.orb,
-            styles.orb2,
+            styles.particle,
+            styles.particle2,
             {
-              opacity: orb2Anim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.06, 0.16],
+              opacity: particle2Anim.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0.35, 0.65, 0.35],
               }),
               transform: [
                 {
-                  translateX: orb2Anim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [0, 30, -35],
+                  translateY: particle2Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 100],
                   }),
                 },
                 {
-                  translateY: orb2Anim.interpolate({
+                  translateX: particle2Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0, -15, 25],
-                  }),
-                },
-                {
-                  scale: orb2Anim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [1, 1.06, 0.98],
+                    outputRange: [0, -40, 0],
                   }),
                 },
               ],
@@ -322,30 +356,51 @@ export const SplashScreen = ({ navigation }: Props) => {
 
         <Animated.View
           style={[
-            styles.orb,
-            styles.orb3,
+            styles.particle,
+            styles.particle3,
             {
-              opacity: orb3Anim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.05, 0.14],
+              opacity: particle3Anim.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0.3, 0.6, 0.3],
               }),
               transform: [
                 {
-                  translateX: orb3Anim.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [0, 35, -15],
+                  translateY: particle3Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -60],
                   }),
                 },
                 {
-                  translateY: orb3Anim.interpolate({
+                  translateX: particle3Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [0, 30, -18],
+                    outputRange: [0, -25, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        />
+
+        <Animated.View
+          style={[
+            styles.particle,
+            styles.particle4,
+            {
+              opacity: particle4Anim.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0.25, 0.55, 0.25],
+              }),
+              transform: [
+                {
+                  translateY: particle4Anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 70],
                   }),
                 },
                 {
-                  scale: orb3Anim.interpolate({
+                  translateX: particle4Anim.interpolate({
                     inputRange: [0, 0.5, 1],
-                    outputRange: [1, 1.1, 0.96],
+                    outputRange: [0, 35, 0],
                   }),
                 },
               ],
@@ -356,7 +411,7 @@ export const SplashScreen = ({ navigation }: Props) => {
 
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
-          {/* Logo */}
+          {/* Logo - Clean and Professional */}
           <Animated.View
             style={[
               styles.logoContainer,
@@ -367,7 +422,7 @@ export const SplashScreen = ({ navigation }: Props) => {
                   {
                     translateY: logoBob.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -8],
+                      outputRange: [0, -10],
                     }),
                   },
                 ],
@@ -375,22 +430,11 @@ export const SplashScreen = ({ navigation }: Props) => {
             ]}
           >
             <View style={styles.logoWrapper}>
-              {/* Frosted card behind the logo */}
-              <View style={styles.frostCard}>
-                <LinearGradient
-                  colors={["rgba(255,255,255,0.04)", "rgba(255,255,255,0.02)"]}
-                  style={styles.frostOverlay}
-                />
-                <View style={styles.logoGradient}>
-                  <View style={styles.logoInset}>
-                    <Image
-                      source={require("../../assets/icon.png")}
-                      style={styles.logoImage}
-                      resizeMode="cover"
-                    />
-                  </View>
-                </View>
-              </View>
+              <Image
+                source={require("../../assets/icon.png")}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
           </Animated.View>
 
@@ -421,7 +465,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  glowContainer: {
+  meshContainer: {
     position: "absolute",
     top: 0,
     left: 0,
@@ -429,77 +473,56 @@ const styles = StyleSheet.create({
     bottom: 0,
     overflow: "hidden",
   },
-  glow: {
+  // Gradient mesh layers - sophisticated and modern
+  gradientLayer: {
     position: "absolute",
-    borderRadius: 600,
+    borderRadius: 9999,
   },
-  glow1: {
-    width: width * 2.2,
-    height: width * 2.2,
-    top: -height * 0.3,
-    left: -width * 0.6,
-    backgroundColor: "#5B21B6",
-    opacity: 0.15,
-  },
-  glow2: {
+  gradientLayer1: {
     width: width * 1.8,
     height: width * 1.8,
-    bottom: -height * 0.35,
-    right: -width * 0.5,
-    backgroundColor: "#7E22CE",
+    top: -height * 0.2,
+    left: -width * 0.4,
+    backgroundColor: "#4C1D95",
+    opacity: 0.15,
+  },
+  gradientLayer2: {
+    width: width * 1.6,
+    height: width * 1.6,
+    bottom: -height * 0.25,
+    right: -width * 0.3,
+    backgroundColor: "#5B21B6",
     opacity: 0.12,
   },
-  // Animated orb base style
-  orb: {
+  // Elegant floating particles
+  particle: {
     position: "absolute",
-    borderRadius: 999,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 15,
-    elevation: 5,
+    borderRadius: 9999,
+    backgroundColor: "rgba(139, 92, 246, 0.4)",
   },
-  orb1: {
-    width: width * 0.7,
-    height: width * 0.7,
-    left: -width * 0.35,
-    top: height * 0.1,
-    backgroundColor: "#4C1D95",
+  particle1: {
+    width: 4,
+    height: 4,
+    left: width * 0.2,
+    top: height * 0.3,
   },
-  orb2: {
-    width: width * 0.6,
-    height: width * 0.6,
-    right: -width * 0.28,
+  particle2: {
+    width: 6,
+    height: 6,
+    right: width * 0.25,
+    top: height * 0.4,
+  },
+  particle3: {
+    width: 3,
+    height: 3,
+    left: width * 0.7,
     top: height * 0.25,
-    backgroundColor: "#6B21A8",
   },
-  orb3: {
-    width: width * 0.55,
-    height: width * 0.55,
-    left: width * 0.1,
-    bottom: -width * 0.2,
-    backgroundColor: "#581C87",
-  },
-  frostCard: {
-    width: 140,
-    height: 140,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 15 },
-    shadowOpacity: 0.4,
-    shadowRadius: 35,
-    elevation: 20,
-    overflow: "hidden",
-  },
-  frostOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.8,
-    borderRadius: 32,
+  particle4: {
+    width: 5,
+    height: 5,
+    right: width * 0.15,
+    bottom: height * 0.35,
   },
   safeArea: {
     flex: 1,
@@ -510,51 +533,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   logoContainer: {
-    marginBottom: 48,
+    marginBottom: 56,
   },
   logoWrapper: {
-    padding: 0,
-    borderRadius: 36,
-    backgroundColor: "transparent",
-  },
-  logoGradient: {
-    width: 140,
-    height: 140,
-    borderRadius: 30,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#A78BFA",
+    overflow: "hidden",
+    shadowColor: "#7C3AED",
     shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.7,
+    shadowOpacity: 0.35,
     shadowRadius: 40,
     elevation: 25,
-    padding: 8,
-    backgroundColor: "transparent",
-  },
-  logoInset: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    bottom: 8,
-    left: 8,
-    borderRadius: 24,
-    backgroundColor: "transparent",
-    overflow: "hidden",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoInner: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 24,
-    backgroundColor: "#0B0720",
-    overflow: "hidden",
   },
   logoImage: {
-    width: "100%",
-    height: "100%",
+    width: 160,
+    height: 160,
+    borderRadius: 80,
   },
   textContainer: {
     alignItems: "center",
