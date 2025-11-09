@@ -55,6 +55,11 @@ export const ProfileScreen = () => {
   const scrollRef = useRef<ScrollView>(null);
   const wasFocusedRef = useRef(false);
 
+  // Cache profile data to avoid reloading on every screen visit
+  const cachedProfileRef = useRef<any>(null);
+  const lastFetchTimeRef = useRef<number>(0);
+  const CACHE_DURATION = 15 * 60 * 1000; // Cache for 15 minutes (configurable)
+
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -79,16 +84,34 @@ export const ProfileScreen = () => {
     }
   }, [firestoreProfile?.bio]);
 
+  // Check if we should use cached profile or fetch new data
+  const shouldUseCachedProfile =
+    cachedProfileRef.current &&
+    Date.now() - lastFetchTimeRef.current < CACHE_DURATION;
+
+  // Update cache when new data arrives
+  useEffect(() => {
+    if (firestoreProfile) {
+      cachedProfileRef.current = firestoreProfile;
+      lastFetchTimeRef.current = Date.now();
+    }
+  }, [firestoreProfile]);
+
+  // Use cached profile if available and fresh, otherwise use fetched data
+  const currentProfile = shouldUseCachedProfile
+    ? cachedProfileRef.current
+    : firestoreProfile;
+
   // Use Firestore profile data with fallback to local
-  const profile = firestoreProfile
+  const profile = currentProfile
     ? {
-        name: firestoreProfile.displayName,
-        username: firestoreProfile.username || "",
-        age: firestoreProfile.age || 18,
-        ageVisible: firestoreProfile.ageVisible,
-        country: firestoreProfile.country || "Portugal",
+        name: currentProfile.displayName,
+        username: currentProfile.username || "",
+        age: currentProfile.age || 18,
+        ageVisible: currentProfile.ageVisible,
+        country: currentProfile.country || "Portugal",
         mode: "global" as const,
-        bio: firestoreProfile.bio,
+        bio: currentProfile.bio,
       }
     : localProfile;
   useEffect(() => {
@@ -164,6 +187,8 @@ export const ProfileScreen = () => {
   const handleToggleAgeVisibility = async () => {
     try {
       await toggleAge();
+      // Invalidate cache when age visibility is changed
+      lastFetchTimeRef.current = 0;
     } catch (error) {
       Alert.alert("Error", "Failed to update age visibility");
     }
@@ -196,6 +221,8 @@ export const ProfileScreen = () => {
   const handleSaveBio = async () => {
     try {
       await saveBio(bioText.trim());
+      // Invalidate cache when profile is updated
+      lastFetchTimeRef.current = 0;
       closeBioModal();
     } catch (error) {
       Alert.alert("Error", "Failed to save bio");
@@ -237,6 +264,8 @@ export const ProfileScreen = () => {
                 setUploadingPhoto(true);
                 try {
                   await uploadPhoto(result.assets[0].uri);
+                  // Invalidate cache when photo is updated
+                  lastFetchTimeRef.current = 0;
                   setUploadingPhoto(false);
                   Alert.alert("Success", "Profile photo uploaded!");
                 } catch (error) {
@@ -269,6 +298,8 @@ export const ProfileScreen = () => {
             try {
               setUploadingPhoto(true);
               await removePhoto();
+              // Invalidate cache when photo is removed
+              lastFetchTimeRef.current = 0;
               Alert.alert("Success", "Profile photo removed");
             } catch (error) {
               Alert.alert("Error", "Failed to remove profile photo");
@@ -318,9 +349,9 @@ export const ProfileScreen = () => {
                         size="large"
                         color={colors.textPrimary}
                       />
-                    ) : firestoreProfile?.profilePhotoUrl ? (
+                    ) : currentProfile?.profilePhotoUrl ? (
                       <Image
-                        source={{ uri: firestoreProfile.profilePhotoUrl }}
+                        source={{ uri: currentProfile.profilePhotoUrl }}
                         style={styles.avatarImage}
                         resizeMode="cover"
                       />
@@ -629,7 +660,7 @@ export const ProfileScreen = () => {
           </View>
 
           {/* Remove Profile Photo Option */}
-          {firestoreProfile?.profilePhotoUrl && (
+          {currentProfile?.profilePhotoUrl && (
             <TouchableOpacity
               style={styles.removePhotoCard}
               onPress={handleRemovePhoto}

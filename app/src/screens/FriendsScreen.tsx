@@ -13,6 +13,7 @@ import {
   Dimensions,
   ActivityIndicator,
   Image,
+  Share,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -43,6 +44,12 @@ import {
 } from "../services/friendService";
 import { getUserProfile } from "../services/userService";
 import { getCountryFlag } from "../utils/countryFlags";
+import {
+  getFriendSuggestions,
+  invalidateSuggestionsCache,
+  type FriendSuggestion,
+} from "../services/friendSuggestionsService";
+import SuggestionCard from "../components/SuggestionCard";
 
 /**
  * FriendsScreen - Manage your SecretBuddy connections
@@ -84,14 +91,20 @@ export const FriendsScreen = () => {
   const [selectedBlockTarget, setSelectedBlockTarget] =
     useState<FriendProfile | null>(null);
 
+  // Cache for profile data to reduce API calls
+  const profileCacheRef = useRef<Record<string, any>>({});
+
   // Real data from backend
   const [friends, setFriends] = useState<FriendProfile[]>([]);
   const [pendingRequests, setPendingRequests] = useState<FriendProfile[]>([]);
   const [sentRequests, setSentRequests] = useState<FriendProfile[]>([]);
   const [searchResults, setSearchResults] = useState<FriendProfile[]>([]);
+  const [suggestions, setSuggestions] = useState<FriendSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchLoading, setSearchLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [sendingRequestTo, setSendingRequestTo] = useState<string | null>(null);
 
   // Limit display for "see more" functionality
   const maxDisplayItems = 4;
@@ -169,6 +182,27 @@ export const FriendsScreen = () => {
     };
   }, [user]);
 
+  // Load friend suggestions
+  useEffect(() => {
+    if (!user) return;
+
+    const loadSuggestions = async () => {
+      try {
+        console.log("🔍 Loading friend suggestions...");
+        setSuggestionsLoading(true);
+        const suggestions = await getFriendSuggestions(user.uid);
+        console.log("📋 Got suggestions:", suggestions.length);
+        setSuggestions(suggestions);
+      } catch (error) {
+        console.error("Error loading suggestions:", error);
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    };
+
+    loadSuggestions();
+  }, [user]); // Load once when user is available
+
   // Search for users
   useEffect(() => {
     if (!user || !searchQuery.trim()) {
@@ -205,6 +239,27 @@ export const FriendsScreen = () => {
     }, [isFocused])
   );
 
+  const handleShareUsername = async () => {
+    if (!user) return;
+
+    try {
+      // Get the user's profile to fetch their username
+      const profile = await getUserProfile(user.uid);
+      const username = profile?.username || "unknown";
+
+      const shareMessage = `Hey! Add me on SecretBuddy! 🎭\n\nMy username: @${username}\n\nDownload SecretBuddy and connect with me anonymously!`;
+
+      await Share.share({
+        message: shareMessage,
+        title: "Add me on SecretBuddy!",
+      });
+    } catch (error: any) {
+      if (error.message !== "User did not share") {
+        console.error("Error sharing:", error);
+      }
+    }
+  };
+
   const handleImportContacts = () => {
     Alert.alert(
       "Import Contacts",
@@ -224,22 +279,86 @@ export const FriendsScreen = () => {
     );
   };
 
+  const handleSendSuggestionRequest = async (userId: string) => {
+    if (!user) return;
+
+    try {
+      setSendingRequestTo(userId);
+
+      // For demo users, just remove from suggestions
+      if (userId.startsWith("demo_")) {
+        await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate network delay
+        setSuggestions((prev) => prev.filter((s) => s.uid !== userId));
+        setSendingRequestTo(null);
+        return;
+      }
+
+      // Real friend request
+      await sendFriendRequest(user.uid, userId);
+      setSuggestions((prev) => prev.filter((s) => s.uid !== userId));
+      await invalidateSuggestionsCache();
+
+      // Refresh sent requests to update search results
+      const sentData = await getSentFriendRequests(user.uid);
+      setSentRequests(sentData);
+    } catch (error: any) {
+      console.error("Error sending friend request:", error);
+      Alert.alert("Error", error.message || "Failed to send friend request");
+    } finally {
+      setSendingRequestTo(null);
+    }
+  };
+
   const handleSendRequest = async (friend: FriendProfile) => {
     if (!user || actionLoading) return;
     try {
       setActionLoading(true);
-      await sendFriendRequest(user.uid, friend.uid);
-      Alert.alert(
-        "Request Sent",
-        `Friend request sent to ${friend.username || friend.displayName}!`
+      const friendshipId = await sendFriendRequest(user.uid, friend.uid);
+
+      // Update the search result to show "Sent" status
+      setSearchResults((prev) =>
+        prev.map((f) =>
+          f.uid === friend.uid
+            ? { ...f, friendshipStatus: "pending_sent", friendshipId }
+            : f
+        )
       );
-      setSearchResults(searchResults.filter((f) => f.uid !== friend.uid));
+
       // Refresh sent requests
       const sentData = await getSentFriendRequests(user.uid);
       setSentRequests(sentData);
     } catch (error) {
       console.error("Error sending friend request:", error);
       Alert.alert("Error", "Failed to send friend request. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancelRequest = async (friend: FriendProfile) => {
+    if (!user || !friend.friendshipId || actionLoading) return;
+    try {
+      setActionLoading(true);
+      await declineFriendRequest(friend.friendshipId);
+
+      // Update the search result back to "none" status
+      setSearchResults((prev) =>
+        prev.map((f) =>
+          f.uid === friend.uid
+            ? { ...f, friendshipStatus: "none", friendshipId: undefined }
+            : f
+        )
+      );
+
+      // Refresh sent requests
+      const sentData = await getSentFriendRequests(user.uid);
+      setSentRequests(sentData);
+    } catch (error) {
+      console.error("Error canceling friend request:", error);
+      Alert.alert(
+        "Error",
+        "Failed to cancel friend request. Please try again."
+      );
     } finally {
       setActionLoading(false);
     }
@@ -291,10 +410,17 @@ export const FriendsScreen = () => {
     setSelectedFriend(friend);
     setProfileModalVisible(true);
 
-    // Load full user profile with privacy settings
+    // Check if profile is already cached
+    if (profileCacheRef.current[friend.uid]) {
+      setSelectedFriendPrivacy(profileCacheRef.current[friend.uid]);
+      return;
+    }
+
+    // Load full user profile with privacy settings only if not cached
     try {
       const fullProfile = await getUserProfile(friend.uid);
-      // Store the full profile so we can read age/ageVisible directly
+      // Cache the profile to avoid future API calls
+      profileCacheRef.current[friend.uid] = fullProfile || {};
       setSelectedFriendPrivacy(fullProfile || {});
     } catch (error) {
       console.error("Error loading friend profile:", error);
@@ -507,6 +633,9 @@ export const FriendsScreen = () => {
       : "?";
 
     const canSendRequest = item.friendshipStatus === "none";
+    const isPendingSent = item.friendshipStatus === "pending_sent";
+    const isPendingReceived = item.friendshipStatus === "pending_received";
+    const isFriend = item.friendshipStatus === "friend";
 
     return (
       <TouchableOpacity style={styles.searchResultCard}>
@@ -548,13 +677,33 @@ export const FriendsScreen = () => {
               />
             </TouchableOpacity>
           )}
-          {item.friendshipStatus === "pending_sent" && (
-            <View style={styles.pendingButton}>
+          {isPendingSent && (
+            <TouchableOpacity
+              style={styles.sentButton}
+              onPress={() => handleCancelRequest(item)}
+              disabled={actionLoading}
+            >
+              <Text style={styles.sentButtonText}>Sent</Text>
+            </TouchableOpacity>
+          )}
+          {isPendingReceived && (
+            <View style={styles.friendBadge}>
               <Ionicons
-                name="time-outline"
+                name="person-add"
                 size={18}
-                color={colors.textSecondary}
+                color={colors.accentPurple}
               />
+              <Text style={styles.friendBadgeText}>Pending</Text>
+            </View>
+          )}
+          {isFriend && (
+            <View style={styles.friendBadge}>
+              <Ionicons
+                name="checkmark-circle"
+                size={18}
+                color={colors.accentTeal}
+              />
+              <Text style={styles.friendBadgeText}>Friend</Text>
             </View>
           )}
         </LinearGradient>
@@ -595,6 +744,16 @@ export const FriendsScreen = () => {
                   color={colors.accentTeal}
                 />
                 <Text style={styles.testChatText}>Test</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.shareButton}
+                onPress={handleShareUsername}
+              >
+                <Ionicons
+                  name="share-social-outline"
+                  size={22}
+                  color={colors.accentPurple}
+                />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.inviteButton}
@@ -640,6 +799,37 @@ export const FriendsScreen = () => {
             </View>
           ) : (
             <>
+              {/* Friend Suggestions - Only show if 4+ friends */}
+              {friends.length >= 4 && suggestions.length > 0 && (
+                <View style={styles.suggestionsSection}>
+                  <View style={styles.suggestionHeader}>
+                    <Text style={styles.sectionTitle}>Suggested for you</Text>
+                    <Text style={styles.suggestionSubtitle}>
+                      Based on mutual friends
+                    </Text>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.suggestionsScroll}
+                  >
+                    {suggestions.map((suggestion) => (
+                      <SuggestionCard
+                        key={suggestion.uid}
+                        suggestion={suggestion}
+                        onSendRequest={handleSendSuggestionRequest}
+                        onDiscard={(uid) =>
+                          setSuggestions((prev) =>
+                            prev.filter((s) => s.uid !== uid)
+                          )
+                        }
+                        loading={sendingRequestTo === suggestion.uid}
+                      />
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
                   Your Friends ({friends.length})
@@ -936,6 +1126,22 @@ const styles = StyleSheet.create({
   },
 
   inviteButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(156, 107, 255, 0.12)",
+    borderWidth: 1.5,
+    borderColor: "rgba(156, 107, 255, 0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "rgba(156, 107, 255, 0.5)",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+
+  shareButton: {
     width: 52,
     height: 52,
     borderRadius: 26,
@@ -1597,5 +1803,60 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  // Friend Suggestions
+  suggestionsSection: {
+    marginBottom: 20,
+  },
+
+  suggestionHeader: {
+    marginBottom: 12,
+  },
+
+  suggestionSubtitle: {
+    ...typography.caption,
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 13,
+    marginTop: 2,
+  },
+
+  suggestionsScroll: {
+    paddingRight: 16,
+  },
+
+  // Button for "Sent" status
+  sentButton: {
+    backgroundColor: "rgba(147, 51, 234, 0.3)",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(147, 51, 234, 0.5)",
+  },
+
+  sentButtonText: {
+    ...typography.body,
+    color: colors.accentPurple,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  // Friend badge for existing friends
+  friendBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(46, 230, 169, 0.1)",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    gap: 4,
+  },
+
+  friendBadgeText: {
+    ...typography.body,
+    color: colors.accentTeal,
+    fontSize: 13,
+    fontWeight: "600",
   },
 });

@@ -31,7 +31,9 @@ const AppContent = () => {
   return (
     <>
       <View style={{ flex: 1 }}>
-        <RootNavigator />
+        <NavigationContainer theme={navigationTheme}>
+          <RootNavigator />
+        </NavigationContainer>
       </View>
       <OfflineModal visible={!isConnected} />
     </>
@@ -48,10 +50,8 @@ const App = () => {
       <NetworkProvider>
         <AuthProvider>
           <AppStateProvider>
-            <NavigationContainer theme={navigationTheme}>
-              <StatusBar style={scheme === "light" ? "dark" : "light"} />
-              <AppContent />
-            </NavigationContainer>
+            <StatusBar style={scheme === "light" ? "dark" : "light"} />
+            <AppContent />
           </AppStateProvider>
         </AuthProvider>
       </NetworkProvider>
