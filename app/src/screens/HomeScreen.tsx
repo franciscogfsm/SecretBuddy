@@ -11,6 +11,7 @@ import {
   Modal,
   Image,
   Pressable,
+  RefreshControl,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
@@ -25,6 +26,9 @@ import { GradientBackground } from "../components/GradientBackground";
 import { MysteryCard } from "../components/MysteryCard";
 import { PhotoViewModal } from "../components/PhotoViewModal";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { StoriesTray } from "../components/StoriesTray";
+import { StoryViewer } from "../components/StoryViewer";
+import { StoryCameraModal } from "../components/StoryCameraModal";
 import { TopHeader } from "../components/TopHeader";
 import { OnboardingTutorial } from "../components/OnboardingTutorial";
 import { useAppState } from "../store/AppStateContext";
@@ -37,6 +41,8 @@ import * as poolService from "../services/poolService";
 import * as notificationService from "../services/notificationService";
 import * as userService from "../services/userService";
 import * as faceDetectionService from "../services/faceDetectionService";
+import * as storiesService from "../services/storiesService";
+import type { Story } from "../services/storiesService";
 import { PillOption } from "../components/PillOption";
 import { TUTORIAL_STEPS } from "../constants/tutorialSteps";
 
@@ -254,6 +260,19 @@ export const HomeScreen = () => {
   // Photo notification state
   const [photoPrompt, setPhotoPrompt] = useState("");
   const [showPairedModal, setShowPairedModal] = useState(false);
+
+  // Stories state (real)
+  const [userHasPostedStory, setUserHasPostedStory] = useState(false);
+  const [showStoryViewer, setShowStoryViewer] = useState(false);
+  const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
+  const [stories, setStories] = useState<Story[]>([]);
+  const [isViewingOwnStory, setIsViewingOwnStory] = useState(false);
+  const [showStoryCameraModal, setShowStoryCameraModal] = useState(false);
+  const [isUploadingStory, setIsUploadingStory] = useState(false);
+  const [isLoadingOwnStory, setIsLoadingOwnStory] = useState(false);
+  const [ownStoryCache, setOwnStoryCache] = useState<Story | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const lastRefreshTimeRef = useRef<number>(0);
 
   // Current photo prompt (stable - doesn't change on every render)
   const [currentPromptIndex] = useState(() => Math.floor(Math.random() * 8));
@@ -1201,6 +1220,31 @@ export const HomeScreen = () => {
     return () => clearInterval(interval);
   }, [showPhotoChallengeCard, photoChallengeCreatedAt]);
 
+  // Check if user has posted story today and load all stories
+  useEffect(() => {
+    const checkHasPostedAndLoadStories = async () => {
+      if (!user?.uid) return;
+      try {
+        const hasPosted = await storiesService.hasPostedToday(user.uid);
+        setUserHasPostedStory(hasPosted);
+
+        // Always load stories to show count (even if locked)
+        await loadTodayStories();
+
+        // Preload own story if posted
+        if (hasPosted) {
+          const ownStory = await storiesService.getUserOwnStory(user.uid);
+          if (ownStory) {
+            setOwnStoryCache(ownStory);
+          }
+        }
+      } catch (error) {
+        console.error("Error checking if user has posted story:", error);
+      }
+    };
+    checkHasPostedAndLoadStories();
+  }, [user?.uid]);
+
   // Auto-scroll to top when tab is tapped again
   useFocusEffect(
     React.useCallback(() => {
@@ -1294,6 +1338,191 @@ export const HomeScreen = () => {
         },
       },
     ]);
+  };
+
+  // Stories handlers (demo)
+  const handleAddStory = () => {
+    setShowStoryCameraModal(true);
+  };
+
+  const handlePhotoCapture = async (uri: string) => {
+    try {
+      setShowStoryCameraModal(false);
+      setIsUploadingStory(true);
+
+      if (!user?.uid) {
+        Alert.alert("Error", "Please log in to post a story");
+        setIsUploadingStory(false);
+        return;
+      }
+
+      // 1. Get R2 upload URL
+      const { uploadUrl, fileKey } = await storiesService.generateR2UploadUrl(
+        user.uid
+      );
+
+      // 2. Upload image to R2
+      await storiesService.uploadToR2(uploadUrl, uri);
+
+      // 3. Get public URL
+      const publicUrl = await storiesService.getR2PublicUrl(fileKey);
+
+      // 4. Create Firestore record
+      await storiesService.createStory(user.uid, fileKey, publicUrl);
+
+      // 5. Update UI
+      setUserHasPostedStory(true);
+      setIsUploadingStory(false);
+
+      // 6. Wait a moment for Firestore to propagate, then reload
+      setTimeout(async () => {
+        await loadTodayStories();
+        const ownStory = await storiesService.getUserOwnStory(user.uid);
+        if (ownStory) {
+          setOwnStoryCache(ownStory);
+        }
+      }, 1000);
+    } catch (error) {
+      console.error("Error posting story:", error);
+      setIsUploadingStory(false);
+      console.error("Failed to post story. Please try again.");
+    }
+  };
+
+  const handleStoryPress = async (storyId: string) => {
+    // Check if viewing own story
+    const isViewingOwnStory = storyId === "own";
+
+    if (!userHasPostedStory && !isViewingOwnStory) {
+      Alert.alert(
+        "🔒 Locked",
+        "Post your story first to unlock and view others!",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    if (isViewingOwnStory && user?.uid) {
+      // Use cached story if available, otherwise load
+      if (ownStoryCache) {
+        // Don't modify stories state - viewer will use ownStoryCache
+        setCurrentStoryIndex(0);
+        setIsViewingOwnStory(true);
+        setShowStoryViewer(true);
+      } else {
+        setIsLoadingOwnStory(true);
+        try {
+          const ownStory = await storiesService.getUserOwnStory(user.uid);
+          if (ownStory) {
+            setOwnStoryCache(ownStory);
+            // Don't modify stories state
+            setCurrentStoryIndex(0);
+            setIsViewingOwnStory(true);
+            setShowStoryViewer(true);
+          } else {
+            console.error("Could not load your story");
+          }
+        } catch (error) {
+          console.error("Error loading own story:", error);
+        } finally {
+          setIsLoadingOwnStory(false);
+        }
+      }
+    } else {
+      // Find story index in the stories array
+      const storyIndex = stories.findIndex((s) => s.id === storyId);
+      if (storyIndex === -1) {
+        return;
+      }
+
+      setCurrentStoryIndex(storyIndex);
+      setIsViewingOwnStory(false);
+      setShowStoryViewer(true);
+    }
+  };
+
+  // Load today's stories from Firestore
+  const loadTodayStories = async () => {
+    try {
+      if (!user?.uid) return;
+      const todayStories = await storiesService.getTodayStories(user.uid);
+      setStories(todayStories);
+    } catch (error) {
+      console.error("Error loading stories:", error);
+    }
+  };
+
+  // Pull-to-refresh handler
+  const handleRefresh = async () => {
+    // Cooldown: prevent refreshing more than once every 3 seconds
+    const now = Date.now();
+    const timeSinceLastRefresh = now - lastRefreshTimeRef.current;
+    const COOLDOWN_MS = 3000; // 3 seconds
+
+    if (timeSinceLastRefresh < COOLDOWN_MS) {
+      console.log(
+        `⏳ Refresh cooldown active. Wait ${Math.ceil(
+          (COOLDOWN_MS - timeSinceLastRefresh) / 1000
+        )}s`
+      );
+      return;
+    }
+
+    lastRefreshTimeRef.current = now;
+    setIsRefreshing(true);
+    try {
+      if (user?.uid) {
+        // Force refresh by clearing cache
+        storiesService.clearStoriesCache();
+
+        // Reload stories
+        await loadTodayStories();
+
+        // Reload own story if posted
+        if (userHasPostedStory) {
+          const ownStory = await storiesService.getUserOwnStory(user.uid);
+          if (ownStory) {
+            setOwnStoryCache(ownStory);
+          }
+        }
+
+        console.log("✅ Stories refreshed via pull-to-refresh");
+      }
+    } catch (error) {
+      console.error("Error refreshing stories:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleStoryViewed = (storyId: string) => {
+    if (!user?.uid) return;
+
+    // Optimistic UI - immediately mark story as viewed in local state
+    setStories((prevStories) =>
+      prevStories.map((story) =>
+        story.id === storyId
+          ? { ...story, hasViewedByCurrentUser: true }
+          : story
+      )
+    );
+
+    // Mark story as viewed in Firestore
+    storiesService.markStoryAsViewed(storyId, user.uid).catch((error) => {
+      console.error("Error marking story as viewed:", error);
+    });
+  };
+
+  const handleReactToStory = (storyId: string) => {
+    if (!user?.uid) return;
+    // React to story with fire emoji
+    storiesService.reactToStory(storyId, user.uid, "fire").catch((error) => {
+      console.error("Error reacting to story:", error);
+    });
+  };
+
+  const handleCloseStoryViewer = () => {
+    setShowStoryViewer(false);
   };
 
   // Onboarding tutorial handlers
@@ -1577,7 +1806,27 @@ export const HomeScreen = () => {
         ref={scrollRef}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor="#9C6BFF"
+            colors={["#9C6BFF", "#6366F1", "#FFFFFF"]}
+            progressBackgroundColor="#1E1446"
+            title="Pull to refresh stories"
+            titleColor="#9C6BFF"
+          />
+        }
       >
+        {/* Daily Stories - Anonymous Stories Feature */}
+        <StoriesTray
+          hasPosted={userHasPostedStory}
+          stories={stories}
+          onAddStory={handleAddStory}
+          onStoryPress={handleStoryPress}
+          onStoryViewed={handleStoryViewed}
+        />
+
         {/* Received Photo from Mystery Buddy - TOP PRIORITY */}
         {hasReceivedPhoto && receivedPhotos.length > 0 && (
           <Animated.View
@@ -2478,6 +2727,33 @@ export const HomeScreen = () => {
         onSkip={handleOnboardingSkip}
         onComplete={handleOnboardingComplete}
         onAction={handleOnboardingAction}
+      />
+
+      {/* Story Viewer - Fullscreen story viewer */}
+      {(stories.length > 0 || (isViewingOwnStory && ownStoryCache)) && (
+        <StoryViewer
+          visible={showStoryViewer}
+          stories={
+            isViewingOwnStory && ownStoryCache ? [ownStoryCache] : stories
+          }
+          initialIndex={currentStoryIndex}
+          onClose={handleCloseStoryViewer}
+          onReact={handleReactToStory}
+          hasReacted={false}
+          isOwnStory={isViewingOwnStory}
+          viewerCount={
+            isViewingOwnStory && ownStoryCache?.viewCount
+              ? ownStoryCache.viewCount
+              : 0
+          }
+        />
+      )}
+
+      {/* Story Camera Modal */}
+      <StoryCameraModal
+        visible={showStoryCameraModal}
+        onClose={() => setShowStoryCameraModal(false)}
+        onCapture={handlePhotoCapture}
       />
 
       {/* Face Detection Result Modal */}

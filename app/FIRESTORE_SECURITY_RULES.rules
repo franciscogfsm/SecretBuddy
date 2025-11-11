@@ -167,6 +167,43 @@ service cloud.firestore {
     }
 
     // ============================================
+    // DAILY STORIES - Anonymous stories feature
+    // ============================================
+    match /dailyStories/{storyId} {
+      // Anyone authenticated can read stories
+      allow read: if isAuthenticated();
+
+      // Cloud Functions create stories (bypass rules with admin SDK)
+      // Users can also query to check if they posted today
+      allow create: if isAuthenticated();
+
+      // Allow users to update reaction counts and view counts
+      // Only allow updating specific fields to prevent abuse
+      allow update: if isAuthenticated() 
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['reactions', 'totalReactions', 'viewCount']);
+
+      // Only Cloud Functions can delete (admin SDK)
+      allow delete: if false;
+
+      // Reactions subcollection - anyone can add reactions
+      match /reactions/{userId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && request.auth.uid == userId;
+        allow update: if isAuthenticated() && request.auth.uid == userId;
+        allow delete: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // Views subcollection - track who viewed the story
+      match /views/{userId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && request.auth.uid == userId;
+        allow update: if isAuthenticated() && request.auth.uid == userId;
+        allow delete: if isAuthenticated() && request.auth.uid == userId;
+      }
+    }
+
+    // ============================================
     // DEFAULT DENY - Block everything else
     // ============================================
     match /{document=**} {
