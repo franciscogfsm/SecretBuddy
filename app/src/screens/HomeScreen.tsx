@@ -1515,9 +1515,41 @@ export const HomeScreen = () => {
 
   const handleReactToStory = (storyId: string) => {
     if (!user?.uid) return;
-    // React to story with fire emoji
+
+    // Optimistic UI - immediately increment reaction count in local state
+    setStories((prevStories) =>
+      prevStories.map((story) =>
+        story.id === storyId
+          ? {
+              ...story,
+              totalReactions: (story.totalReactions || 0) + 1,
+              reactions: {
+                ...story.reactions,
+                fire: (story.reactions?.fire || 0) + 1,
+              },
+            }
+          : story
+      )
+    );
+
+    // React to story with fire emoji in Firestore
     storiesService.reactToStory(storyId, user.uid, "fire").catch((error) => {
       console.error("Error reacting to story:", error);
+      // On error, revert the optimistic update
+      setStories((prevStories) =>
+        prevStories.map((story) =>
+          story.id === storyId
+            ? {
+                ...story,
+                totalReactions: Math.max(0, (story.totalReactions || 0) - 1),
+                reactions: {
+                  ...story.reactions,
+                  fire: Math.max(0, (story.reactions?.fire || 0) - 1),
+                },
+              }
+            : story
+        )
+      );
     });
   };
 

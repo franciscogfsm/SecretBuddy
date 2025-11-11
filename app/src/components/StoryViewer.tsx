@@ -57,6 +57,7 @@ export const StoryViewer = ({
   const [opacity] = useState(new Animated.Value(1));
   const [spinAnim] = useState(new Animated.Value(0));
   const [isPaused, setIsPaused] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const progressTimerRef = useRef<Animated.CompositeAnimation | null>(null);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdDurationRef = useRef(0);
@@ -66,19 +67,14 @@ export const StoryViewer = ({
   const [imageLoaded, setImageLoaded] = useState(false);
   const loadedImagesRef = useRef(new Set<string>());
 
-  // Optimistic UI for reaction count
+  // Optimistic UI for reaction count (instant feedback only)
   const [optimisticReactionCount, setOptimisticReactionCount] = useState<
     number | null
   >(null);
-  const [optimisticStoryId, setOptimisticStoryId] = useState<string | null>(
-    null
-  );
 
-  // Use optimistic count only if it's for the current story
+  // Use optimistic count if set, otherwise use the story's count
   const displayedReactionCount =
-    optimisticStoryId === currentStory?.id && optimisticReactionCount !== null
-      ? optimisticReactionCount
-      : currentStory?.totalReactions ?? 0;
+    optimisticReactionCount ?? currentStory?.totalReactions ?? 0;
 
   // Reset currentIndex when modal opens with new initialIndex
   useEffect(() => {
@@ -99,28 +95,23 @@ export const StoryViewer = ({
       } else {
         setImageLoaded(false);
       }
-      // Only reset optimistic reaction count when viewing a DIFFERENT story
-      if (optimisticStoryId && optimisticStoryId !== currentStory.id) {
-        setOptimisticReactionCount(null);
-        setOptimisticStoryId(null);
-      }
+      // Reset optimistic count when story changes (props will have the updated value)
+      setOptimisticReactionCount(null);
     }
-  }, [visible, currentIndex, currentStory?.imageUrl, currentStory?.id]);
+  }, [visible, currentIndex, currentStory?.imageUrl]);
 
   // Sync optimistic count with real count when it updates from server
   useEffect(() => {
     if (
       currentStory?.totalReactions !== undefined &&
-      optimisticReactionCount !== null &&
-      optimisticStoryId === currentStory.id
+      optimisticReactionCount !== null
     ) {
       // If real count caught up with or exceeded optimistic, reset to show real count
       if (currentStory.totalReactions >= optimisticReactionCount) {
         setOptimisticReactionCount(null);
-        setOptimisticStoryId(null);
       }
     }
-  }, [currentStory?.totalReactions, currentStory?.id]);
+  }, [currentStory?.totalReactions]);
 
   // Preload next image in background
   useEffect(() => {
@@ -135,6 +126,8 @@ export const StoryViewer = ({
   // Clear loaded images cache when modal closes
   useEffect(() => {
     if (!visible) {
+      // Reset closing state
+      setIsClosing(false);
       // Wait for close animation to complete before resetting
       setTimeout(() => {
         loadedImagesRef.current.clear();
@@ -195,8 +188,7 @@ export const StoryViewer = ({
         if (gestureState.dy > 150) {
           // Swipe threshold met - close viewer
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-          // Immediately hide loading indicator to prevent flash
-          setImageLoaded(false);
+          setIsClosing(true); // Prevent any updates during close animation
           Animated.parallel([
             Animated.timing(translateY, {
               toValue: height,
@@ -211,10 +203,7 @@ export const StoryViewer = ({
               useNativeDriver: true,
             }),
           ]).start(() => {
-            // Reset values FIRST to prevent flash
-            translateY.setValue(0);
-            opacity.setValue(1);
-            // Then close modal
+            // Close modal immediately without flickering
             onClose();
           });
         } else {
@@ -306,10 +295,9 @@ export const StoryViewer = ({
     // If already reacted, just show animation (doesn't count again)
     if (!userHasReacted) {
       setReactedStories((prev) => new Set(prev).add(currentStory.id));
-      // Optimistic UI - immediately show +1 reaction
+      // Optimistic UI - immediately show +1 reaction (instant feedback)
       setOptimisticReactionCount((currentStory.totalReactions || 0) + 1);
-      setOptimisticStoryId(currentStory.id); // Track which story this is for
-      onReact(currentStory.id);
+      onReact(currentStory.id); // This will update the stories array in HomeScreen
       // Success haptic
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
@@ -387,7 +375,7 @@ export const StoryViewer = ({
   return (
     <Modal
       visible={visible}
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent
       transparent
@@ -408,16 +396,25 @@ export const StoryViewer = ({
           style={styles.image}
           resizeMode="cover"
           onLoadStart={() => {
-            if (!loadedImagesRef.current.has(currentStory.imageUrl)) {
+            // Don't update during close animation
+            if (
+              !isClosing &&
+              !loadedImagesRef.current.has(currentStory.imageUrl)
+            ) {
               setImageLoaded(false);
             }
           }}
           onLoad={() => {
-            loadedImagesRef.current.add(currentStory.imageUrl);
-            setImageLoaded(true);
+            // Don't update during close animation
+            if (!isClosing) {
+              loadedImagesRef.current.add(currentStory.imageUrl);
+              setImageLoaded(true);
+            }
           }}
           onError={() => {
-            setImageLoaded(true);
+            if (!isClosing) {
+              setImageLoaded(true);
+            }
           }}
         />
 
