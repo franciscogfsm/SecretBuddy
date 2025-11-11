@@ -1230,8 +1230,28 @@ export const HomeScreen = () => {
     setShowPriorityModal(true);
   };
 
-  const handlePrioritySelect = (priority: "friends" | "country" | "world") => {
+  const handlePrioritySelect = async (
+    priority: "friends" | "country" | "world"
+  ) => {
+    if (!user || !currentPool) return;
+
     setSelectedPriority(priority);
+
+    // Small delay for visual feedback
+    setTimeout(async () => {
+      setShowPriorityModal(false);
+      setPoolLoading(true);
+
+      try {
+        await poolService.joinPool(user.uid, currentPool.id, priority);
+        setIsInPool(true);
+      } catch (error) {
+        console.error("Error joining pool:", error);
+        Alert.alert("Error", "Failed to join pool. Please try again.");
+      } finally {
+        setPoolLoading(false);
+      }
+    }, 300);
   };
 
   const handleContinueWithPriority = async () => {
@@ -2386,62 +2406,42 @@ export const HomeScreen = () => {
             }
           }}
         >
-          <Pressable onPress={(e) => e.stopPropagation()}>
-            <View style={styles.modalContainer}>
-              <View style={styles.modalHeaderRow}>
-                <Text style={styles.modalTitle}>Choose Priority</Text>
-                <Pressable
-                  hitSlop={12}
-                  onPress={() => {
-                    // Only allow closing with X if priority is selected
-                    if (selectedPriority) {
-                      setShowPriorityModal(false);
-                    }
-                  }}
-                >
-                  <Ionicons name="close" size={24} color={colors.textPrimary} />
-                </Pressable>
-              </View>
-
-              <Text style={styles.modalDescription}>
-                Select how you'd like to be matched with your mystery buddy
-              </Text>
-
-              <View style={styles.priorityOptions}>
-                <PillOption
-                  label="Friends"
-                  description="Pair with your friends first"
-                  selected={selectedPriority === "friends"}
-                  onPress={() => handlePrioritySelect("friends")}
-                />
-                <PillOption
-                  label="Country"
-                  description="Match with people from your country"
-                  selected={selectedPriority === "country"}
-                  onPress={() => handlePrioritySelect("country")}
-                />
-                <PillOption
-                  label="World"
-                  description="Connect with anyone globally"
-                  selected={selectedPriority === "world"}
-                  onPress={() => handlePrioritySelect("world")}
-                />
-              </View>
-
-              {/* Continue Button */}
-              <TouchableOpacity
-                style={[
-                  styles.continueButton,
-                  !selectedPriority && styles.continueButtonDisabled,
-                ]}
-                onPress={handleContinueWithPriority}
-                disabled={!selectedPriority}
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Choose Priority</Text>
+              <Pressable
+                hitSlop={12}
+                onPress={() => setShowPriorityModal(false)}
               >
-                <Text style={styles.continueButtonText}>Continue</Text>
-                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-              </TouchableOpacity>
+                <Ionicons name="close" size={22} color={colors.textPrimary} />
+              </Pressable>
             </View>
-          </Pressable>
+
+            <Text style={styles.modalDescription}>
+              Select how you'd like to be matched with your mystery buddy
+            </Text>
+
+            <View style={styles.priorityOptions}>
+              <PillOption
+                label="Friends"
+                description="Pair with your friends first"
+                selected={selectedPriority === "friends"}
+                onPress={() => handlePrioritySelect("friends")}
+              />
+              <PillOption
+                label="Country"
+                description="Match with people from your country"
+                selected={selectedPriority === "country"}
+                onPress={() => handlePrioritySelect("country")}
+              />
+              <PillOption
+                label="World"
+                description="Connect with anyone globally"
+                selected={selectedPriority === "world"}
+                onPress={() => handlePrioritySelect("world")}
+              />
+            </View>
+          </View>
         </Pressable>
       </Modal>
 
@@ -3411,14 +3411,19 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContainer: {
-    backgroundColor: "rgba(6, 0, 18, 0.9)",
+    backgroundColor: "rgba(6, 0, 18, 0.95)",
     borderRadius: 24,
-    padding: 30,
-    alignItems: "center",
+    padding: isSmallScreen ? 20 : 24,
+    alignItems: "stretch",
     width: "90%",
-    maxWidth: 400,
+    maxWidth: isSmallScreen ? 340 : 380,
     borderWidth: 1,
     borderColor: "rgba(156, 107, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
   },
   successIconContainer: {
     marginBottom: 20,
@@ -3698,18 +3703,22 @@ const styles = StyleSheet.create({
     textAlign: "left",
     lineHeight: 20,
   },
+  continueButtonContainer: {
+    alignItems: "flex-end",
+    marginTop: 4,
+  },
   continueButton: {
     backgroundColor: "#6366F1",
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
+    borderRadius: 50,
+    width: 56,
+    height: 56,
     alignItems: "center",
+    justifyContent: "center",
     shadowColor: "#6366F1",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-    width: "100%",
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
   continueButtonText: {
     ...typography.subtitle,
@@ -3720,6 +3729,7 @@ const styles = StyleSheet.create({
   continueButtonDisabled: {
     backgroundColor: "rgba(99, 102, 241, 0.3)",
     shadowOpacity: 0,
+    elevation: 0,
   },
 
   // Modal header with anonymity icon
@@ -4395,19 +4405,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: isSmallScreen ? 12 : 16,
   },
   modalTitle: {
     ...typography.title,
     color: colors.textPrimary,
-    fontSize: 24,
+    fontSize: isSmallScreen ? 20 : 22,
     fontWeight: "700",
   },
   modalDescription: {
     ...typography.body,
     color: colors.textSecondary,
-    marginBottom: 24,
-    lineHeight: 22,
+    marginBottom: isSmallScreen ? 18 : 24,
+    lineHeight: isSmallScreen ? 20 : 22,
+    fontSize: isSmallScreen ? 13 : 14,
   },
   // Info card styles
   infoCard: {
@@ -4437,7 +4448,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   priorityOptions: {
-    gap: 12,
+    gap: isSmallScreen ? 10 : 12,
   },
   // Paired modal styles
   pairedModalContainer: {

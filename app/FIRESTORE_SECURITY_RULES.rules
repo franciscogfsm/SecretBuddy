@@ -126,11 +126,11 @@ service cloud.firestore {
       // Pool shards (distributed counters)
       match /shards/{shardId} {
         allow read, write: if isAuthenticated();
-      }
 
-      // Pool users (user entries in pools)
-      match /poolUsers/{userId} {
-        allow read, write: if isAuthenticated();
+        // Pool users (user entries in each shard)
+        match /poolUsers/{userId} {
+          allow read, write: if isAuthenticated();
+        }
       }
     }
 
