@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import {
   Alert,
   Animated,
@@ -273,6 +279,8 @@ export const HomeScreen = () => {
   const [ownStoryCache, setOwnStoryCache] = useState<Story | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const lastRefreshTimeRef = useRef<number>(0);
+  const viewedStoriesRef = useRef<Set<string>>(new Set());
+  const viewingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Current photo prompt (stable - doesn't change on every render)
   const [currentPromptIndex] = useState(() => Math.floor(Math.random() * 8));
@@ -644,6 +652,18 @@ export const HomeScreen = () => {
     const loadPoolStatus = async () => {
       if (!user) return;
 
+      // Check if we're in off-hours (midnight to 8am local time)
+      const now = new Date();
+      const currentHour = now.getHours();
+      if (currentHour >= 0 && currentHour < 9) {
+        console.log(
+          "⏸️ Pools closed (midnight-9am). Skipping pool status check."
+        );
+        setCurrentPool(null);
+        setIsInPool(false);
+        return;
+      }
+
       try {
         // Get current pool
         const pool = await poolService.getCurrentPool();
@@ -674,8 +694,16 @@ export const HomeScreen = () => {
 
     loadPoolStatus();
 
-    // Poll for pool updates every 2 minutes (reduced from 30s to save reads)
-    const interval = setInterval(loadPoolStatus, 120000);
+    // Poll for pool updates every 5 minutes (reduced polling to save reads)
+    // Skip polling during off-hours (midnight-9am)
+    const interval = setInterval(() => {
+      const currentHour = new Date().getHours();
+      if (currentHour >= 9 && currentHour < 24) {
+        loadPoolStatus();
+      } else {
+        console.log("⏸️ Skipping pool polling during off-hours (midnight-9am)");
+      }
+    }, 300000); // 5 minutes
     return () => clearInterval(interval);
   }, [user, isFocused]);
 
@@ -1225,24 +1253,31 @@ export const HomeScreen = () => {
     const checkHasPostedAndLoadStories = async () => {
       if (!user?.uid) return;
       try {
-        const hasPosted = await storiesService.hasPostedToday(user.uid);
+        // Single optimized call that returns all story data at once
+        const todayStories = await storiesService.getTodayStories(user.uid);
+        setStories(todayStories);
+
+        // Check if user has posted by looking for own story in cache
+        const ownStory = await storiesService.getUserOwnStory(user.uid);
+        const hasPosted = ownStory !== null;
         setUserHasPostedStory(hasPosted);
 
-        // Always load stories to show count (even if locked)
-        await loadTodayStories();
-
-        // Preload own story if posted
-        if (hasPosted) {
-          const ownStory = await storiesService.getUserOwnStory(user.uid);
-          if (ownStory) {
-            setOwnStoryCache(ownStory);
-          }
+        if (hasPosted && ownStory) {
+          setOwnStoryCache(ownStory);
         }
       } catch (error) {
         console.error("Error checking if user has posted story:", error);
       }
     };
     checkHasPostedAndLoadStories();
+
+    // Cleanup: clear viewed stories tracking when user changes
+    return () => {
+      viewedStoriesRef.current.clear();
+      if (viewingTimerRef.current) {
+        clearTimeout(viewingTimerRef.current);
+      }
+    };
   }, [user?.uid]);
 
   // Auto-scroll to top when tab is tapped again
@@ -1405,6 +1440,15 @@ export const HomeScreen = () => {
     if (isViewingOwnStory && user?.uid) {
       // Use cached story if available, otherwise load
       if (ownStoryCache) {
+        // Verify the story still exists by checking for imageUrl
+        if (!ownStoryCache.imageUrl) {
+          console.warn("Own story is stale/deleted, refreshing...");
+          // Story was deleted, close viewer and refresh
+          setShowStoryViewer(false);
+          setOwnStoryCache(null);
+          setUserHasPostedStory(false);
+          return;
+        }
         // Don't modify stories state - viewer will use ownStoryCache
         setCurrentStoryIndex(0);
         setIsViewingOwnStory(true);
@@ -1420,10 +1464,14 @@ export const HomeScreen = () => {
             setIsViewingOwnStory(true);
             setShowStoryViewer(true);
           } else {
-            console.error("Could not load your story");
+            console.log("Your story was deleted");
+            setUserHasPostedStory(false);
+            setOwnStoryCache(null);
           }
         } catch (error) {
           console.error("Error loading own story:", error);
+          setUserHasPostedStory(false);
+          setOwnStoryCache(null);
         } finally {
           setIsLoadingOwnStory(false);
         }
@@ -1442,7 +1490,7 @@ export const HomeScreen = () => {
   };
 
   // Load today's stories from Firestore
-  const loadTodayStories = async () => {
+  const loadTodayStories = useCallback(async () => {
     try {
       if (!user?.uid) return;
       const todayStories = await storiesService.getTodayStories(user.uid);
@@ -1450,7 +1498,7 @@ export const HomeScreen = () => {
     } catch (error) {
       console.error("Error loading stories:", error);
     }
-  };
+  }, [user?.uid]);
 
   // Pull-to-refresh handler
   const handleRefresh = async () => {
@@ -1483,6 +1531,11 @@ export const HomeScreen = () => {
           const ownStory = await storiesService.getUserOwnStory(user.uid);
           if (ownStory) {
             setOwnStoryCache(ownStory);
+          } else {
+            // Story was deleted - return to "+ state"
+            console.log("⚠️ Own story was deleted, returning to + mode");
+            setOwnStoryCache(null);
+            setUserHasPostedStory(false);
           }
         }
 
@@ -1495,38 +1548,56 @@ export const HomeScreen = () => {
     }
   };
 
-  const handleStoryViewed = (storyId: string) => {
-    if (!user?.uid) return;
+  const handleStoryViewed = useCallback(
+    (storyId: string) => {
+      if (!user?.uid) return;
 
-    // Optimistic UI - immediately mark story as viewed in local state
-    setStories((prevStories) =>
-      prevStories.map((story) =>
-        story.id === storyId
-          ? { ...story, hasViewedByCurrentUser: true }
-          : story
-      )
-    );
+      // Prevent duplicate calls for the same story (debounce spam)
+      if (viewedStoriesRef.current.has(storyId)) {
+        console.log(`⏭️ Story ${storyId} already marked as viewed, skipping`);
+        return;
+      }
 
-    // Mark story as viewed in Firestore
-    storiesService.markStoryAsViewed(storyId, user.uid).catch((error) => {
-      console.error("Error marking story as viewed:", error);
-    });
-  };
+      // Add to viewed set immediately to prevent duplicates
+      viewedStoriesRef.current.add(storyId);
+
+      // Clear any existing timer
+      if (viewingTimerRef.current) {
+        clearTimeout(viewingTimerRef.current);
+      }
+
+      // Optimistic UI - immediately mark story as viewed in local state
+      setStories((prevStories) =>
+        prevStories.map((story) =>
+          story.id === storyId
+            ? { ...story, hasViewedByCurrentUser: true }
+            : story
+        )
+      );
+
+      // Debounce the Firestore call to prevent rapid spam
+      viewingTimerRef.current = setTimeout(() => {
+        console.log(`✅ Marking story ${storyId} as viewed in Firestore`);
+        storiesService.markStoryAsViewed(storyId, user.uid).catch((error) => {
+          console.error("Error marking story as viewed:", error);
+          // On error, remove from viewed set so it can be retried
+          viewedStoriesRef.current.delete(storyId);
+        });
+      }, 500); // 500ms debounce
+    },
+    [user?.uid]
+  );
 
   const handleReactToStory = (storyId: string) => {
     if (!user?.uid) return;
 
-    // Optimistic UI - immediately increment reaction count in local state
+    // Optimistic UI - immediately increment fire count in local state
     setStories((prevStories) =>
       prevStories.map((story) =>
         story.id === storyId
           ? {
               ...story,
-              totalReactions: (story.totalReactions || 0) + 1,
-              reactions: {
-                ...story.reactions,
-                fire: (story.reactions?.fire || 0) + 1,
-              },
+              fireCount: (story.fireCount || 0) + 1,
             }
           : story
       )
@@ -1541,11 +1612,7 @@ export const HomeScreen = () => {
           story.id === storyId
             ? {
                 ...story,
-                totalReactions: Math.max(0, (story.totalReactions || 0) - 1),
-                reactions: {
-                  ...story.reactions,
-                  fire: Math.max(0, (story.reactions?.fire || 0) - 1),
-                },
+                fireCount: Math.max(0, (story.fireCount || 0) - 1),
               }
             : story
         )
@@ -1555,6 +1622,17 @@ export const HomeScreen = () => {
 
   const handleCloseStoryViewer = () => {
     setShowStoryViewer(false);
+  };
+
+  const handleStoryImageError = () => {
+    console.warn(
+      "Story image failed to load - closing viewer and clearing cache"
+    );
+    setShowStoryViewer(false);
+    setIsViewingOwnStory(false);
+    setCurrentStoryIndex(0);
+    setOwnStoryCache(null);
+    setUserHasPostedStory(false);
   };
 
   // Onboarding tutorial handlers
@@ -1808,29 +1886,37 @@ export const HomeScreen = () => {
     return "No Pool Available";
   };
 
-  // Determine if user has sent all photos and is waiting for reveal
-  let excitedForReveal = false;
-  let statusMessage = getStatusText();
-  if (currentPair && poolService.isInPhotoWindow(currentPair, timeOffset)) {
-    const photosRemaining =
-      currentPair.maxPhotos -
-      poolService.getMyPhotoCount(currentPair, user?.uid || "");
-    if (photosRemaining <= 0) {
-      excitedForReveal = true;
-    }
-  }
+  // Memoize expensive computations to prevent unnecessary re-calculations
+  const { excitedForReveal, statusMessage, isAfterReveal } = useMemo(() => {
+    let excited = false;
+    const status = getStatusText();
 
-  // Detect if current time is after today's reveal window (UTC)
-  const isAfterReveal = (() => {
+    if (currentPair && poolService.isInPhotoWindow(currentPair, timeOffset)) {
+      const photosRemaining =
+        currentPair.maxPhotos -
+        poolService.getMyPhotoCount(currentPair, user?.uid || "");
+      if (photosRemaining <= 0) {
+        excited = true;
+      }
+    }
+
+    // Detect if current time is after today's reveal window (UTC)
+    let afterReveal = false;
     try {
       const now = getAdjustedTime();
       const hour = now.getUTCHours();
       // Reveal window is 21:00-22:00 UTC; after reveal = >=22 or before pairing next day (<9)
-      return hour >= 22 || hour < 9;
+      afterReveal = hour >= 22 || hour < 9;
     } catch (e) {
-      return false;
+      afterReveal = false;
     }
-  })();
+
+    return {
+      excitedForReveal: excited,
+      statusMessage: status,
+      isAfterReveal: afterReveal,
+    };
+  }, [currentPair, timeOffset, user?.uid]);
 
   return (
     <GradientBackground gradient="midnight">
@@ -2771,6 +2857,8 @@ export const HomeScreen = () => {
           initialIndex={currentStoryIndex}
           onClose={handleCloseStoryViewer}
           onReact={handleReactToStory}
+          onStoryViewed={handleStoryViewed}
+          onImageError={handleStoryImageError}
           hasReacted={false}
           isOwnStory={isViewingOwnStory}
           viewerCount={

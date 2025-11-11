@@ -177,11 +177,11 @@ service cloud.firestore {
       // Users can also query to check if they posted today
       allow create: if isAuthenticated();
 
-      // Allow users to update reaction counts and view counts
+      // Allow users to update fire reactions and view counts
       // Only allow updating specific fields to prevent abuse
       allow update: if isAuthenticated() 
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['reactions', 'totalReactions', 'viewCount']);
+          .hasOnly(['fireCount', 'viewCount']);
 
       // Only Cloud Functions can delete (admin SDK)
       allow delete: if false;

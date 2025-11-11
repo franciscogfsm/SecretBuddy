@@ -25,6 +25,8 @@ type StoryViewerProps = {
   initialIndex: number;
   onClose: () => void;
   onReact: (storyId: string) => void;
+  onStoryViewed?: (storyId: string) => void; // Called when story is viewed
+  onImageError?: () => void; // Called when story image fails to load
   hasReacted?: boolean;
   isOwnStory?: boolean; // If viewing your own story
   viewerCount?: number; // Number of viewers (only for own story)
@@ -42,6 +44,8 @@ export const StoryViewer = ({
   initialIndex,
   onClose,
   onReact,
+  onStoryViewed,
+  onImageError,
   hasReacted = false,
   isOwnStory = false,
   viewerCount = 0,
@@ -65,6 +69,7 @@ export const StoryViewer = ({
   const currentStory = stories[currentIndex];
   const userHasReacted = reactedStories.has(currentStory?.id);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const loadedImagesRef = useRef(new Set<string>());
 
   // Optimistic UI for reaction count (instant feedback only)
@@ -74,7 +79,7 @@ export const StoryViewer = ({
 
   // Use optimistic count if set, otherwise use the story's count
   const displayedReactionCount =
-    optimisticReactionCount ?? currentStory?.totalReactions ?? 0;
+    optimisticReactionCount ?? currentStory?.fireCount ?? 0;
 
   // Reset currentIndex when modal opens with new initialIndex
   useEffect(() => {
@@ -103,15 +108,15 @@ export const StoryViewer = ({
   // Sync optimistic count with real count when it updates from server
   useEffect(() => {
     if (
-      currentStory?.totalReactions !== undefined &&
+      currentStory?.fireCount !== undefined &&
       optimisticReactionCount !== null
     ) {
       // If real count caught up with or exceeded optimistic, reset to show real count
-      if (currentStory.totalReactions >= optimisticReactionCount) {
+      if (currentStory.fireCount >= optimisticReactionCount) {
         setOptimisticReactionCount(null);
       }
     }
-  }, [currentStory?.totalReactions]);
+  }, [currentStory?.fireCount]);
 
   // Preload next image in background
   useEffect(() => {
@@ -242,6 +247,11 @@ export const StoryViewer = ({
       return;
     }
 
+    // Mark story as viewed when it starts playing (not own story)
+    if (!isOwnStory && currentStory?.id && onStoryViewed) {
+      onStoryViewed(currentStory.id);
+    }
+
     // Reset progress when starting
     progress.setValue(0);
 
@@ -260,7 +270,15 @@ export const StoryViewer = ({
     });
 
     return () => timer.stop();
-  }, [visible, currentIndex, imageLoaded, isPaused]);
+  }, [
+    visible,
+    currentIndex,
+    imageLoaded,
+    isPaused,
+    isOwnStory,
+    currentStory?.id,
+    onStoryViewed,
+  ]);
 
   const handleNext = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -296,7 +314,7 @@ export const StoryViewer = ({
     if (!userHasReacted) {
       setReactedStories((prev) => new Set(prev).add(currentStory.id));
       // Optimistic UI - immediately show +1 reaction (instant feedback)
-      setOptimisticReactionCount((currentStory.totalReactions || 0) + 1);
+      setOptimisticReactionCount((currentStory.fireCount || 0) + 1);
       onReact(currentStory.id); // This will update the stories array in HomeScreen
       // Success haptic
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -402,6 +420,7 @@ export const StoryViewer = ({
               !loadedImagesRef.current.has(currentStory.imageUrl)
             ) {
               setImageLoaded(false);
+              setImageError(false);
             }
           }}
           onLoad={() => {
@@ -409,11 +428,20 @@ export const StoryViewer = ({
             if (!isClosing) {
               loadedImagesRef.current.add(currentStory.imageUrl);
               setImageLoaded(true);
+              setImageError(false);
             }
           }}
           onError={() => {
             if (!isClosing) {
+              console.warn(
+                `Failed to load story image: ${currentStory.imageUrl}`
+              );
               setImageLoaded(true);
+              setImageError(true);
+              // Call error callback to close viewer
+              if (onImageError) {
+                onImageError();
+              }
             }
           }}
         />

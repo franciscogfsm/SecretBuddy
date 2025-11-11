@@ -40,11 +40,8 @@ export type Story = {
   userId: string; // Internal only, never exposed to UI
   imageUrl: string; // R2 URL
   createdAt: Timestamp;
-  expiresAt: Timestamp; // 24 hours from creation
-  reactions: {
-    fire: number;
-  };
-  totalReactions: number;
+  expiresAt: Timestamp; // Always midnight of the same day (not 24h from creation)
+  fireCount: number; // Only emoji available (removed redundant totalReactions)
   viewCount?: number; // Total views
   hasViewedByCurrentUser?: boolean; // Client-side tracking
 };
@@ -230,9 +227,11 @@ export const createStory = async (
 ): Promise<string> => {
   try {
     const now = Timestamp.now();
-    const expiresAt = Timestamp.fromMillis(
-      now.toMillis() + 24 * 60 * 60 * 1000
-    ); // 24 hours
+
+    // Set expiresAt to midnight of the same day
+    const midnight = new Date();
+    midnight.setHours(23, 59, 59, 999); // End of today
+    const expiresAt = Timestamp.fromDate(midnight);
 
     // Use fileKey as story ID for consistency
     const storyId = fileKey.replace(/[\/\.]/g, "_");
@@ -243,10 +242,7 @@ export const createStory = async (
       r2FileKey: fileKey, // Store for cleanup
       createdAt: now,
       expiresAt,
-      reactions: {
-        fire: 0,
-      },
-      totalReactions: 0,
+      fireCount: 0, // Only emoji available
     };
 
     await setDoc(doc(db, STORIES_COLLECTION, storyId), storyData);
@@ -454,33 +450,20 @@ export const reactToStory = async (
     const existingReaction = await getDoc(reactionRef);
 
     if (existingReaction.exists()) {
-      const oldReaction = existingReaction.data().reaction as StoryReaction;
-
-      if (oldReaction === reaction) {
-        // Same reaction - remove it (toggle)
-        await deleteDoc(reactionRef);
-        await updateDoc(storyRef, {
-          [`reactions.${reaction}`]: increment(-1),
-          totalReactions: increment(-1),
-        });
-      } else {
-        // Different reaction - update
-        await updateDoc(reactionRef, { reaction });
-        await updateDoc(storyRef, {
-          [`reactions.${oldReaction}`]: increment(-1),
-          [`reactions.${reaction}`]: increment(1),
-        });
-      }
+      // User already reacted - toggle it off (remove reaction)
+      await deleteDoc(reactionRef);
+      await updateDoc(storyRef, {
+        fireCount: increment(-1),
+      });
     } else {
-      // New reaction
+      // New reaction - add it
       await setDoc(reactionRef, {
         userId,
         reaction,
         createdAt: serverTimestamp(),
       });
       await updateDoc(storyRef, {
-        [`reactions.${reaction}`]: increment(1),
-        totalReactions: increment(1),
+        fireCount: increment(1),
       });
     }
   } catch (error) {
