@@ -3066,3 +3066,276 @@ async function getUserRank(
     country: userData?.country || null,
   };
 }
+
+// ==================== STORIES (R2 INTEGRATION) ====================
+
+/**
+ * Generate pre-signed R2 upload URL for story images
+ * Client calls this to get an upload URL, then uploads directly to R2
+ *
+ * Setup Required in Cloudflare R2:
+ * 1. Create bucket: "secretbuddy-stories"
+ * 2. Create API Token with "Object Read & Write" permissions
+ * 3. Store in Firebase Config:
+ *    firebase functions:config:set r2.account_id="YOUR_ACCOUNT_ID"
+ *    firebase functions:config:set r2.access_key_id="YOUR_ACCESS_KEY"
+ *    firebase functions:config:set r2.secret_access_key="YOUR_SECRET_KEY"
+ *    firebase functions:config:set r2.bucket_name="secretbuddy-stories"
+ *
+ * POST /generateStoryUploadUrl
+ * Body: { userId: string }
+ * Returns: { uploadUrl: string, fileKey: string }
+ */
+export const generateStoryUploadUrl = functions
+  .runWith({ timeoutSeconds: 30, memory: "256MB" })
+  .https.onRequest(async (req, res) => {
+    // Enable CORS
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Methods", "POST");
+    res.set("Access-Control-Allow-Headers", "Content-Type");
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).json({ error: "Method not allowed" });
+      return;
+    }
+
+    try {
+      initAdmin();
+      const { userId } = req.body;
+
+      if (!userId) {
+        res.status(400).json({ error: "userId required" });
+        return;
+      }
+
+      // Get R2 credentials from Firebase config
+      const r2Config = functions.config().r2;
+
+      if (
+        !r2Config ||
+        !r2Config.account_id ||
+        !r2Config.access_key_id ||
+        !r2Config.secret_access_key
+      ) {
+        console.error(
+          "❌ R2 credentials not configured. Run: firebase functions:config:set r2.account_id=... r2.access_key_id=... r2.secret_access_key=..."
+        );
+        res.status(500).json({
+          error: "R2 not configured",
+          details:
+            "Please configure R2 credentials using Firebase functions config",
+        });
+        return;
+      }
+
+      const ACCOUNT_ID = r2Config.account_id;
+      const ACCESS_KEY_ID = r2Config.access_key_id;
+      const SECRET_ACCESS_KEY = r2Config.secret_access_key;
+      const BUCKET_NAME = r2Config.bucket_name || "secretbuddy-stories";
+
+      // Generate unique file key
+      const today = new Date().toISOString().split("T")[0];
+      const timestamp = Date.now();
+      const fileKey = `stories/${today}/${userId}_${timestamp}.jpg`;
+
+      // Generate pre-signed URL using AWS SDK (R2 is S3-compatible)
+      const AWS = require("aws-sdk");
+
+      const s3 = new AWS.S3({
+        endpoint: `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        accessKeyId: ACCESS_KEY_ID,
+        secretAccessKey: SECRET_ACCESS_KEY,
+        signatureVersion: "v4",
+        region: "auto",
+      });
+
+      const uploadUrl = await s3.getSignedUrlPromise("putObject", {
+        Bucket: BUCKET_NAME,
+        Key: fileKey,
+        Expires: 300, // 5 minutes
+        ContentType: "image/jpeg",
+      });
+
+      console.log(`✅ Generated upload URL for user ${userId}`);
+
+      res.status(200).json({
+        success: true,
+        uploadUrl,
+        fileKey,
+        bucket: BUCKET_NAME,
+      });
+    } catch (error: any) {
+      console.error("❌ Error generating upload URL:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+/**
+ * Get public R2 URL for a story image
+ * R2 public URL format: https://pub-XXXX.r2.dev/stories/...
+ *
+ * Setup Required:
+ * 1. Enable R2 Public Access in Cloudflare dashboard
+ * 2. Get public URL domain (e.g., pub-abc123.r2.dev)
+ * 3. Store in Firebase Config:
+ *    firebase functions:config:set r2.public_url="https://pub-XXXX.r2.dev"
+ *
+ * GET /getStoryUrl?fileKey=stories/2025-11-11/user123_1234567890.jpg
+ * Returns: { url: string }
+ */
+export const getStoryUrl = functions
+  .runWith({ timeoutSeconds: 10, memory: "128MB" })
+  .https.onRequest(async (req, res) => {
+    // Enable CORS
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Methods", "GET");
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    try {
+      const { fileKey } = req.query;
+
+      if (!fileKey) {
+        res.status(400).json({ error: "fileKey required" });
+        return;
+      }
+
+      const r2Config = functions.config().r2;
+
+      if (!r2Config || !r2Config.public_url) {
+        console.error(
+          "❌ R2 public URL not configured. Run: firebase functions:config:set r2.public_url=https://pub-XXXX.r2.dev"
+        );
+        res.status(500).json({
+          error: "R2 public URL not configured",
+          details:
+            "Please configure r2.public_url using Firebase functions config",
+        });
+        return;
+      }
+
+      const PUBLIC_URL = r2Config.public_url;
+      const url = `${PUBLIC_URL}/${fileKey}`;
+
+      res.status(200).json({
+        success: true,
+        url,
+      });
+    } catch (error: any) {
+      console.error("❌ Error getting story URL:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+/**
+ * Cleanup expired stories from R2 and Firestore
+ * Runs daily at 01:00 UTC to delete stories older than 24 hours
+ *
+ * This handles:
+ * 1. Delete story documents from Firestore (older than 24h)
+ * 2. Delete story images from R2 bucket (older than 24h)
+ */
+export const cleanupExpiredStories = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .pubsub.schedule("0 1 * * *") // Every day at 01:00 UTC
+  .timeZone("UTC")
+  .onRun(async () => {
+    initAdmin();
+    const db = admin.firestore();
+
+    const now = Date.now();
+
+    console.log("🧹 Cleaning up expired stories...");
+
+    try {
+      // Delete expired stories from Firestore
+      const expiredSnapshot = await db
+        .collection("dailyStories")
+        .where("expiresAt", "<", admin.firestore.Timestamp.fromMillis(now))
+        .get();
+
+      let deletedCount = 0;
+      const r2FileKeys: string[] = [];
+
+      if (!expiredSnapshot.empty) {
+        const batch = db.batch();
+
+        expiredSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.r2FileKey) {
+            r2FileKeys.push(data.r2FileKey);
+          }
+          batch.delete(doc.ref);
+          deletedCount++;
+        });
+
+        await batch.commit();
+      }
+
+      console.log(`✅ Deleted ${deletedCount} expired stories from Firestore`);
+
+      // Delete files from R2 if configured
+      if (r2FileKeys.length > 0) {
+        const r2Config = functions.config().r2;
+
+        if (
+          r2Config?.account_id &&
+          r2Config?.access_key_id &&
+          r2Config?.secret_access_key
+        ) {
+          const AWS = require("aws-sdk");
+          const BUCKET_NAME = r2Config.bucket_name || "secretbuddy-stories";
+
+          const s3 = new AWS.S3({
+            endpoint: `https://${r2Config.account_id}.r2.cloudflarestorage.com`,
+            accessKeyId: r2Config.access_key_id,
+            secretAccessKey: r2Config.secret_access_key,
+            signatureVersion: "v4",
+            region: "auto",
+          });
+
+          // Delete in batches (S3 allows 1000 per batch)
+          for (let i = 0; i < r2FileKeys.length; i += 1000) {
+            const chunk = r2FileKeys.slice(i, i + 1000);
+
+            await s3
+              .deleteObjects({
+                Bucket: BUCKET_NAME,
+                Delete: {
+                  Objects: chunk.map((key) => ({ Key: key })),
+                },
+              })
+              .promise();
+          }
+
+          console.log(`✅ Deleted ${r2FileKeys.length} files from R2`);
+        }
+      }
+
+      return {
+        success: true,
+        deletedStories: deletedCount,
+        deletedFiles: r2FileKeys.length,
+      };
+    } catch (error: any) {
+      console.error("❌ Error cleaning up stories:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  });
