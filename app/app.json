@@ -1,12 +1,27 @@
 {
   "expo": {
+    "name": "SecretBuddy",
+    "slug": "secretbuddy-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.inaciobalu.secretbuddyapp"
+    },
+    "android": {
+      "package": "com.inaciobalu.secretbuddyapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
     "extra": {
       "eas": {
         "projectId": "841e5f4a-a296-49d4-b279-fe9860addf1a"
       }
-    },
-    "android": {
-      "package": "com.inaciobalu.secretbuddyapp"
     }
   }
 }

@@ -11,40 +11,41 @@ import Constants from "expo-constants";
 export const getPublicEnv = (key: string): string | undefined => {
   // Try to get from Constants.expoConfig.extra first (production builds)
   const extra = Constants.expoConfig?.extra;
-  let value: string | undefined;
 
   if (extra) {
     // Check if it's a Firebase config key
     if (key.startsWith("EXPO_PUBLIC_FIREBASE_")) {
-      const configKey = key
-        .replace("EXPO_PUBLIC_FIREBASE_", "")
-        .replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
-        .replace(/^([A-Z])/, (letter) => letter.toLowerCase());
+      // Convert EXPO_PUBLIC_FIREBASE_API_KEY -> apiKey
+      // Convert EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN -> authDomain
+      const snakeCase = key.replace("EXPO_PUBLIC_FIREBASE_", "");
+      const camelCase = snakeCase
+        .toLowerCase()
+        .replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 
-      value = extra.firebaseConfig?.[configKey];
+      const value = extra.firebaseConfig?.[camelCase];
+      if (value) return value;
     }
 
     // Check if it's an Azure config key
     if (key === "AZURE_FACE_API_KEY") {
-      value = extra.azureConfig?.faceApiKey;
+      const value = extra.azureConfig?.faceApiKey;
+      if (value) return value;
     }
     if (key === "AZURE_FACE_ENDPOINT") {
-      value = extra.azureConfig?.faceEndpoint;
+      const value = extra.azureConfig?.faceEndpoint;
+      if (value) return value;
     }
 
     // Check if it's a Google OAuth config key
     if (key.startsWith("EXPO_PUBLIC_GOOGLE_")) {
-      const configKey = key
-        .replace("EXPO_PUBLIC_GOOGLE_", "")
-        .replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
-        .replace(/^([A-Z])/, (letter) => letter.toLowerCase());
+      // Convert EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID -> expoClientId
+      const snakeCase = key.replace("EXPO_PUBLIC_GOOGLE_", "");
+      const camelCase = snakeCase
+        .toLowerCase()
+        .replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 
-      value = extra.googleOAuthConfig?.[configKey];
-    }
-
-    // If we found a value in extra, return it
-    if (value) {
-      return value;
+      const value = extra.googleOAuthConfig?.[camelCase];
+      if (value) return value;
     }
   }
 

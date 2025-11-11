@@ -5,6 +5,9 @@
 export default ({ config }) => {
   return {
     ...config,
+    // Custom scheme is required for deep links / OAuth redirect URLs
+    // Use the Android package name as the scheme for best practice
+    scheme: 'com.inaciobalu.secretbuddyapp',
     extra: {
       ...config.extra,
       // This is the critical part: read process.env during build
