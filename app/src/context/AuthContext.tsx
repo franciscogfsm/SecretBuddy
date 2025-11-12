@@ -121,7 +121,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   const nativeRedirectUri = useMemo(
     () =>
       makeRedirectUri({
-        scheme: "secretbuddy",
+        scheme: "com.inaciobalu.secretbuddyapp",
         path: "oauth",
       }),
     []
