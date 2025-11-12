@@ -1078,6 +1078,12 @@ async function matchUsers(
   console.log("🎲 Step 3: Random pairing...");
   const unmatched = users.filter((u) => !matched.has(u.id));
 
+  // Shuffle the unmatched array to ensure random pairing
+  for (let i = unmatched.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [unmatched[i], unmatched[j]] = [unmatched[j], unmatched[i]];
+  }
+
   for (let i = 0; i < unmatched.length - 1; i += 2) {
     const pairId = await createPair(
       unmatched[i].id,

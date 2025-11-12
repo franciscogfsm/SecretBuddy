@@ -27,14 +27,16 @@ export const RootNavigator = () => {
   // Determine initial route based on both Firebase auth and local profile
   const isFullyAuthenticated = user && profile;
   const hasFirebaseAuth = user && !profile;
-  const needsAuth = !user && !profile;
 
   let initialRoute: keyof RootStackParamList;
   if (isFullyAuthenticated) {
+    // User is logged in and has profile - go directly to home
     initialRoute = "MainTabs";
   } else if (hasFirebaseAuth) {
+    // User is logged in but needs to complete onboarding
     initialRoute = "Onboarding";
   } else {
+    // User not logged in - show splash then auth
     initialRoute = "Splash";
   }
 

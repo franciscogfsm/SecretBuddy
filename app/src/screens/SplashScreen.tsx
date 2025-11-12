@@ -20,6 +20,7 @@ import type { RootStackParamList } from "../navigation/types";
 import { colors, typography } from "../theme";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useAuth } from "../context/AuthContext";
+import { useAppState } from "../store/AppStateContext";
 
 export const useEntranceHaptics = () => {
   useEffect(() => {
@@ -59,6 +60,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Splash">;
 
 export const SplashScreen = ({ navigation }: Props) => {
   const { user, initializing } = useAuth();
+  const { profile } = useAppState();
   const fadeAnim = useState(new Animated.Value(0))[0];
   const scaleAnim = useState(new Animated.Value(0.9))[0];
   const logoAnim = useState(new Animated.Value(0))[0];
@@ -121,14 +123,17 @@ export const SplashScreen = ({ navigation }: Props) => {
               setShowTagline(true);
               clearInterval(interval);
               // Navigate after typing completes
+              // Auto-navigate after splash animation completes
               setTimeout(() => {
-                // Check if user is authenticated
                 if (!initializing) {
-                  if (user) {
-                    // User is logged in, go to MainTabs (Home)
+                  if (user && profile) {
+                    // User is fully authenticated (Firebase + profile) - go to home
                     navigation.replace("MainTabs");
+                  } else if (user && !profile) {
+                    // User logged in but needs onboarding
+                    navigation.replace("Onboarding", {});
                   } else {
-                    // User not logged in, go to AuthOptions
+                    // No user - show auth options
                     navigation.replace("AuthOptions");
                   }
                 }
@@ -243,7 +248,7 @@ export const SplashScreen = ({ navigation }: Props) => {
         ])
       ).start();
     }, 900);
-  }, [initializing, user]);
+  }, [initializing, user, profile, navigation]);
 
   return (
     <View style={styles.container}>
