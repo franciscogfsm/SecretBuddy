@@ -1,10 +1,31 @@
-# SecretBuddy - Anonymous Mystery Chat App
+<div align="center">
 
-## 🎭 Overview
+# SecretBuddy
+
+Anonymous mystery chat and photo sharing, paired by the clock.
+
+<img src="https://img.shields.io/badge/React_Native-61DAFB?style=flat&logo=react&logoColor=black" alt="React Native">
+<img src="https://img.shields.io/badge/Expo-000020?style=flat&logo=expo&logoColor=white" alt="Expo">
+<img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript">
+<img src="https://img.shields.io/badge/Firebase-FFCA28?style=flat&logo=firebase&logoColor=black" alt="Firebase">
+<img src="https://img.shields.io/badge/Node.js-5FA04E?style=flat&logo=nodedotjs&logoColor=white" alt="Node.js">
+<img src="https://img.shields.io/badge/Express-000000?style=flat&logo=express&logoColor=white" alt="Express">
+
+<sub>
+<a href="https://github.com/franciscogfsm/Secret-Buddy-web">Website</a> &nbsp;·&nbsp;
+<a href="SECURITY.md">Security</a> &nbsp;·&nbsp;
+<a href="PRIVACY_POLICY.md">Privacy</a>
+</sub>
+
+</div>
+
+<br>
+
+## Overview
 
 SecretBuddy is a React Native mobile application that connects users anonymously for mystery conversations and photo sharing. Users are paired in time-based pools, share photos throughout the day, and can reveal their identities during designated reveal windows.
 
-## 🏗️ Architecture
+## Architecture
 
 - **Frontend**: React Native with Expo
 - **State Management**: React Context API
@@ -12,29 +33,29 @@ SecretBuddy is a React Native mobile application that connects users anonymously
 - **Backend**: Firebase (Authentication, Firestore, Storage)
 - **Styling**: StyleSheet with custom theme system
 
-## 📱 Core Features
+## Core Features
 
-### 🕒 Pool System
+### Pool System
 
 - **Pool A**: 8:00 AM - 1:00 PM (Morning Pool)
 - **Pool B**: 1:00 PM - 4:00 PM (Afternoon Pool)
 - **Reveal Window**: 9:00 PM - 10:00 PM (Daily Identity Reveal)
 - **Waiting Periods**: Between pools and overnight
 
-### 🎯 Game Modes
+### Game Modes
 
 1. **Friends Mode**: Pair only with added friends
 2. **Country Mode**: Pair with users from selected country
 3. **World Mode**: Pair with anyone globally
 
-### 👥 User Management
+### User Management
 
 - **Profile System**: Name, username, age, country, bio (100 char limit)
 - **Privacy Controls**: Age visibility toggle
 - **Authentication**: Firebase Auth integration
 - **Friend System**: Add, remove, accept/decline friend requests
 
-## 🔄 App Flow & Functionality
+## App Flow & Functionality
 
 ### 1. Authentication & Onboarding
 
@@ -262,7 +283,7 @@ App
     └── Profile (User Settings)
 ```
 
-## 🎨 UI/UX Design System
+## UI/UX Design System
 
 ### Theme (`theme/`)
 
@@ -300,7 +321,7 @@ const isSmallScreen = width < 375 || height < 667;
 - Tap feedback with haptics
 - Smooth transitions between states
 
-## 🔥 Backend Integration Requirements
+## Backend Integration Requirements
 
 ### Firebase Structure Needed
 
@@ -572,7 +593,7 @@ autoModerationTrigger() {
 // Partner reveal decisions
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -691,7 +712,7 @@ FIREBASE_MESSAGING_SENDER_ID=
 FIREBASE_APP_ID=
 ```
 
-## 📊 State Management
+## State Management
 
 ### AppStateContext
 
@@ -717,7 +738,7 @@ type RootStackParamList = {
 };
 ```
 
-## 🔐 Security & Safety Considerations
+## Security & Safety Considerations
 
 ### Photo Privacy
 
@@ -796,13 +817,13 @@ type RootStackParamList = {
 - SQL injection prevention
 - XSS protection for user-generated content
 
-## 🚀 Next Implementation Steps
+## Next Implementation Steps
 
 ### Pre-Backend Integration
 
 - [ ] Firebase project setup
 
-## 🗂️ Retention & Capacity Planning
+## Retention & Capacity Planning
 
 Retention policy (explicit):
 
